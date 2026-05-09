@@ -23,20 +23,30 @@ def send_email(image_path: str) -> None:
         "Motion was detected by the security system. Please review the attached evidence."
     )
 
-    with open(image_path, "rb") as file:
-        content = file.read()
+    try:
+        with open(image_path, "rb") as file:
+            content = file.read()
 
-    mime_type, _ = mimetypes.guess_type(image_path)
-    maintype, subtype = mime_type.split("/")
+        mime_type, _ = mimetypes.guess_type(image_path)
+        maintype, subtype = (mime_type or "image/png").split("/")
 
-    email_message.add_attachment(content, maintype=maintype, subtype=subtype)
+        email_message.add_attachment(content, maintype=maintype, subtype=subtype)
 
-    gmail = smtplib.SMTP("smtp.gmail.com", 587)
-    gmail.ehlo()
-    gmail.starttls()
-    gmail.login(SENDER, PASSWORD)
-    gmail.sendmail(SENDER, SENDER, email_message.as_string())
-    gmail.quit()
+        # Using "with" ensures the SMTP connection is safely closed afterward
+        with smtplib.SMTP("smtp.gmail.com", 587) as gmail:
+            gmail.ehlo()
+            gmail.starttls()
+            gmail.login(SENDER, PASSWORD)
+            gmail.sendmail(SENDER, SENDER, email_message.as_string())
+
+        print("Alert email sent successfully.")
+
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+
+    finally:
+        if os.path.exists(image_path):
+            os.remove(image_path)
 
 
 if __name__ == "__main__":
