@@ -22,6 +22,7 @@ def main():
     status_list = [0, 0]
     event_count = 1
     frame_to_export = None
+    max_area = 0
 
     print("Thief Detection Notifier is ACTIVE. Press 'q' to quit.")
 
@@ -52,8 +53,11 @@ def main():
             dil_frame, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
 
+        current_frame_max_area = 0
+
         for contour in contours:
-            if cv2.contourArea(contour) < MIN_CONTOUR_AREA:
+            area = cv2.contourArea(contour)
+            if area < MIN_CONTOUR_AREA:
                 continue
 
             # Draw bounding box around the intruder
@@ -61,7 +65,11 @@ def main():
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 3)
             status = 1
 
-            # Keep saving the latest frame with motion in RAM
+            if area > current_frame_max_area:
+                current_frame_max_area = area
+
+        if status == 1 and current_frame_max_area > max_area:
+            max_area = current_frame_max_area
             frame_to_export = frame.copy()
 
         status_list.append(status)
@@ -80,6 +88,7 @@ def main():
 
                 event_count += 1
                 frame_to_export = None  # Reset for the next event
+                max_area = 0
 
         cv2.imshow("Security Camera Feed", frame)
 
