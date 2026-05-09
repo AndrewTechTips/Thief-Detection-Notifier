@@ -1,4 +1,3 @@
-import glob
 import os
 import cv2
 import time
@@ -74,7 +73,7 @@ def main():
                 cv2.imwrite(image_path, frame_to_export)
 
                 # Start background thread to send email and clean up
-                email_thread = Thread(target=send_email, args=(image_with_object,))
+                email_thread = Thread(target=send_email, args=(image_path,))
                 email_thread.daemon = True
                 email_thread.start()
 
