@@ -1,82 +1,97 @@
 import glob
 import os
-
 import cv2
 import time
 from emailing import send_email
-
 from threading import Thread
 
-video = cv2.VideoCapture(0)
-# We give 1 second for the camera to load and then execute the while true
-time.sleep(1)
-
-first_frame = None
-status_list = []
-count = 1
+MIN_CONTOUR_AREA = 10000  # Adjust if the camera is further away (e.g., 5000)
+GAUSSIAN_BLUR = (21, 21)
+THRESHOLD_VALUE = 60
+IMAGES_FOLDER = "images"
 
 
-def clean_folder():
+def main():
+    # Ensure the images directory exists
+    if not os.path.exists(IMAGES_FOLDER):
+        os.makedirs(IMAGES_FOLDER)
 
-    images = glob.glob("images/*.png")
-    for image in images:
-        os.remove(image)
+    video = cv2.VideoCapture(0)
+    time.sleep(2)  # Give the camera 2 seconds to adjust to lighting
 
+    first_frame = None
+    status_list = [0, 0]
+    event_count = 1
+    frame_to_export = None
 
-while True:
-    status = 0
-    check, frame = video.read()
+    print("Thief Detection Notifier is ACTIVE. Press 'q' to quit.")
 
-    # Preprocessing the frame
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    gray_frame_gau = cv2.GaussianBlur(gray_frame, (21, 21), 0)
+    while True:
+        status = 0
+        check, frame = video.read()
 
-    if first_frame is None:
-        first_frame = gray_frame_gau
+        if not check:
+            print("Failed to grab frame. Exiting...")
 
-    delta_frame = cv2.absdiff(first_frame, gray_frame_gau)
+        # Preprocessing the frame for motion detection
+        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray_frame_gau = cv2.GaussianBlur(gray_frame, GAUSSIAN_BLUR, 0)
 
-    thresh_frame = cv2.threshold(delta_frame, 60, 255, cv2.THRESH_BINARY)[1]
-    dil_frame = cv2.dilate(thresh_frame, None, iterations=2)
-
-    contours, check = cv2.findContours(
-        dil_frame, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
-    for contour in contours:
-        if cv2.contourArea(contour) < 10000:
+        if first_frame is None:
+            first_frame = gray_frame_gau
             continue
-        x, y, w, h = cv2.boundingRect(contour)
-        rectangle = cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 3)
 
-        if rectangle.any():
+        # Calculate difference between the static background and current frame
+        delta_frame = cv2.absdiff(first_frame, gray_frame_gau)
+        thresh_frame = cv2.threshold(
+            delta_frame, THRESHOLD_VALUE, 255, cv2.THRESH_BINARY
+        )[1]
+        dil_frame = cv2.dilate(thresh_frame, None, iterations=2)
+
+        contours, _ = cv2.findContours(
+            dil_frame, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        for contour in contours:
+            if cv2.contourArea(contour) < MIN_CONTOUR_AREA:
+                continue
+
+            # Draw bounding box around the intruder
+            x, y, w, h = cv2.boundingRect(contour)
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 3)
             status = 1
-            cv2.imwrite(f"images/{count}.png", frame)
-            count += 1
-            all_images = glob.glob("images/*.png")
-            index = int(len(all_images) / 2)
-            image_with_object = all_images[index]
 
-    status_list.append(status)
-    status_list = status_list[-2:]
+            # Keep saving the latest frame with motion in RAM
+            frame_to_export = frame.copy()
 
-    if status_list[0] == 1 and status_list[1] == 0:
-        email_thread = Thread(target=send_email, args=(image_with_object,))
-        email_thread.daemon = True
+        status_list.append(status)
+        status_list = status_list[-2:]
 
-        clean_thread = Thread(target=clean_folder)
-        clean_thread.daemon = True
+        # Trigger action ONLY when motion stops
+        if status_list[0] == 1 and status_list[1] == 0:
+            if frame_to_export is not None:
+                image_path = os.path.join(IMAGES_FOLDER, f"intruder_{event_count}.png")
+                cv2.imwrite(image_path, frame_to_export)
 
-        email_thread.start()
+                # Start background thread to send email and clean up
+                email_thread = Thread(target=send_email, args=(image_with_object,))
+                email_thread.daemon = True
+                email_thread.start()
 
-    cv2.imshow("Video", frame)
+                event_count += 1
+                frame_to_export = None  # Reset for the next event
 
-    # Here we create a keyboard key
-    key = cv2.waitKey(1)
+        cv2.imshow("Security Camera Feed", frame)
 
-    # Then if the user is pressing q on the frame, the code will break out of the loop and then release the video
-    if key == ord("q"):
-        break
+        # Listen for the 'q' key to quit
+        if cv2.waitKey(1) == ord("q"):
+            print("Turning off camera...")
+            break
 
-video.release()
+        # Clean up resources safely
+        video.release()
+        cv2.destroyAllWindows()
 
-clean_thread.start()
+
+if __name__ == "__main__":
+    main()
