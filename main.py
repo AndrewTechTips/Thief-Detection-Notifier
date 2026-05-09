@@ -31,6 +31,7 @@ def main():
 
         if not check:
             print("Failed to grab frame. Exiting...")
+            break
 
         # Preprocessing the frame for motion detection
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -87,9 +88,9 @@ def main():
             print("Turning off camera...")
             break
 
-        # Clean up resources safely
-        video.release()
-        cv2.destroyAllWindows()
+    # Clean up resources safely
+    video.release()
+    cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
