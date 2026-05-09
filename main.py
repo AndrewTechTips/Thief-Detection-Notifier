@@ -21,8 +21,9 @@ def main():
     first_frame = None
     status_list = [0, 0]
     event_count = 1
-    frame_to_export = None
-    max_area = 0
+
+    # We store frames in RAM during motion to prevent SSD wear
+    motion_frames = []
 
     print("Thief Detection Notifier is ACTIVE. Press 'q' to quit.")
 
@@ -53,11 +54,8 @@ def main():
             dil_frame, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
 
-        current_frame_max_area = 0
-
         for contour in contours:
-            area = cv2.contourArea(contour)
-            if area < MIN_CONTOUR_AREA:
+            if cv2.contourArea(contour) < MIN_CONTOUR_AREA:
                 continue
 
             # Draw bounding box around the intruder
@@ -65,34 +63,38 @@ def main():
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 3)
             status = 1
 
-            if area > current_frame_max_area:
-                current_frame_max_area = area
-
-        if status == 1 and current_frame_max_area > max_area:
-            max_area = current_frame_max_area
-            frame_to_export = frame.copy()
+        # Save frame in RAM while motion is detected
+        # Limit to 150 frames (~5 secs) to prevent high memory usage
+        if status == 1 and len(motion_frames) < 150:
+            motion_frames.append(frame.copy())
 
         status_list.append(status)
         status_list = status_list[-2:]
 
-        # Trigger action ONLY when motion stops
+        # Trigger action ONLY when motion stops (status changes from 1 to 0)
         if status_list[0] == 1 and status_list[1] == 0:
-            if frame_to_export is not None:
-                image_path = os.path.join(IMAGES_FOLDER, f"intruder_{event_count}.png")
-                cv2.imwrite(image_path, frame_to_export)
+            if motion_frames:
+                # Extract the middle frame to capture the intruder perfectly in the center of the action
+                middle_index = len(motion_frames) // 2
+                best_frame = motion_frames[middle_index]
 
-                # Start background thread to send email and clean up
+                # Now we save the SINGLE best frame to the disk
+                image_path = os.path.join(IMAGES_FOLDER, f"intruder_{event_count}.png")
+                cv2.imwrite(image_path, best_frame)
+
+                # Send email on a separate thread so the video feed doesn't freeze
                 email_thread = Thread(target=send_email, args=(image_path,))
                 email_thread.daemon = True
                 email_thread.start()
 
                 event_count += 1
-                frame_to_export = None  # Reset for the next event
-                max_area = 0
+
+                # Clear the list to free up RAM for the next motion event
+                motion_frames.clear()
 
         cv2.imshow("Security Camera Feed", frame)
 
-        # Listen for the 'q' key to quit
+        # Listen for the 'q' key to stop the program
         if cv2.waitKey(1) == ord("q"):
             print("Turning off camera...")
             break
