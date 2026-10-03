@@ -1,6 +1,5 @@
 """Cameras the hub pulls video from (AD-6)."""
 
-from dataclasses import dataclass
 from enum import StrEnum
 
 
@@ -17,12 +16,3 @@ class DeviceStatus(StrEnum):
     ONLINE = "online"  # frames are flowing
     RECONNECTING = "reconnecting"  # source lost; retrying with backoff
     FAILED = "failed"  # gave up; needs attention
-
-
-@dataclass(frozen=True, slots=True)
-class Device:
-    id: str
-    name: str
-    source_kind: SourceKind
-    enabled: bool = True
-    status: DeviceStatus = DeviceStatus.STOPPED

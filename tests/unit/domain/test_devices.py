@@ -1,11 +1,4 @@
-from vision_hub.domain.devices import Device, DeviceStatus, SourceKind
-
-
-def test_new_devices_are_enabled_and_stopped() -> None:
-    device = Device(id="cam-1", name="Porch", source_kind=SourceKind.RTSP)
-
-    assert device.enabled is True
-    assert device.status is DeviceStatus.STOPPED
+from vision_hub.domain.devices import DeviceStatus, SourceKind
 
 
 def test_enums_serialise_as_plain_strings() -> None:

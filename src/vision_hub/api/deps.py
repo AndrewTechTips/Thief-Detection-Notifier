@@ -15,6 +15,7 @@ from vision_hub.core.errors import AuthenticationError, PermissionDeniedError
 from vision_hub.domain.auth import Principal, Role
 from vision_hub.domain.health import HealthCheck
 from vision_hub.services.auth import AuthService
+from vision_hub.services.devices import DeviceService
 
 
 def get_container(connection: HTTPConnection) -> Container:
@@ -50,6 +51,13 @@ def get_auth_service(container: ContainerDep) -> AuthService:
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 
+
+def get_device_service(container: ContainerDep) -> DeviceService:
+    return container.devices
+
+
+DeviceServiceDep = Annotated[DeviceService, Depends(get_device_service)]
+
 # auto_error=False: missing tokens raise our AuthenticationError (problem+json), not FastAPI's.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{API_V1_PREFIX}/auth/token", auto_error=False)
 
@@ -82,3 +90,5 @@ def require_role(role: Role) -> Callable[[Principal], Principal]:
 
 
 AdminPrincipal = Annotated[Principal, Depends(require_role(Role.ADMIN))]
+# For routes that only need the check: ``@router.post(..., dependencies=[AdminOnly])``.
+AdminOnly = Depends(require_role(Role.ADMIN))

@@ -4,7 +4,15 @@ from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import quote, urlsplit, urlunsplit
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 
 class _SourceConfig(BaseModel):
@@ -25,7 +33,8 @@ class RtspSourceConfig(_SourceConfig):
     kind: Literal["rtsp"] = "rtsp"
     url: str = Field(examples=["rtsp://192.168.1.20:554/stream1"])
     username: str | None = None
-    password: SecretStr | None = None
+    # exclude=True: accepted on input, but no serialization (API response, log, dump) emits it.
+    password: SecretStr | None = Field(default=None, exclude=True)
     open_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
     read_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
 
@@ -47,6 +56,11 @@ class RtspSourceConfig(_SourceConfig):
             msg = "password requires a username"
             raise ValueError(msg)
         return self
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def has_password(self) -> bool:
+        return self.password is not None
 
     def connection_url(self) -> SecretStr:
         """The URL with credentials inserted; only ever handed to the capture backend."""

@@ -72,7 +72,11 @@ async def test_enabled_cameras_run_for_the_app_lifetime(fleet_settings: Settings
         await asyncio.wait_for(cameras.frames("back").next(), timeout=5)
         await wait_for(lambda: cameras.status("front") is DeviceStatus.ONLINE)
         assert cameras.is_running("spare") is False
-        assert [spec.id for spec in container.fleet] == ["front", "back", "spare"]
+        assert [view.spec.id for view in await container.devices.list()] == [
+            "back",
+            "front",
+            "spare",
+        ]
 
     assert camera_threads() == []
     assert cameras.status("front") is DeviceStatus.STOPPED

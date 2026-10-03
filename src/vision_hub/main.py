@@ -34,6 +34,10 @@ OPENAPI_TAGS = [
         "name": "auth",
         "description": "Log in with the OAuth2 password flow, rotate refresh tokens, log out.",
     },
+    {
+        "name": "devices",
+        "description": "Cameras: configuration, start/stop, source tests and live snapshots.",
+    },
 ]
 DOCS_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc"})
 

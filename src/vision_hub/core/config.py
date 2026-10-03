@@ -174,6 +174,7 @@ class VisionConfig(_Group):
 
     devices_file: Path | None = None  # TOML fleet definition; None runs no cameras
     lock_file: Path = Path("data/vision-hub.lock")  # ensures one process owns the cameras
+    media_dir: Path = Path("data/media")  # video_file sources added via the API must live here
     target_fps: float = Field(default=10.0, gt=0, le=60)
     # Fraction of the frame a moving region must cover; resolution-independent.
     min_motion_area: float = Field(default=0.01, gt=0, lt=1)

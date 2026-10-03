@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, status
 
 from vision_hub.api.deps import get_current_principal
 from vision_hub.api.v1 import API_V1_PREFIX
-from vision_hub.api.v1.routes import auth, health
+from vision_hub.api.v1.routes import auth, devices, health
 from vision_hub.schemas.problem import ProblemDetail
 
 public_router = APIRouter()
@@ -18,6 +18,7 @@ protected_router = APIRouter(
     responses={status.HTTP_401_UNAUTHORIZED: {"model": ProblemDetail}},
 )
 protected_router.include_router(auth.identity_router)
+protected_router.include_router(devices.router)
 
 api_router = APIRouter(prefix=API_V1_PREFIX)
 api_router.include_router(public_router)

@@ -13,10 +13,12 @@ from vision_hub.domain.health import HealthCheck
 from vision_hub.domain.notifications import Notifier
 from vision_hub.infra.auth import InMemoryTokenRevocationStore, SettingsUserRepository
 from vision_hub.infra.bus.memory import InMemoryEventBus
+from vision_hub.infra.devices import InMemoryDeviceRepository
 from vision_hub.infra.notifiers.email import EmailNotifier
 from vision_hub.infra.process_lock import ProcessLock
 from vision_hub.infra.rate_limit import RateLimiter
 from vision_hub.services.auth import AuthService
+from vision_hub.services.devices import DeviceService
 from vision_hub.services.notifications import NotificationService
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.fleet import DeviceSpec, load_fleet
@@ -40,7 +42,7 @@ class Container:
     cameras: CameraManager
     bus: InMemoryEventBus[CameraEvent]
     notifications: NotificationService
-    fleet: tuple[DeviceSpec, ...] = ()
+    devices: DeviceService
     health_checks: tuple[HealthCheck, ...] = ()
 
 
@@ -62,15 +64,15 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
         lock.acquire()
         stack.callback(lock.release)
 
-        fleet = _load_fleet(settings)
-        names = {spec.id: spec.name for spec in fleet}
+        detection_defaults = DetectionConfig.from_settings(settings.vision)
+        fleet = _load_fleet(settings, detection_defaults)
 
         bus: InMemoryEventBus[CameraEvent] = InMemoryEventBus()
         stack.callback(bus.close)
         notifications = NotificationService(
             bus,
             _build_notifiers(settings),
-            device_name=lambda device_id: names.get(device_id, device_id),
+            device_name=lambda device_id: devices.name_of(device_id),
             cooldown_seconds=settings.vision.alert_cooldown_seconds,
         )
         notifications.start()  # subscribes before any camera can publish
@@ -88,6 +90,12 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
             ),
         )
         stack.push_async_callback(cameras.stop_all)
+        devices = DeviceService(
+            InMemoryDeviceRepository(fleet),
+            cameras,
+            detection_defaults=detection_defaults,
+            media_dir=settings.vision.media_dir,
+        )
 
         container = Container(
             settings=settings,
@@ -96,11 +104,9 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
             cameras=cameras,
             bus=bus,
             notifications=notifications,
-            fleet=fleet,
+            devices=devices,
         )
-        for spec in fleet:
-            if spec.enabled:
-                await cameras.start(spec)
+        await devices.start_enabled()
 
         logger.info("container_started", cameras=sum(spec.enabled for spec in fleet))
         try:
@@ -110,11 +116,10 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
     logger.info("container_stopped")
 
 
-def _load_fleet(settings: Settings) -> tuple[DeviceSpec, ...]:
+def _load_fleet(settings: Settings, defaults: DetectionConfig) -> list[DeviceSpec]:
     if settings.vision.devices_file is None:
-        return ()
-    defaults = DetectionConfig.from_settings(settings.vision)
-    return tuple(load_fleet(settings.vision.devices_file, defaults=defaults))
+        return []
+    return load_fleet(settings.vision.devices_file, defaults=defaults)
 
 
 def _build_notifiers(settings: Settings) -> list[Notifier]:

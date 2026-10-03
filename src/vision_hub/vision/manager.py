@@ -10,7 +10,8 @@ from typing import Protocol, cast
 
 from vision_hub.core.logging import get_logger
 from vision_hub.domain.devices import DeviceStatus
-from vision_hub.domain.events import CameraEvent, DeviceStatusChanged
+from vision_hub.domain.events import CameraEvent, DeviceStatusChanged, MotionEndedEvent
+from vision_hub.domain.motion import MotionEvent
 from vision_hub.vision.bridge import LatestFrame, LoopBridge
 from vision_hub.vision.fleet import DeviceSpec
 from vision_hub.vision.sources import Backoff, create_source
@@ -65,6 +66,7 @@ class CameraManager:
         self._workers: dict[str, Worker] = {}
         self._frames: dict[str, LatestFrame] = {}
         self._statuses: dict[str, DeviceStatus] = {}
+        self._last_events: dict[str, MotionEvent] = {}
         self._backoffs: dict[str, Backoff] = {}
         self._restarts: dict[str, asyncio.Task[None]] = {}
         self._wanted: set[str] = set()  # devices that should be running
@@ -78,6 +80,9 @@ class CameraManager:
 
     def status(self, device_id: str) -> DeviceStatus:
         return self._statuses.get(device_id, DeviceStatus.STOPPED)
+
+    def last_event(self, device_id: str) -> MotionEvent | None:
+        return self._last_events.get(device_id)
 
     def frames(self, device_id: str) -> LatestFrame:
         """Live frames of a device (raises ``KeyError`` for unknown devices)."""
@@ -109,6 +114,12 @@ class CameraManager:
         await self.stop(device_id)
         await self.start(spec)
 
+    async def forget(self, device_id: str) -> None:
+        """Stop a device and drop all its state (it was deleted)."""
+        await self.stop(device_id)
+        for state in (self._specs, self._frames, self._statuses, self._last_events, self._backoffs):
+            state.pop(device_id, None)
+
     async def stop_all(self) -> None:
         await asyncio.gather(*(self.stop(device_id) for device_id in list(self._specs)))
 
@@ -132,6 +143,8 @@ class CameraManager:
             self._statuses[event.device_id] = event.status
             if event.status is DeviceStatus.ONLINE and event.device_id in self._backoffs:
                 self._backoffs[event.device_id].reset()
+        elif isinstance(event, MotionEndedEvent):
+            self._last_events[event.event.device_id] = event.event
         try:
             self._on_event(event)
         except Exception:
