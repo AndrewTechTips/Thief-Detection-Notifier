@@ -10,6 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self
 
+from cryptography.fernet import Fernet
 from limits import parse as parse_rate_limit
 from pydantic import (
     BaseModel,
@@ -22,6 +23,7 @@ from pydantic import (
     model_validator,
 )
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from sqlalchemy import URL, make_url
 
 ENV_PREFIX = "VISION_HUB_"
 ENV_NESTED_DELIMITER = "__"
@@ -45,6 +47,7 @@ def _split_csv(value: Any) -> Any:
 # NoDecode stops pydantic-settings from requiring JSON; the validator splits on commas instead.
 CsvStrList = Annotated[list[str], NoDecode, BeforeValidator(_split_csv)]
 CsvEmailList = Annotated[list[EmailStr], NoDecode, BeforeValidator(_split_csv)]
+CsvSecretList = Annotated[list[SecretStr], NoDecode, BeforeValidator(_split_csv)]
 
 
 class _Group(BaseModel):
@@ -89,6 +92,21 @@ class SecurityConfig(_Group):
     auth_rate_limit: str = "5/minute"
     # Single-use tickets for WebSockets and MJPEG streams (browsers cannot send auth headers there)
     ticket_ttl_seconds: float = Field(default=30.0, gt=0, le=300)
+    # Fernet keys encrypting secrets at rest (camera passwords). The first encrypts; all decrypt,
+    # so a new key can be prepended to rotate. Empty outside prod: a key file is created once.
+    encryption_keys: CsvSecretList = Field(default_factory=list)
+    encryption_key_file: Path = Path("data/encryption.key")
+
+    @field_validator("encryption_keys")
+    @classmethod
+    def _valid_fernet_keys(cls, keys: list[SecretStr]) -> list[SecretStr]:
+        for key in keys:
+            try:
+                Fernet(key.get_secret_value())
+            except ValueError:
+                msg = "each encryption key must be a Fernet key (32 url-safe base64-encoded bytes)"
+                raise ValueError(msg) from None
+        return keys
 
     @field_validator("auth_rate_limit")
     @classmethod
@@ -156,6 +174,8 @@ class SmtpConfig(_Group):
 
 
 class DatabaseConfig(_Group):
+    # A full SQLAlchemy URL overrides the PostgreSQL fields below (tests use SQLite this way).
+    url: SecretStr | None = None
     host: str = "localhost"
     port: int = Field(default=5432, ge=1, le=65535)
     user: str = "vision_hub"
@@ -163,6 +183,20 @@ class DatabaseConfig(_Group):
     name: str = "vision_hub"
     pool_size: int = Field(default=5, ge=1, le=50)
     echo: bool = False
+    migrate_on_startup: bool = True
+
+    def sqlalchemy_url(self) -> URL:
+        """The connection URL; ``URL`` masks the password when printed or logged."""
+        if self.url is not None:
+            return make_url(self.url.get_secret_value())
+        return URL.create(
+            "postgresql+asyncpg",
+            username=self.user,
+            password=self.password.get_secret_value(),
+            host=self.host,
+            port=self.port,
+            database=self.name,
+        )
 
 
 class StorageConfig(_Group):
@@ -250,9 +284,9 @@ class Settings(BaseSettings):
         problems: list[str] = []
         if "jwt_secret" not in self.security.model_fields_set:
             problems.append(f"{env_name('security', 'jwt_secret')} must be set explicitly")
-        if self.security.admin_password_hash is None:
-            problems.append(f"{env_name('security', 'admin_password_hash')} must be set")
-        if "password" not in self.db.model_fields_set:
+        if not self.security.encryption_keys:
+            problems.append(f"{env_name('security', 'encryption_keys')} must be set")
+        if "password" not in self.db.model_fields_set and self.db.url is None:
             problems.append(f"{env_name('db', 'password')} must be set explicitly")
         if self.app.debug:
             problems.append(f"{env_name('app', 'debug')} must be false")

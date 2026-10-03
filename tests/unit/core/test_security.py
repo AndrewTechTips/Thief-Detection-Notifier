@@ -102,7 +102,7 @@ class TestTokenService:
     def test_unsigned_alg_none_token_is_rejected(self) -> None:
         valid = TokenService(config()).issue(ADMIN, TokenType.ACCESS)
         payload = jwt.decode(valid.token, options={"verify_signature": False})
-        unsigned = jwt.encode(payload, key=None, algorithm="none")
+        unsigned = jwt.encode(payload, key="", algorithm="none")
 
         with pytest.raises(AuthenticationError):
             TokenService(config()).decode(unsigned, TokenType.ACCESS)

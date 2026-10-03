@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import os
+import shutil
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, field
 from email import message_from_bytes, policy
@@ -13,8 +14,11 @@ from typing import Any
 import httpx2
 import pytest
 from asgi_lifespan import LifespanManager
+from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from pydantic import SecretStr
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from vision_hub.core.config import (
     ENV_PREFIX,
@@ -24,21 +28,44 @@ from vision_hub.core.config import (
     Settings,
     get_settings,
 )
+from vision_hub.core.encryption import SecretBox
 from vision_hub.core.logging import configure_logging
 from vision_hub.core.security import PasswordHasher
+from vision_hub.infra.db.base import Base
+from vision_hub.infra.db.engine import Sessions, create_sessions
+from vision_hub.infra.db.migrate import upgrade_to_head
 from vision_hub.main import create_app
 
 type SettingsFactory = Callable[..., Settings]
 type LogRecords = Callable[[], list[dict[str, Any]]]
 
 
+@pytest.fixture(scope="session")
+def migrated_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A SQLite database migrated once per session; each test gets a fresh copy (fast)."""
+    path = tmp_path_factory.mktemp("db") / "template.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{path}")
+
+    async def migrate() -> None:
+        await upgrade_to_head(engine)
+        await engine.dispose()
+
+    asyncio.run(migrate())
+    return path
+
+
 @pytest.fixture(autouse=True)
-def isolated_settings_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
-    """Keep the developer's shell variables and local `.env` out of every test."""
+def isolated_settings_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, migrated_template: Path
+) -> Iterator[None]:
+    """Keep the developer's shell variables and local `.env` out of every test, and give each
+    test its own database."""
     for key in list(os.environ):
         if key.startswith(ENV_PREFIX):
             monkeypatch.delenv(key)
     monkeypatch.chdir(tmp_path)
+    shutil.copy(migrated_template, tmp_path / "hub.db")
+    monkeypatch.setenv("VISION_HUB_DB__URL", f"sqlite+aiosqlite:///{tmp_path / 'hub.db'}")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -248,3 +275,37 @@ async def smtp_server(smtp_server_factory: SmtpServerFactory) -> FakeSmtpServer:
         username="alerts@example.com", password="app-password"
     )
     return server
+
+
+# ── Database fixtures ────────────────────────────────────────
+# Repository tests run on SQLite and, when VISION_HUB_TEST_POSTGRES_URL is set (CI does), on
+# PostgreSQL too.
+
+POSTGRES_URL = os.environ.get("VISION_HUB_TEST_POSTGRES_URL")
+
+
+@pytest.fixture(params=["sqlite", "postgres"])
+async def engine(request: pytest.FixtureRequest, tmp_path: Path) -> AsyncIterator[AsyncEngine]:
+    if request.param == "postgres":
+        if not POSTGRES_URL:
+            pytest.skip("set VISION_HUB_TEST_POSTGRES_URL to run against PostgreSQL")
+        engine = create_async_engine(POSTGRES_URL)
+        await upgrade_to_head(engine)
+        tables = ", ".join(table.name for table in Base.metadata.sorted_tables)
+        async with engine.begin() as connection:
+            await connection.execute(text(f"TRUNCATE {tables}"))
+    else:
+        # The autouse fixture already copied a migrated database to tmp_path/hub.db.
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'hub.db'}")
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture
+def sessions(engine: AsyncEngine) -> Sessions:
+    return create_sessions(engine)
+
+
+@pytest.fixture
+def secrets() -> SecretBox:
+    return SecretBox([Fernet.generate_key()])

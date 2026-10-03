@@ -1,6 +1,7 @@
-"""Command-line entrypoint: ``vision-hub [serve|hash-password]`` or ``python -m vision_hub``."""
+"""Command-line entrypoint: ``vision-hub [serve|hash-password|create-user]``."""
 
 import argparse
+import asyncio
 import getpass
 import sys
 from collections.abc import Sequence
@@ -9,6 +10,10 @@ import uvicorn
 
 from vision_hub.core.config import env_name, get_settings
 from vision_hub.core.security import PasswordHasher
+from vision_hub.domain.auth import Role
+from vision_hub.infra.db.engine import create_engine, create_sessions
+from vision_hub.infra.db.migrate import upgrade_to_head
+from vision_hub.infra.db.repositories.users import SqlUserRepository
 
 MIN_PASSWORD_LENGTH = 12
 
@@ -29,9 +34,18 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     hash_password.set_defaults(command="hash-password")
 
+    create_user = commands.add_parser(
+        "create-user", help="create a user, or reset an existing user's password and role"
+    )
+    create_user.add_argument("username")
+    create_user.add_argument("--role", choices=[role.value for role in Role], default="viewer")
+    create_user.set_defaults(command="create-user")
+
     args = parser.parse_args(argv)
     if args.command == "hash-password":
-        _hash_password()
+        sys.stdout.write(PasswordHasher().hash(_prompt_new_password()) + "\n")
+    elif args.command == "create-user":
+        _create_user(args.username, Role(args.role))
     else:
         _serve(reload=args.reload)
 
@@ -53,14 +67,33 @@ def _serve(*, reload: bool) -> None:
     )
 
 
-def _hash_password() -> None:
+def _prompt_new_password() -> str:
     """Prompts without echo, so the password never lands in shell history or `ps` output."""
-    password = getpass.getpass("New admin password: ")
+    password = getpass.getpass("New password: ")
     if len(password) < MIN_PASSWORD_LENGTH:
         sys.exit(f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
     if getpass.getpass("Repeat password: ") != password:
         sys.exit("Passwords do not match.")
-    sys.stdout.write(PasswordHasher().hash(password) + "\n")
+    return password
+
+
+def _create_user(username: str, role: Role) -> None:
+    if not 3 <= len(username) <= 100:
+        sys.exit("Username must be 3 to 100 characters.")
+    password_hash = PasswordHasher().hash(_prompt_new_password())
+    created = asyncio.run(_save_user(username, password_hash, role))
+    sys.stdout.write(f"{'Created' if created else 'Updated'} user {username} ({role}).\n")
+
+
+async def _save_user(username: str, password_hash: str, role: Role) -> bool:
+    settings = get_settings()
+    engine = create_engine(settings.db)
+    try:
+        if settings.db.migrate_on_startup:
+            await upgrade_to_head(engine)
+        return await SqlUserRepository(create_sessions(engine)).save(username, password_hash, role)
+    finally:
+        await engine.dispose()
 
 
 if __name__ == "__main__":

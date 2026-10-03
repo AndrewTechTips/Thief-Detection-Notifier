@@ -1,38 +1,12 @@
-"""In-memory auth adapters for the single-node MVP. Phase 3 replaces both with database-backed
-implementations of the same ports, so revocations then survive restarts."""
+"""In-memory auth adapters: single-use stream tickets (deliberately short-lived, so memory is
+the right place) and a revocation store used in unit tests (production uses the database)."""
 
 import secrets
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
-from vision_hub.core.config import SecurityConfig
 from vision_hub.core.security import utc_now
-from vision_hub.domain.auth import Principal, Role, User
-
-
-class SettingsUserRepository:
-    """Exposes the single admin account bootstrapped from configuration."""
-
-    def __init__(self, config: SecurityConfig) -> None:
-        hash_ = config.admin_password_hash
-        self._admin = (
-            User(
-                username=config.admin_username,
-                role=Role.ADMIN,
-                password_hash=hash_.get_secret_value(),
-            )
-            if hash_ is not None
-            else None
-        )
-
-    @property
-    def has_users(self) -> bool:
-        return self._admin is not None
-
-    async def get_by_username(self, username: str) -> User | None:
-        if self._admin is not None and username == self._admin.username:
-            return self._admin
-        return None
+from vision_hub.domain.auth import Principal
 
 
 class InMemoryTokenRevocationStore:
@@ -40,12 +14,12 @@ class InMemoryTokenRevocationStore:
         self._revoked: dict[str, datetime] = {}
         self._clock = clock
 
-    def revoke(self, token_id: str, expires_at: datetime) -> None:
+    async def revoke(self, token_id: str, expires_at: datetime) -> bool:
         self._purge_expired()
+        if token_id in self._revoked:
+            return False
         self._revoked[token_id] = expires_at
-
-    def is_revoked(self, token_id: str) -> bool:
-        return token_id in self._revoked
+        return True
 
     def __len__(self) -> int:
         return len(self._revoked)

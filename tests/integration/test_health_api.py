@@ -38,11 +38,13 @@ async def test_liveness(client: httpx2.AsyncClient) -> None:
     assert response.headers["Cache-Control"] == "no-store"
 
 
-async def test_readiness_without_dependencies_is_ok(client: httpx2.AsyncClient) -> None:
+async def test_readiness_checks_the_database(client: httpx2.AsyncClient) -> None:
     response = await client.get("/api/v1/health/ready")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "checks": []}
+    body = response.json()
+    assert body["status"] == "ok"
+    assert [(c["name"], c["healthy"]) for c in body["checks"]] == [("database", True)]
     assert response.headers["Cache-Control"] == "no-store"
 
 

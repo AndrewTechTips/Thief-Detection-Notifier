@@ -39,6 +39,6 @@ class UserRepository(Protocol):
 class TokenRevocationStore(Protocol):
     """Remembers revoked refresh-token IDs until the tokens would have expired anyway."""
 
-    def revoke(self, token_id: str, expires_at: datetime) -> None: ...
-
-    def is_revoked(self, token_id: str) -> bool: ...
+    async def revoke(self, token_id: str, expires_at: datetime) -> bool:
+        """Atomically revoke; ``False`` means it was already revoked (a reused token)."""
+        ...

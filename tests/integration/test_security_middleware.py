@@ -151,6 +151,9 @@ async def test_production_sends_hsts(monkeypatch: pytest.MonkeyPatch) -> None:
         "$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHQ$aGFzaGhhc2hoYXNoaGFzaA",
     )
     monkeypatch.setenv("VISION_HUB_DB__PASSWORD", "db-password")
+    monkeypatch.setenv(
+        "VISION_HUB_SECURITY__ENCRYPTION_KEYS", "kU0A8Pr2nZ1u4q9iYq0xQ0bWw0e4gqgQyq4b8m3jZ5M="
+    )
 
     async with LifespanManager(create_app()) as manager:
         response = await get(manager.app, "/api/v1/health/live")

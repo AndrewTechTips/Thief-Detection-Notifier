@@ -45,12 +45,10 @@ class AuthService:
         """Rotate: the presented refresh token is revoked and a new pair is issued. Presenting
         an already-used token again signals theft, so it is rejected and logged."""
         claims = self._tokens.decode(refresh_token, TokenType.REFRESH)
-        if self._revocations.is_revoked(claims.token_id):
+        # A single atomic revoke: of two concurrent refreshes with one token, only one wins.
+        if not await self._revocations.revoke(claims.token_id, claims.expires_at):
             logger.warning("refresh_token_reused", username=claims.principal.username)
             raise AuthenticationError("Refresh token has been revoked.")
-        # No await between the check above and this revoke, so two concurrent refreshes with
-        # the same token cannot both succeed.
-        self._revocations.revoke(claims.token_id, claims.expires_at)
 
         # Re-read the user so removed accounts and role changes take effect at refresh time.
         user = await self._users.get_by_username(claims.principal.username)
@@ -61,7 +59,7 @@ class AuthService:
     async def logout(self, refresh_token: str) -> None:
         """Revoke the refresh token. Access tokens stay valid until they expire (minutes)."""
         claims = self._tokens.decode(refresh_token, TokenType.REFRESH)
-        self._revocations.revoke(claims.token_id, claims.expires_at)
+        await self._revocations.revoke(claims.token_id, claims.expires_at)
         logger.info("logout", username=claims.principal.username)
 
     def authenticate(self, access_token: str) -> Principal:

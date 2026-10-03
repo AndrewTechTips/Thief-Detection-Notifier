@@ -17,6 +17,7 @@ ENV_EXAMPLE = PROJECT_ROOT / ".env.example"
 
 ARGON2_HASH = "$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHQ$aGFzaGhhc2hoYXNoaGFzaA"
 STRONG_SECRET = "x" * 48
+FERNET_KEY = "kU0A8Pr2nZ1u4q9iYq0xQ0bWw0e4gqgQyq4b8m3jZ5M="
 
 
 def set_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
@@ -31,6 +32,7 @@ def prod_env(monkeypatch: pytest.MonkeyPatch) -> None:
         app__env="prod",
         security__jwt_secret=STRONG_SECRET,
         security__admin_password_hash=ARGON2_HASH,
+        security__encryption_keys=FERNET_KEY,
         db__password="a-real-db-password",
     )
 
@@ -251,6 +253,7 @@ class TestProductionSafety:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         set_env(monkeypatch, app__env="prod")
+        monkeypatch.delenv("VISION_HUB_DB__URL")  # use the composed PostgreSQL URL
 
         with pytest.raises(ValidationError) as exc_info:
             Settings()
@@ -258,7 +261,7 @@ class TestProductionSafety:
         message = str(exc_info.value)
         for variable in (
             env_name("security", "jwt_secret"),
-            env_name("security", "admin_password_hash"),
+            env_name("security", "encryption_keys"),
             env_name("db", "password"),
         ):
             assert variable in message

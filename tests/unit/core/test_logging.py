@@ -106,7 +106,11 @@ class TestFormatSelection:
     def test_auto_uses_json_in_production(self) -> None:
         settings = Settings(
             app=AppConfig(env=Environment.PROD),
-            security=SecurityConfig(jwt_secret="s" * 48, admin_password_hash=ARGON2_HASH),  # type: ignore[arg-type]
+            security=SecurityConfig(
+                jwt_secret="s" * 48,  # type: ignore[arg-type]
+                admin_password_hash=ARGON2_HASH,  # type: ignore[arg-type]
+                encryption_keys=["kU0A8Pr2nZ1u4q9iYq0xQ0bWw0e4gqgQyq4b8m3jZ5M="],  # type: ignore[list-item]
+            ),
             db=DatabaseConfig(password="db-password"),  # type: ignore[arg-type]
         )
 
