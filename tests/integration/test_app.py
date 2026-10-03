@@ -60,6 +60,7 @@ async def test_lifespan_logs_startup_and_shutdown(
         "startup",
         "no_admin_configured",
         "container_started",
+        "container_stopping",
         "container_stopped",
         "shutdown",
     ]

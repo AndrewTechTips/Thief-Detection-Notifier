@@ -166,8 +166,10 @@ class StorageConfig(_Group):
 
 
 class VisionConfig(_Group):
-    """Defaults for motion detection; each device can override them (Phase 2)."""
+    """Camera fleet and motion detection defaults; each device can override detection."""
 
+    devices_file: Path | None = None  # TOML fleet definition; None runs no cameras
+    lock_file: Path = Path("data/vision-hub.lock")  # ensures one process owns the cameras
     target_fps: float = Field(default=10.0, gt=0, le=60)
     # Fraction of the frame a moving region must cover; resolution-independent.
     min_motion_area: float = Field(default=0.01, gt=0, lt=1)
@@ -176,6 +178,7 @@ class VisionConfig(_Group):
     motion_end_grace_seconds: float = Field(default=2.0, ge=0)
     alert_cooldown_seconds: float = Field(default=60.0, ge=0)
     stream_jpeg_quality: int = Field(default=70, ge=1, le=100)
+    stream_max_width: int = Field(default=960, ge=160, le=3840)
 
     @field_validator("blur_kernel_size")
     @classmethod

@@ -1,0 +1,60 @@
+# Camera fleet for the IoT Vision Hub.
+# Copy to devices.toml and point VISION_HUB_VISION__DEVICES_FILE at it.
+#
+# Each [[devices]] entry needs a unique `id` (lowercase letters, digits, dashes), a `name`, and a
+# [devices.source] table whose `kind` is one of: synthetic, webcam, rtsp, video_file.
+# Optional [devices.detection] keys override the VISION_HUB_VISION__* defaults for that camera.
+#
+# Keep this file private if it contains camera passwords (chmod 600). Phase 3 moves device
+# credentials into the database, encrypted.
+
+# Two simulated cameras: no hardware needed, a figure walks through every 20 s.
+[[devices]]
+id = "demo-porch"
+name = "Demo porch"
+
+[devices.source]
+kind = "synthetic"
+seed = 1
+
+[[devices]]
+id = "demo-garage"
+name = "Demo garage"
+target_fps = 5
+
+[devices.source]
+kind = "synthetic"
+visit_every_seconds = 30
+visit_seconds = 8
+
+[devices.detection]
+min_motion_area = 0.005
+motion_end_grace_seconds = 3.0
+
+# A network camera (disabled until you fill in the details).
+[[devices]]
+id = "driveway"
+name = "Driveway"
+enabled = false
+
+[devices.source]
+kind = "rtsp"
+url = "rtsp://192.168.1.20:554/stream1"
+username = "viewer"
+password = "change-me"
+
+[devices.detection]
+# Only watch the lower half of the frame (normalised x, y points).
+roi = [[[0.0, 0.5], [1.0, 0.5], [1.0, 1.0], [0.0, 1.0]]]
+
+# The machine's built-in or USB camera (disabled: opening it may prompt for permission).
+[[devices]]
+id = "desk"
+name = "Desk webcam"
+enabled = false
+
+[devices.source]
+kind = "webcam"
+index = 0
+width = 1280
+height = 720
