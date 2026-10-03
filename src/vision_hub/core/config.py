@@ -56,6 +56,7 @@ class AppConfig(_Group):
     env: Environment = Environment.DEV
     debug: bool = False
     log_level: LogLevel = "INFO"
+    log_format: Literal["auto", "console", "json"] = "auto"  # auto: json in prod, console otherwise
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
 
@@ -182,6 +183,12 @@ class Settings(BaseSettings):
     @property
     def is_prod(self) -> bool:
         return self.app.env is Environment.PROD
+
+    @property
+    def log_as_json(self) -> bool:
+        if self.app.log_format == "auto":
+            return self.is_prod
+        return self.app.log_format == "json"
 
     @model_validator(mode="after")
     def _enforce_production_safety(self) -> Self:
