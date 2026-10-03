@@ -75,7 +75,8 @@ Thief-Detection-Notifier/
 ├── images/          # Temporary intruder snapshots (auto-deleted after email)
 ├── main.py          # Motion detection loop & OpenCV pipeline
 ├── emailing.py      # Email builder & Gmail SMTP sender
-├── requirements.txt
+├── pyproject.toml   # Project metadata & dependencies (managed by uv)
+├── uv.lock
 └── README.md
 ```
 
@@ -89,9 +90,9 @@ Thief-Detection-Notifier/
     cd Thief-Detection-Notifier
     ```
 
-2. **Install dependencies:**
+2. **Install dependencies** (requires [uv](https://docs.astral.sh/uv/)):
     ```bash
-    pip install -r requirements.txt
+    uv sync --group legacy
     ```
 
 3. **Set your credentials as environment variables:**
@@ -103,7 +104,7 @@ Thief-Detection-Notifier/
 
 4. **Run the system:**
     ```bash
-    python main.py
+    uv run --group legacy python main.py
     ```
     Press **`q`** to stop the camera feed safely.
 

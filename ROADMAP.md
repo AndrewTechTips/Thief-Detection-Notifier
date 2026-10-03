@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 1 — Backend Foundation & Security
 - **Working branch:** `feat/vision-hub`
-- **Next task:** 1.1 Project tooling → "Install `uv` and initialise `pyproject.toml`"
+- **Next task:** 1.2 Configuration & environment → "`core/config.py`: `Settings(BaseSettings)`"
 - **Legacy code:** `main.py` + `emailing.py` stay runnable until Phase 2 exit criteria are met, then move to `legacy/`.
 
 ---
@@ -104,15 +104,15 @@
 - [x] Document the legacy behaviour and its known defects (*Appendix A*)
 
 ### 1.1 Project tooling
-- [ ] Install `uv` and initialise `pyproject.toml` with `uv init --package` (name `vision-hub`, `requires-python = ">=3.14"`)
-- [ ] Add runtime deps: `fastapi`, `uvicorn[standard]`, `pydantic>=2`, `pydantic-settings`, `structlog`
-- [ ] Add dev deps: `ruff`, `mypy`, `pytest`, `pytest-asyncio`, `httpx`, `pre-commit`, `pytest-cov`
-- [ ] Adopt `src/` layout (`src/vision_hub/`) as described in *Target Layout*
-- [ ] Configure `ruff` (lint rules incl. `I`, `UP`, `B`, `S`, `ASYNC`, `PT`; formatter on)
-- [ ] Configure `mypy --strict` with the Pydantic plugin
-- [ ] Configure `pytest` (`asyncio_mode = "auto"`, `tests/` path, coverage threshold)
-- [ ] Add `.pre-commit-config.yaml` (ruff, ruff-format, mypy, end-of-file, detect-private-key)
-- [ ] Replace `requirements.txt` with `uv.lock` (keep an exported copy only while the legacy script needs it)
+- [x] Install `uv` and initialise `pyproject.toml` with `uv init --package` (name `vision-hub`, `requires-python = ">=3.14"`)
+- [x] Add runtime deps: `fastapi`, `uvicorn[standard]`, `pydantic>=2`, `pydantic-settings`, `structlog`
+- [x] Add dev deps: `ruff`, `mypy`, `pytest`, `pytest-asyncio`, `httpx`, `pre-commit`, `pytest-cov`
+- [x] Adopt `src/` layout (`src/vision_hub/`) as described in *Target Layout*
+- [x] Configure `ruff` (lint rules incl. `I`, `UP`, `B`, `S`, `ASYNC`, `PT`; formatter on)
+- [x] Configure `mypy --strict` with the Pydantic plugin
+- [x] Configure `pytest` (`asyncio_mode = "auto"`, `--import-mode=importlib`, warnings as errors, 85 % coverage gate)
+- [x] Add `.pre-commit-config.yaml` (ruff/mypy as local `uv run` hooks, `uv lock --check`, large-file guard, detect-private-key)
+- [x] Replace `requirements.txt` with `uv.lock`; legacy deps live in the opt-in `legacy` group (`uv run --group legacy python main.py`)
 
 ### 1.2 Configuration & environment
 - [ ] `core/config.py`: `Settings(BaseSettings)` with nested groups (`app`, `security`, `smtp`, `db`, `storage`, `vision`)

@@ -1,0 +1,114 @@
+[project]
+name = "vision-hub"
+version = "0.1.0"
+description = "Asynchronous IoT Vision Hub: real-time motion detection, alerts and live camera streams over FastAPI."
+authors = [
+    { name = "AndrewTechTips", email = "andreww.steel69@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.142.2",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "structlog>=26.1.0",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.22,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "mypy>=2.4.0",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.10",
+]
+# Original OpenCV script (main.py / emailing.py): `uv run --group legacy python main.py`
+legacy = [
+    "numpy==2.4.4",
+    "opencv-python==4.13.0.92",
+]
+
+# ── Ruff ────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+src = ["src", "tests"]
+# Legacy script is frozen until it moves to legacy/ in Phase 2
+extend-exclude = ["main.py", "emailing.py", "legacy"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "N",        # pep8-naming
+    "UP",       # pyupgrade
+    "B",        # flake8-bugbear
+    "A",        # flake8-builtins
+    "C4",       # flake8-comprehensions
+    "SIM",      # flake8-simplify
+    "S",        # flake8-bandit (security)
+    "ASYNC",    # flake8-async (blocking calls in async code)
+    "PT",       # flake8-pytest-style
+    "RET",      # flake8-return
+    "PTH",      # prefer pathlib
+    "T20",      # no print()
+    "FAST",     # FastAPI-specific rules
+    "RUF",      # ruff-specific
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]  # assert is the point of tests
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependency markers are safe as default arguments
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Header"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+# ── Mypy ────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.14"
+strict = true
+files = ["src", "tests"]
+plugins = ["pydantic.mypy"]
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# ── Pytest / Coverage ───────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--import-mode=importlib",
+    "--cov=vision_hub",
+    "--cov-report=term-missing",
+]
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+branch = true
+source = ["vision_hub"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "@overload"]
