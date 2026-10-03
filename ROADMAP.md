@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 1 — Backend Foundation & Security
 - **Working branch:** `main`
-- **Next task:** 1.5 Security baseline → "`core/security.py`: Argon2 password hashing, JWT encode/decode"
+- **Next task:** 1.6 Testing & CI → "GitHub Actions: `uv sync --frozen` → ruff → mypy → pytest with coverage"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -39,7 +39,7 @@
 | AD-9 | Internal messaging | `EventBus` port with an **in-memory** implementation only (asyncio fan-out, bounded per-subscriber queues). Redis is deferred to *Future* | Zero extra infrastructure for the MVP; the port keeps a later swap cheap. |
 | AD-10 | Real-time transport | **WebSocket** for alerts/state (JSON envelopes, discriminated unions); **MJPEG** over HTTP for live video (WS binary frames as an option) | MJPEG works in a plain `<img>` tag and is cheap; WebRTC is a possible later upgrade. |
 | AD-11 | Back-pressure | Frames: **latest-frame-wins** (drop stale frames per client). Events: **never dropped** — persisted to the DB *before* publishing, replayable with a cursor | Slow clients can't stall cameras or the loop; the in-memory bus isn't the system of record. |
-| AD-12 | Auth | **Users:** OAuth2 password flow → short-lived JWT (+ refresh), Argon2 hashing. **WebSockets:** short-lived single-use ticket (in-memory TTL store), never long-lived tokens in URLs. **Cameras:** no inbound auth (pull model); their source credentials are stored as secrets and never returned by the API | Matches the pull model — only humans call the hub. |
+| AD-12 | Auth | **Users:** OAuth2 password flow → short-lived JWT (+ rotating refresh tokens with reuse detection), Argon2id hashing (verified off the event loop). **Rate limiting:** `limits` library behind an injected `RateLimiter`, in memory. **WebSockets:** short-lived single-use ticket (in-memory TTL store), never long-lived tokens in URLs. **Cameras:** no inbound auth (pull model); their source credentials are stored as secrets and never returned by the API | Matches the pull model — only humans call the hub. |
 | AD-13 | Database | **PostgreSQL 17** + **SQLAlchemy 2.0 async** (`asyncpg`) + **Alembic**; SQLite (`aiosqlite`) only for fast unit tests | Relational device/event/user model; `JSONB` for flexible detection metadata; mature async story. |
 | AD-14 | Snapshot storage | `SnapshotStore` port with a **local filesystem** implementation (`data/snapshots/`). DB stores metadata + relative path only. JPEG (q≈85), not PNG. S3/MinIO deferred to *Future* | Blobs out of the DB; ~10× smaller files than the current 2 MB PNGs; no extra infra. |
 | AD-15 | Notifications | `Notifier` port: **async SMTP (`aiosmtplib`)** first, webhook/Telegram later; dispatched by an in-process background task with retries; DB-backed outbox in Phase 3 | Replaces the fire-and-forget thread + bare `except`. |
@@ -141,15 +141,16 @@
 - [x] OpenAPI metadata (title, version, summary, tags, readable operation IDs, errors documented as problem+json); docs hidden in prod unless `APP__DOCS_ENABLED=true`
 
 ### 1.5 Security baseline
-- [ ] `core/security.py`: Argon2 password hashing (`pwdlib[argon2]`), JWT encode/decode (`pyjwt`)
-- [ ] `POST /api/v1/auth/token` — OAuth2 password flow; bootstrap a single admin from settings (hashed password in env) until Phase 3 adds a users table
-- [ ] Short access-token TTL (15 min) + refresh token; `iss`/`aud`/`exp` validated
-- [ ] `CurrentUser` dependency; protect every non-health route by default (router-level dependency)
-- [ ] Role model: `admin` (manage devices/config) and `viewer` (read + live view)
-- [ ] CORS with explicit allow-list from settings (no `*` with credentials)
-- [ ] `TrustedHostMiddleware` + security headers (HSTS in prod, `X-Content-Type-Options`, `Referrer-Policy`, CSP for future dashboard)
-- [ ] Rate limiting on `/auth/token` (`slowapi` with in-memory storage)
-- [ ] Never log secrets/tokens; add a structlog processor that redacts known keys
+- [x] `core/security.py`: Argon2id password hashing (`pwdlib[argon2]`, verified in a worker thread, constant-time for unknown users), JWT encode/decode (`pyjwt`, algorithm pinned, required claims)
+- [x] `POST /api/v1/auth/token` — OAuth2 password flow; bootstrap a single admin from settings (hashed password in env) until Phase 3 adds a users table
+- [x] Short access-token TTL (15 min) + refresh token; `iss`/`aud`/`exp`/`typ` validated; `POST /auth/refresh` rotates with reuse detection, `POST /auth/logout` revokes (in-memory store, persisted in Phase 3)
+- [x] `CurrentPrincipal` dependency; every non-public route protected by default (router-level dependency, enforced by a test); `GET /auth/me`
+- [x] Role model: `admin` (manage devices/config) and `viewer` (read + live view); `AdminPrincipal` / `require_role()` guards
+- [x] CORS with explicit allow-list from settings (credentials disabled: bearer tokens only)
+- [x] Trusted-host middleware (problem+json errors) + security headers (HSTS in prod, `nosniff`, `X-Frame-Options`, `Referrer-Policy`, strict CSP on API paths)
+- [x] Rate limiting on `/auth/token` and `/auth/refresh` per client IP (`limits` via an injected `RateLimiter`; replaced `slowapi`, whose module-global limiter conflicts with AD-4)
+- [x] Never log secrets/tokens; structlog processor redacts sensitive keys at any depth; query strings and HTTP-client URLs stay out of logs
+- [x] `vision-hub hash-password` CLI to generate the admin hash without echoing the password
 
 ### 1.6 Testing & CI
 - [ ] `tests/conftest.py`: settings override, app fixture, `httpx.AsyncClient` with `ASGITransport`
@@ -161,7 +162,7 @@
 **✅ Phase 1 exit criteria**
 - [ ] `docker compose up` serves `/api/v1/health/live` and Swagger UI (dev)
 - [ ] CI green: lint, strict types, tests ≥ 85 % coverage on `src/`
-- [ ] Protected routes reject unauthenticated requests
+- [x] Protected routes reject unauthenticated requests
 
 ---
 

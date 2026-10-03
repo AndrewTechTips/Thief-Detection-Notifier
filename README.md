@@ -77,6 +77,17 @@ All settings are environment variables prefixed with `VISION_HUB_`, with `__` se
 When `VISION_HUB_APP__ENV=prod`, the app refuses to start without an explicit JWT secret, admin
 password hash and database password, and rejects debug mode or wildcard CORS/hosts.
 
+### Running the server
+
+```bash
+uv run vision-hub hash-password   # prompts for an admin password, prints its Argon2 hash
+# put the hash in .env as VISION_HUB_SECURITY__ADMIN_PASSWORD_HASH='...'
+uv run vision-hub serve --reload  # http://localhost:8000/docs
+```
+
+In Swagger UI, use **Authorize** with the admin username and password to call protected
+endpoints. All routes except health probes and login require a bearer token.
+
 ### Quality checks
 
 ```bash

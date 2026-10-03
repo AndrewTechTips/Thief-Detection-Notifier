@@ -59,6 +59,7 @@ Every error (4xx and 5xx) is returned as `application/problem+json`:
 | `bad-request` | 400 | `BadRequestError` |
 | `invalid-cursor` | 400 | `InvalidCursorError` |
 | `unauthenticated` | 401 | `AuthenticationError` (adds `WWW-Authenticate: Bearer`) |
+| `rate-limited` | 429 | `RateLimitedError` (adds `Retry-After`) |
 | `permission-denied` | 403 | `PermissionDeniedError` |
 | `not-found` | 404 | `NotFoundError` |
 | `conflict` | 409 | `ConflictError` |
@@ -84,6 +85,23 @@ GET /api/v1/events?limit=50&cursor=eyJhZnRlcl9pZCI6NDJ9
 - `next_cursor` is **opaque**: pass it back unchanged; `null` means the last page.
 - A malformed cursor returns `400` with type `invalid-cursor`.
 - Routes declare `page: PageParamsDep` and return `Page[ItemSchema]`.
+
+## Authentication and authorisation
+
+- **Secure by default:** every route requires a bearer token unless it is listed in
+  `PUBLIC_PATHS` (`api/v1/router.py`). New routers go on `protected_router`; a test fails if a
+  non-public route is reachable without authentication.
+- Clients log in with the **OAuth2 password flow**: `POST /api/v1/auth/token` with a
+  form-encoded `username` and `password`, which returns an access token (15 min) and a refresh
+  token (7 days). Send the access token as `Authorization: Bearer <token>`.
+- `POST /api/v1/auth/refresh` **rotates** tokens: the old refresh token stops working, and
+  presenting it again is rejected (and logged as possible theft). `POST /api/v1/auth/logout`
+  revokes a refresh token. Access tokens cannot be revoked; they simply expire.
+- Login and refresh are **rate-limited per client IP** (`VISION_HUB_SECURITY__AUTH_RATE_LIMIT`,
+  default `5/minute`); exceeding it returns `429` with `Retry-After`.
+- Roles: `viewer` (read, live view) < `admin` (manage). Guard a route with
+  `principal: AdminPrincipal` or `Depends(require_role(Role.VIEWER))`; a too-low role gets `403`.
+- Auth responses send `Cache-Control: no-store`. Tokens and passwords never appear in logs.
 
 ## Request tracing
 
