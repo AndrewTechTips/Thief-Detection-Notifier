@@ -25,8 +25,9 @@
 
 <br />
 
-> **Status:** the backend, camera engine, alerts and real-time delivery are done (Phases 1–2).
-> Next up: PostgreSQL persistence for event history (Phase 3), then a web dashboard (Phase 4).
+> **Status:** the backend, camera engine, alerts and real-time delivery are done (Phases 1–2), and
+> devices, users and sessions persist in PostgreSQL. Next up: event history with stored snapshots
+> (rest of Phase 3), then a web dashboard (Phase 4).
 > Progress is tracked in [`ROADMAP.md`](ROADMAP.md). The project started life as a single
 > OpenCV script, *Thief Detection Notifier*.
 
@@ -39,7 +40,8 @@
 - **Email alerts:** the annotated snapshot sent inline and as an attachment, with per-camera cooldowns and retries
 - **Real time:** WebSocket alerts with per-camera subscriptions, and MJPEG live streams that work in a plain `<img>` tag
 - **Device API:** add, update, start and stop cameras, hot-reload detection settings, and test a source before saving it
-- **Secure by default:** JWT with rotating refresh tokens, roles, rate-limited login, single-use stream tickets, write-only camera passwords, security headers, and strict production config checks
+- **Persistent:** PostgreSQL via async SQLAlchemy and Alembic migrations (applied on startup); camera passwords encrypted at rest with rotatable keys
+- **Secure by default:** JWT with rotating refresh tokens (reuse detection survives restarts), roles, rate-limited login, single-use stream tickets, write-only camera passwords, security headers, and strict production config checks
 
 <p align="center">
   <img src="docs/assets/alert-snapshot.jpg" width="480" alt="Annotated snapshot attached to an alert email" /><br />
@@ -80,7 +82,7 @@ src/vision_hub/
 ├── services/   # Application logic: auth, devices, health, notifications
 ├── vision/     # Frame sources, motion detector, tracker, camera workers
 ├── realtime/   # WebSocket connections and MJPEG streaming
-└── infra/      # Adapters: event bus, notifiers, auth stores, rate limiting
+└── infra/      # Adapters: database, event bus, notifiers, auth stores, rate limiting
 ```
 
 Design decisions are recorded in [`ROADMAP.md`](ROADMAP.md#-architecture-decisions), and the
@@ -91,22 +93,33 @@ rules every endpoint follows (errors, pagination, auth, real time) in
 
 ## 🚀 Quick Start
 
-**Requirements:** [uv](https://docs.astral.sh/uv/). It installs Python 3.14 automatically if needed.
+**The whole stack with Docker** (hub + PostgreSQL):
 
 ```bash
 git clone https://github.com/AndrewTechTips/Thief-Detection-Notifier.git
 cd Thief-Detection-Notifier
+docker compose up --build --wait
+docker compose exec api vision-hub create-user admin --role admin
+```
+
+**For development** you need [uv](https://docs.astral.sh/uv/), which installs Python 3.14 if
+needed, and a PostgreSQL database:
+
+```bash
+docker run -d --name vision-hub-db -p 127.0.0.1:5432:5432 \
+  -e POSTGRES_USER=vision_hub -e POSTGRES_PASSWORD=vision_hub -e POSTGRES_DB=vision_hub \
+  postgres:17-alpine
 uv sync
-cp .env.example .env
-uv run vision-hub hash-password   # paste the hash into .env as VISION_HUB_SECURITY__ADMIN_PASSWORD_HASH='...'
+uv run vision-hub create-user admin --role admin    # migrates the database, prompts for a password
 VISION_HUB_VISION__DEVICES_FILE=devices.example.toml uv run vision-hub serve
 ```
 
 Open **http://localhost:8000/docs**, click **Authorize** and log in as `admin`. Two simulated
-cameras are running, and a figure walks past each of them every 20–30 seconds.
+cameras are running, and a figure walks past each of them every 20–30 seconds. Devices from the
+file are added to the database on first start; after that, the database is the source of truth.
 
-Or with Docker (`docker compose up --build`). The image runs as a non-root user on a read-only
-filesystem, has a built-in health check, and persists data in the `hub-data` volume.
+The image runs as a non-root user on a read-only filesystem, has a built-in health check, and
+keeps its data in the `hub-data` and `pg-data` volumes.
 
 ---
 
@@ -161,9 +174,16 @@ groups (for example `VISION_HUB_SMTP__PASSWORD`). Every option is documented in
 without an explicit JWT secret, admin password hash and database password, and rejects debug
 mode, wildcard CORS/hosts and unencrypted SMTP.
 
-- **Cameras** are defined in a TOML file ([`devices.example.toml`](devices.example.toml)) and
-  can be changed at runtime through the API. A real `devices.toml` may contain camera passwords,
-  so it is git-ignored and should be mounted into containers, not baked into images.
+- **Cameras** live in the database and are managed through the API. A TOML file
+  ([`devices.example.toml`](devices.example.toml)) can seed devices the database does not have yet.
+  A real `devices.toml` may contain camera passwords, so it is git-ignored and should be mounted
+  into containers, not baked into images.
+- **Users** are managed with `vision-hub create-user NAME --role admin|viewer`, which also resets
+  passwords. `VISION_HUB_SECURITY__ADMIN_PASSWORD_HASH` creates the admin on first start instead.
+- **Encryption at rest:** set `VISION_HUB_SECURITY__ENCRYPTION_KEYS` in production; outside
+  production a key file is generated once in `data/`. Back it up, or stored camera passwords
+  cannot be decrypted.
+- **Migrations** run on startup. For schema work: `uv run alembic revision --autogenerate -m "..."`.
 - **Email alerts** need `VISION_HUB_SMTP__ENABLED=true` plus a server; Gmail with an App
   Password works.
 - **Sensitivity** is set per camera: `min_motion_area` (fraction of the frame),
@@ -176,14 +196,16 @@ mode, wildcard CORS/hosts and unencrypted SMTP.
 ```bash
 uv run ruff check && uv run ruff format --check   # lint and format
 uv run mypy                                       # strict type checking
-uv run pytest                                     # 530+ tests, 100 % branch coverage
+uv run pytest                                     # 570+ tests, ~100 % branch coverage
+VISION_HUB_TEST_POSTGRES_URL=postgresql+asyncpg://vision_hub:vision_hub@localhost:5432/test \
+  uv run pytest tests/integration/db              # repositories against PostgreSQL too
 LOAD_SMOKE_SECONDS=60 uv run pytest tests/load -s # longer load soak
 ```
 
 The load smoke test runs a real server with 5 cameras, 20 WebSocket clients, 2 MJPEG viewers
 and steady API traffic. Over 30 seconds on a laptop, event-loop lag stayed at p99 2 ms, the API
 answered at p95 6.5 ms, and every client received every motion event. GitHub Actions runs all
-checks plus a Docker build and smoke test on every push.
+checks (with a PostgreSQL service) plus the full Docker Compose stack on every push.
 
 ---
 

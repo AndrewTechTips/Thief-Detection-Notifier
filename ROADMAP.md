@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 3 — Persistence & Optimization
 - **Working branch:** `main`
-- **Next task:** 3.1 Database → "Add `sqlalchemy[asyncio]`, `asyncpg`, `alembic`, `aiosqlite` (tests)"
+- **Next task:** 3.2 Snapshots & event history → "`LocalSnapshotStore` (date-partitioned dirs under `data/snapshots/`)"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -40,7 +40,7 @@
 | AD-10 | Real-time transport | **WebSocket** for alerts/state (JSON envelopes, discriminated unions); **MJPEG** over HTTP for live video (WS binary frames as an option) | MJPEG works in a plain `<img>` tag and is cheap; WebRTC is a possible later upgrade. |
 | AD-11 | Back-pressure | Frames: **latest-frame-wins** (drop stale frames per client). Events: **never dropped** — persisted to the DB *before* publishing, replayable with a cursor | Slow clients can't stall cameras or the loop; the in-memory bus isn't the system of record. |
 | AD-12 | Auth | **Users:** OAuth2 password flow → short-lived JWT (+ rotating refresh tokens with reuse detection), Argon2id hashing (verified off the event loop). **Rate limiting:** `limits` library behind an injected `RateLimiter`, in memory. **WebSockets:** short-lived single-use ticket (in-memory TTL store), never long-lived tokens in URLs. **Cameras:** no inbound auth (pull model); their source credentials are stored as secrets and never returned by the API | Matches the pull model — only humans call the hub. |
-| AD-13 | Database | **PostgreSQL 17** + **SQLAlchemy 2.0 async** (`asyncpg`) + **Alembic**; SQLite (`aiosqlite`) only for fast unit tests | Relational device/event/user model; `JSONB` for flexible detection metadata; mature async story. |
+| AD-13 | Database | **PostgreSQL 17** + **SQLAlchemy 2.1 async** (`asyncpg`) + **Alembic** (migrations on startup); SQLite (`aiosqlite`) only for tests. Secrets encrypted at rest (`MultiFernet`) | Relational device/event/user model; `JSONB` for flexible detection metadata; mature async story. |
 | AD-14 | Snapshot storage | `SnapshotStore` port with a **local filesystem** implementation (`data/snapshots/`). DB stores metadata + relative path only. JPEG (q≈85), not PNG. S3/MinIO deferred to *Future* | Blobs out of the DB; ~10× smaller files than the current 2 MB PNGs; no extra infra. |
 | AD-15 | Notifications | `Notifier` port: **async SMTP (`aiosmtplib`)** first, webhook/Telegram later; dispatched by an in-process background task with retries; DB-backed outbox in Phase 3 | Replaces the fire-and-forget thread + bare `except`. |
 | AD-16 | Quality gates | **ruff** (lint + format, replaces black), **mypy --strict**, **pytest** + `pytest-asyncio`, `httpx2.AsyncClient` + `asgi-lifespan`, **pre-commit**, GitHub Actions | |
@@ -249,18 +249,18 @@
 **Goal:** durable storage for devices, events, users and snapshots; harden and optimise the single-node hub.
 
 ### 3.1 Database
-- [ ] Add `sqlalchemy[asyncio]`, `asyncpg`, `alembic`, `aiosqlite` (tests)
-- [ ] `infra/db/session.py`: async engine + `async_sessionmaker`; session-per-request dependency
-- [ ] ORM models (typed `Mapped[...]`): `users`, `devices`, `motion_events`, `snapshots`, `notifications`, `audit_log`
-- [ ] Encrypt stored source credentials at rest (Fernet key from settings)
-- [ ] Indexes: `motion_events (device_id, started_at DESC)`; `JSONB` for detection metadata (boxes, areas)
-- [ ] Alembic setup with async env; first migration; `alembic upgrade head` on container start
-- [ ] SQL repositories implementing the Phase 2 ports; swap in via the container
-- [ ] Move users from env bootstrap to DB (+ `create-admin` CLI command)
-- [ ] Add `postgres` service (with volume + healthcheck) to `docker-compose.yml`
-- [ ] Integration tests against real Postgres (Testcontainers or a compose service in CI)
+- [x] Add `sqlalchemy[asyncio]` (2.1), `asyncpg`, `alembic`, `cryptography`; `aiosqlite` (tests)
+- [x] `infra/db/engine.py`: async engine + `async_sessionmaker`; repositories open a short session per operation (services are long-lived singletons, so no per-request session dependency)
+- [x] ORM models (typed `Mapped[...]`, UTC-aware timestamps on every backend, `JSONB` on PostgreSQL): `users`, `devices`, `revoked_tokens`. Tables are added by the phase that uses them: `motion_events`/`snapshots` in 3.2, `notifications`/`audit_log` in 3.3
+- [x] Encrypt stored source credentials at rest (`MultiFernet` with rotatable `SECURITY__ENCRYPTION_KEYS`; required in prod, a `0600` key file outside prod)
+- [x] Alembic setup with async env (scripts ship in the package); first migration; upgrade on startup with DB wait/retry; a test fails if models and migrations drift
+- [x] SQL repositories implementing the ports (devices, users, atomic refresh-token revocation); swapped in via the container. The fleet file now seeds devices the database does not have
+- [x] Move users from env bootstrap to DB (`ADMIN_PASSWORD_HASH` creates the admin on first start; `vision-hub create-user NAME --role ...` creates or resets users)
+- [x] Add `postgres` service (with volume + healthcheck, no published port) to `docker-compose.yml`; the API waits for it
+- [x] Integration tests against real PostgreSQL (repository and migration tests run on SQLite and PostgreSQL; CI `postgres` service); CI Docker job runs the full compose stack and checks `/health/ready`
 
 ### 3.2 Snapshots & event history
+- [ ] `motion_events` and `snapshots` tables + migration; index `motion_events (device_id, started_at DESC)`; boxes/areas as JSON
 - [ ] `LocalSnapshotStore` (date-partitioned dirs under `data/snapshots/`), path-traversal-safe
 - [ ] Persist best frame + thumbnail per event; save metadata row
 - [ ] Persist each event to the DB *before* publishing it on the bus (DB is the system of record)
@@ -271,7 +271,8 @@
 - [ ] Optional: short MP4 clip per event (pre-roll + event) written by the worker
 
 ### 3.3 Reliability (single node)
-- [ ] Notification outbox: pending notifications stored in `notifications`; background loop dispatches and retries, surviving restarts
+- [ ] Notification outbox: `notifications` table + migration; pending notifications stored there; background loop dispatches and retries, surviving restarts
+- [ ] `audit_log` table: who changed which device or user, and when
 - [ ] Supervised background tasks (`asyncio.TaskGroup`) with structured error logging and restart policy
 - [ ] Graceful shutdown audit (drain WS, flush notifications, release cameras, close DB pool)
 - [ ] Startup recovery: mark devices offline, resume configured cameras, re-dispatch pending notifications
