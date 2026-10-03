@@ -16,9 +16,9 @@
 
 ## 📍 Current Status
 
-- **Active phase:** Phase 2 — IoT Engine & Real-Time
+- **Active phase:** Phase 3 — Persistence & Optimization
 - **Working branch:** `main`
-- **Next task:** 2.7 Tests & cleanup → "Load smoke test: 5 synthetic cameras + 20 WS clients" (then Phase 2 exit criteria)
+- **Next task:** 3.1 Database → "Add `sqlalchemy[asyncio]`, `asyncpg`, `alembic`, `aiosqlite` (tests)"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -233,13 +233,14 @@
 ### 2.7 Tests & cleanup
 - [x] Integration tests: WS client receives live device events; MJPEG endpoint yields valid JPEG parts (done in 2.6)
 - [x] Notification tests with a fake SMTP server (asyncio, in `tests/conftest.py`; done in 2.4)
-- [ ] Load smoke test: 5 synthetic cameras + 20 WS clients, event-loop lag stays < 50 ms
-- [ ] Update README with usage, API overview and screenshots
+- [x] Load smoke test (`tests/load`): real uvicorn, 5 synthetic cameras + 20 WS clients + 2 MJPEG viewers + API traffic; asserts loop lag p99 < 50 ms (measured 2 ms), API p95 < 100 ms (6.5 ms), every client gets every motion event; `LOAD_SMOKE_SECONDS` for soaks
+- [x] Update README with features, architecture diagram, quick start, API overview, browser real-time example and a real alert snapshot
+- [x] Rejected WebSocket handshakes are logged (`ws_rejected`) — found while testing from a real browser
 
 **✅ Phase 2 exit criteria**
-- [ ] Multiple mocked cameras run concurrently; API stays responsive under load
-- [ ] Live MJPEG feed and real-time WS alerts work from a browser
-- [ ] Email alert fires once per motion event (not per flicker)
+- [x] Multiple mocked cameras run concurrently; API stays responsive under load (load smoke test; 30 s soak: 50/50 events to all 20 clients)
+- [x] Live MJPEG feed and real-time WS alerts work from a browser (verified in a real browser: `<img>` stream, ticket → WebSocket, live statuses and motion events, ticket reuse refused)
+- [x] Email alert fires once per motion event (not per flicker) (tracker flicker regression tests, end-to-end SMTP test, live run: one email per event)
 
 ---
 

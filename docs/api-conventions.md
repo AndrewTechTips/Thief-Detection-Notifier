@@ -103,6 +103,24 @@ GET /api/v1/events?limit=50&cursor=eyJhZnRlcl9pZCI6NDJ9
   `principal: AdminPrincipal` or `Depends(require_role(Role.VIEWER))`; a too-low role gets `403`.
 - Auth responses send `Cache-Control: no-store`. Tokens and passwords never appear in logs.
 
+## Real time
+
+- **Tickets:** browsers cannot set headers on a WebSocket or an `<img>`, so they call
+  `POST /api/v1/auth/tickets` and pass the result as `?ticket=`. Tickets are single use and
+  expire after `VISION_HUB_SECURITY__TICKET_TTL_SECONDS` (30 s). Fetch one right before
+  connecting.
+- **`WS /api/v1/ws/events`:** every server message has `{type, v, ts, device_id?, data?}`.
+  `type` is one of `subscription`, `motion.started`, `motion.ended`, `device.status`, `ping`
+  or `error`. Clients send `{"type": "subscribe", "devices": [...] | null}`,
+  `{"type": "unsubscribe", "devices": [...]}` and `{"type": "pong"}`. New connections are
+  subscribed to every device. Images are not pushed over the socket; fetch snapshots over HTTP.
+- **Close codes:** `4401` missing/invalid ticket (before accept), `4408` idle (no client
+  message within `REALTIME__IDLE_TIMEOUT_SECONDS`; answer pings), `1013` client too slow to keep
+  up (reconnect), `1001` server shutting down, `1011` internal error.
+- **MJPEG:** `GET /api/v1/devices/{id}/stream` returns `multipart/x-mixed-replace` with one JPEG
+  per part, newest frame first and capped by `?fps=`. It accepts a bearer token or a ticket, and
+  ends when the camera stops.
+
 ## Request tracing
 
 - Every response carries an **`X-Request-ID`** header, also present in every log line and in
