@@ -16,9 +16,9 @@
 
 ## 📍 Current Status
 
-- **Active phase:** Phase 1 — Backend Foundation & Security
+- **Active phase:** Phase 1 — Backend Foundation & Security (all tasks done; waiting on the first CI run after push)
 - **Working branch:** `main`
-- **Next task:** 1.6 Testing & CI → "GitHub Actions: `uv sync --frozen` → ruff → mypy → pytest with coverage"
+- **Next task:** Push and confirm CI is green, then Phase 2.1 → "`domain/` models: `Device`, `SourceKind`, ..."
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -153,15 +153,16 @@
 - [x] `vision-hub hash-password` CLI to generate the admin hash without echoing the password
 
 ### 1.6 Testing & CI
-- [ ] `tests/conftest.py`: settings override, app fixture, `httpx.AsyncClient` with `ASGITransport`
-- [ ] Tests: health endpoints, settings validation, token issue/refresh/expiry, unauthorized access → 401/403
-- [ ] GitHub Actions: `uv sync --frozen` → ruff → mypy → pytest with coverage
-- [ ] `Dockerfile` (multi-stage, non-root user, `uv` install, healthcheck, `uvicorn --workers 1`)
-- [ ] `docker-compose.yml` with the `api` service (`postgres` added in Phase 3)
+- [x] `tests/conftest.py`: isolated env, settings factory, app fixture, `httpx2.AsyncClient` with `ASGITransport` + lifespan, in-memory JSON log capture
+- [x] Tests: health endpoints, settings validation, token issue/refresh/expiry, unauthorized access → 401/403 (244 tests, 100 % branch coverage)
+- [x] GitHub Actions: `uv lock --check` → `uv sync --frozen` → ruff → mypy → pytest with coverage, then Docker build + smoke test + non-root check; actions pinned to commit SHAs, read-only token; Dependabot for uv, actions and Docker
+- [x] `Dockerfile` (multi-stage, non-root user, `uv` install, healthcheck, single worker via `vision-hub serve`, graceful SIGTERM shutdown)
+- [x] `docker-compose.yml` with the `api` service (read-only root fs, dropped capabilities, data volume; `postgres` added in Phase 3)
+- [x] Health probes exempt from the trusted-host check (orchestrators probe with the container IP)
 
 **✅ Phase 1 exit criteria**
-- [ ] `docker compose up` serves `/api/v1/health/live` and Swagger UI (dev)
-- [ ] CI green: lint, strict types, tests ≥ 85 % coverage on `src/`
+- [x] `docker compose up` serves `/api/v1/health/live` and Swagger UI (dev)
+- [ ] CI green: lint, strict types, tests ≥ 85 % coverage on `src/` (passes locally with the workflow's exact commands; tick after the first GitHub run)
 - [x] Protected routes reject unauthenticated requests
 
 ---

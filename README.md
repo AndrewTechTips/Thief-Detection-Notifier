@@ -9,6 +9,10 @@
   </p>
 
   <p>
+    <a href="https://github.com/AndrewTechTips/Thief-Detection-Notifier/actions/workflows/ci.yml"><img src="https://github.com/AndrewTechTips/Thief-Detection-Notifier/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  </p>
+
+  <p>
     <img src="https://img.shields.io/badge/Python_3.14-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.14" />
     <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
     <img src="https://img.shields.io/badge/Pydantic_v2-E92063?style=for-the-badge&logo=pydantic&logoColor=white" alt="Pydantic v2" />
@@ -88,6 +92,16 @@ uv run vision-hub serve --reload  # http://localhost:8000/docs
 In Swagger UI, use **Authorize** with the admin username and password to call protected
 endpoints. All routes except health probes and login require a bearer token.
 
+### Running with Docker
+
+```bash
+docker compose up --build         # http://localhost:8000/docs
+```
+
+The image is multi-stage, runs as a non-root user on a read-only filesystem, and has a built-in
+health check. Configuration comes from `.env` (optional); snapshots persist in the `hub-data`
+volume.
+
 ### Quality checks
 
 ```bash
@@ -96,6 +110,9 @@ uv run ruff format         # format
 uv run mypy                # strict type checking
 uv run pytest              # tests + coverage (minimum 85 %)
 ```
+
+The same checks, plus a Docker build and smoke test, run in GitHub Actions on every push and pull
+request.
 
 ---
 
