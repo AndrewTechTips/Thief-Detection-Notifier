@@ -34,7 +34,7 @@
 ## ✨ Planned Features
 
 - **Multi-camera ingestion** — USB webcams, RTSP/HTTP IP cameras and video files, each on its own worker thread so the API never blocks
-- **Smarter motion detection** — adaptive background model, debounced events and best-frame selection
+- **Smarter motion detection** — adaptive background model, debounced events, ROI masks and best-frame selection
 - **Real-time delivery** — WebSocket alerts and MJPEG live streams
 - **Notifications** — email alerts with the evidence snapshot attached, with retries and per-camera cooldowns
 - **History** — events and snapshots stored in PostgreSQL and on disk, with a REST API to query them

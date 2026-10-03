@@ -16,9 +16,9 @@
 
 ## 📍 Current Status
 
-- **Active phase:** Phase 1 — Backend Foundation & Security (all tasks done; waiting on the first CI run after push)
+- **Active phase:** Phase 2 — IoT Engine & Real-Time
 - **Working branch:** `main`
-- **Next task:** Push and confirm CI is green, then Phase 2.1 → "`domain/` models: `Device`, `SourceKind`, ..."
+- **Next task:** 2.2 Frame sources → "`FrameSource` protocol: `open()`, `read()`, `close()`, `fps`, `resolution`"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -162,7 +162,7 @@
 
 **✅ Phase 1 exit criteria**
 - [x] `docker compose up` serves `/api/v1/health/live` and Swagger UI (dev)
-- [ ] CI green: lint, strict types, tests ≥ 85 % coverage on `src/` (passes locally with the workflow's exact commands; tick after the first GitHub run)
+- [x] CI green: lint, strict types, tests ≥ 85 % coverage on `src/` (first GitHub run on `4585699`: both jobs passed)
 - [x] Protected routes reject unauthenticated requests
 
 ---
@@ -172,15 +172,15 @@
 **Goal:** port the motion pipeline into testable, non-blocking components; pull from multiple (mocked) cameras; push alerts and live video over WebSockets/MJPEG.
 
 ### 2.1 Vision domain (pure, no I/O)
-- [ ] `domain/` models: `Device`, `SourceKind`, `DeviceStatus`, `MotionEvent`, `DetectionResult`, `BoundingBox`
-- [ ] `vision/detector.py`: `MotionDetector.process(frame) -> DetectionResult` (port of the legacy grayscale → blur → diff → threshold → dilate → contours chain)
-- [ ] Replace the frozen `first_frame` with an adaptive background (`cv2.createBackgroundSubtractorMOG2` or `accumulateWeighted`) — fixes false alarms from lighting drift
-- [ ] Per-device `DetectionConfig` (min contour area, blur kernel, threshold, ROI mask) as a Pydantic model
-- [ ] `vision/tracker.py`: event state machine `IDLE → ACTIVE → COOLDOWN` with hysteresis (motion must be absent for *N* s before the event closes) — fixes one walk-through producing many alerts
-- [ ] Best-frame selection by **largest contour area** (or sharpness score), not "middle of the first 150 frames"
-- [ ] Bounded pre-roll ring buffer (`collections.deque(maxlen=…)`) storing downscaled frames only
-- [ ] Draw annotations on a *copy* so the stored evidence frame stays clean (annotated version optional)
-- [ ] Unit tests with synthetic frames (moving rectangle, lighting change, sensor noise)
+- [x] `domain/` models: `Device`, `SourceKind`, `DeviceStatus`, `MotionEvent`, `DetectionResult`, `BoundingBox` (pure dataclasses, no numpy)
+- [x] `vision/detector.py`: `MotionDetector.process(frame) -> DetectionResult` (port of the legacy grayscale → blur → diff → threshold → dilate → contours chain), run on a 640 px copy with boxes scaled back (<1 ms/frame at 1080p)
+- [x] Replace the frozen `first_frame` with an adaptive background (`accumulateWeighted`) — fixes false alarms from lighting drift; sudden whole-scene changes reset the background; warm-up frames ignored
+- [x] Per-device `DetectionConfig` (min motion area as a **fraction of the frame**, blur kernel, threshold, normalised ROI polygons) as a frozen Pydantic model, defaults from settings
+- [x] `vision/tracker.py`: event state machine `IDLE → ARMING → ACTIVE → ENDING` with hysteresis on both edges (N consecutive motion frames to start; quiet for the grace period to end) and a max event duration — fixes one walk-through producing many alerts. Alert throttling moved to the notification layer (2.4) so no real event is ever dropped
+- [x] Best-frame selection by **largest moving area**, keeping one frame copy in memory instead of 150
+- [x] Bounded pre-roll ring buffer (`collections.deque(maxlen=…)`) storing downscaled frames only
+- [x] Draw annotations on a *copy* so the stored evidence frame stays clean (annotated version optional)
+- [x] Unit tests with synthetic frames (moving objects, lighting drift vs. frozen background, sudden light change, sensor noise, ROI, 1080p scaling)
 
 ### 2.2 Frame sources (pull)
 - [ ] `FrameSource` protocol: `open()`, `read() -> Frame | None`, `close()`, `fps`, `resolution`
