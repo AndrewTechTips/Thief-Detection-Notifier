@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 1 — Backend Foundation & Security
 - **Working branch:** `main`
-- **Next task:** 1.3 Application core → "`main.py`: `create_app()` factory"
+- **Next task:** 1.4 Routing & API conventions → "Versioned router mounted at `/api/v1`"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -31,7 +31,7 @@
 | AD-1 | Language / runtime | **Python 3.14**, `uv` for env + lockfile, `pyproject.toml` (PEP 621) | Already the local interpreter; stdlib `uuid.uuid7()`; `uv.lock` gives reproducible installs. |
 | AD-2 | Web framework | **FastAPI** + **Uvicorn**, app factory + `lifespan` | Async-native, Pydantic v2 integration, first-class WebSockets. |
 | AD-3 | Validation / config | **Pydantic v2** models, **pydantic-settings** (`.env`, `SecretStr`) | Typed config, secrets never logged. |
-| AD-4 | Dependency injection | FastAPI `Depends` with `Annotated[...]` aliases; services built once in `lifespan` and held in a typed container on `app.state` | No module-level globals; trivially overridable in tests. |
+| AD-4 | Dependency injection | FastAPI `Depends` with `Annotated[...]` aliases; services built once in `lifespan` and exposed through typed lifespan state (`request.state.container`) | No module-level globals; trivially overridable in tests. |
 | AD-5 | Layering | `api` → `services` → `domain` (pure) ← `infra` adapters, via `typing.Protocol` ports | Business logic testable without FastAPI, camera hardware, SMTP or a DB. |
 | AD-6 | Ingestion model | **Pull**: the hub opens each video source (USB webcam, RTSP/HTTP IP camera, video file, synthetic) and runs detection locally | Cameras stay dumb; no edge agents to deploy or authenticate. |
 | AD-7 | OpenCV concurrency | **One dedicated thread per camera** (OpenCV releases the GIL in its C++ calls) bridged to asyncio with `loop.call_soon_threadsafe` | Never blocks the event loop; a long-lived thread keeps the capture device open. |
@@ -43,7 +43,7 @@
 | AD-13 | Database | **PostgreSQL 17** + **SQLAlchemy 2.0 async** (`asyncpg`) + **Alembic**; SQLite (`aiosqlite`) only for fast unit tests | Relational device/event/user model; `JSONB` for flexible detection metadata; mature async story. |
 | AD-14 | Snapshot storage | `SnapshotStore` port with a **local filesystem** implementation (`data/snapshots/`). DB stores metadata + relative path only. JPEG (q≈85), not PNG. S3/MinIO deferred to *Future* | Blobs out of the DB; ~10× smaller files than the current 2 MB PNGs; no extra infra. |
 | AD-15 | Notifications | `Notifier` port: **async SMTP (`aiosmtplib`)** first, webhook/Telegram later; dispatched by an in-process background task with retries; DB-backed outbox in Phase 3 | Replaces the fire-and-forget thread + bare `except`. |
-| AD-16 | Quality gates | **ruff** (lint + format, replaces black), **mypy --strict**, **pytest** + `pytest-asyncio`, `httpx.AsyncClient`, **pre-commit**, GitHub Actions | |
+| AD-16 | Quality gates | **ruff** (lint + format, replaces black), **mypy --strict**, **pytest** + `pytest-asyncio`, `httpx2.AsyncClient` + `asgi-lifespan`, **pre-commit**, GitHub Actions | |
 | AD-17 | Observability | **structlog** (JSON in prod), request-ID middleware, `/health/live` + `/health/ready`, Prometheus metrics (Phase 3) | |
 | AD-18 | Packaging / deploy | Multi-stage **Docker** image (`opencv-python-headless`), `docker compose` with **api + postgres** only | Headless OpenCV: no `imshow` on a server. Minimal moving parts. |
 
@@ -124,19 +124,20 @@
 - [x] SMTP credentials via `VISION_HUB_SMTP__USERNAME` / `VISION_HUB_SMTP__PASSWORD`; sender/recipients default to the username (legacy `EMAIL` / `PASSWORD` dropped)
 
 ### 1.3 Application core
-- [ ] `main.py`: `create_app(settings: Settings | None = None) -> FastAPI` factory
-- [ ] `lifespan` async context manager that builds and tears down the service container
-- [ ] `core/container.py`: typed `Container` dataclass stored on `app.state` (no module globals)
-- [ ] `api/deps.py`: `Annotated` aliases (`SettingsDep`, `ContainerDep`, ...)
-- [ ] `core/logging.py`: structlog config (console in dev, JSON in prod), stdlib + uvicorn log capture
-- [ ] Request-ID middleware (accept/propagate `X-Request-ID`, bind to log context)
-- [ ] `core/errors.py`: domain exception hierarchy + handlers returning RFC 9457 `application/problem+json`
+- [x] `main.py`: `create_app(settings: Settings | None = None) -> FastAPI` factory
+- [x] `lifespan` async context manager that builds and tears down the service container
+- [x] `core/container.py`: frozen `Container` dataclass passed via typed lifespan state (no module globals)
+- [x] `api/deps.py`: `Annotated` aliases (`SettingsDep`, `ContainerDep`), usable from HTTP and WebSocket routes
+- [x] `core/logging.py`: structlog config (console in dev, JSON in prod, `LOG_FORMAT` override), stdlib + uvicorn log capture; HTTP-client loggers quieted so URLs with tokens are not logged
+- [x] Request-ID middleware (pure ASGI; accept safe `X-Request-ID` or generate UUIDv7, bind to log context, one access-log line per request without query strings)
+- [x] `core/errors.py`: domain exception hierarchy + handlers returning RFC 9457 `application/problem+json`; unhandled exceptions → generic 500 with request ID; validation errors never echo input
+- [x] `vision-hub` CLI entrypoint (`--reload`; always a single Uvicorn worker, uvicorn logging routed through structlog)
 
 ### 1.4 Routing & API conventions
 - [ ] Versioned router mounted at `/api/v1`
 - [ ] `GET /api/v1/health/live` (process up) and `GET /api/v1/health/ready` (dependencies up)
 - [ ] Conventions doc in `docs/api-conventions.md`: plural nouns, cursor pagination envelope, UTC ISO-8601 timestamps, UUIDv7 ids, problem+json errors
-- [ ] Shared schemas: `Page[T]` generic, `ProblemDetail`, base model config (`from_attributes`, `extra="forbid"` on inputs)
+- [ ] Shared schemas: `Page[T]` generic, base model config (`from_attributes`, `extra="forbid"` on inputs) — `ProblemDetail` already done in 1.3
 - [ ] OpenAPI metadata (title, version, tags); disable `/docs` in prod via settings
 
 ### 1.5 Security baseline
