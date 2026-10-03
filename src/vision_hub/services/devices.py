@@ -14,7 +14,7 @@ from vision_hub.core.errors import (
 from vision_hub.core.logging import get_logger
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.motion import MotionEvent
-from vision_hub.vision.bridge import FramePacket
+from vision_hub.vision.bridge import FramePacket, LatestFrame
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.fleet import DeviceSpec
 from vision_hub.vision.manager import CameraManager
@@ -150,6 +150,16 @@ class DeviceService:
                 headers={"Retry-After": "1"},
             )
         return view.latest_frame
+
+    def is_running(self, device_id: str) -> bool:
+        return self._cameras.is_running(device_id)
+
+    async def live_frames(self, device_id: str) -> LatestFrame:
+        """Frames of a running camera, for live streaming."""
+        await self._require(device_id)
+        if not self._cameras.is_running(device_id):
+            raise ServiceUnavailableError(f"Camera '{device_id}' is not running.")
+        return self._cameras.frames(device_id)
 
     async def test_source(self, source: SourceConfig) -> ProbeResult:
         source = self._checked_source(source)

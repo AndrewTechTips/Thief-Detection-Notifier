@@ -7,8 +7,8 @@ from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from pydantic import SecretStr
 
-from vision_hub.api.deps import AdminPrincipal, get_current_principal
-from vision_hub.api.v1.router import PUBLIC_PATHS
+from vision_hub.api.deps import AdminPrincipal
+from vision_hub.api.v1.router import AUTH_DEPENDENCIES, PUBLIC_PATHS
 from vision_hub.core.config import SecurityConfig, Settings
 from vision_hub.core.errors import PROBLEM_JSON
 from vision_hub.core.security import TokenService, TokenType
@@ -237,7 +237,7 @@ def test_every_non_public_route_requires_authentication(app: FastAPI) -> None:
         if isinstance(route, APIRoute)
         and route.path.startswith("/api/v1")
         and route.path not in PUBLIC_PATHS
-        and get_current_principal not in dependency_calls(route)
+        and not set(AUTH_DEPENDENCIES) & dependency_calls(route)
     ]
 
     assert unprotected == []

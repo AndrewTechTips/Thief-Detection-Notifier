@@ -23,3 +23,8 @@ class RefreshRequest(RequestSchema):
 class PrincipalOut(ApiSchema):
     username: str
     role: Role
+
+
+class TicketOut(ApiSchema):
+    ticket: str = Field(description="Single use; pass as ?ticket= to a WebSocket or stream URL")
+    expires_in: int = Field(description="Seconds until the ticket expires")

@@ -128,6 +128,13 @@ class TestLifecycle:
         with pytest.raises(NotFoundError):
             await service.delete("porch")
 
+    async def test_reports_whether_a_camera_runs(self, service: DeviceService) -> None:
+        await service.start_enabled()
+
+        assert service.is_running("porch") is True
+        assert service.is_running("gate") is False
+        assert (await service.live_frames("porch")).latest is None
+
     async def test_start_and_stop_are_idempotent(
         self, service: DeviceService, factory: Factory
     ) -> None:

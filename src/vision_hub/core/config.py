@@ -87,6 +87,8 @@ class SecurityConfig(_Group):
     allowed_hosts: CsvStrList = Field(default_factory=lambda: ["localhost", "127.0.0.1"])
     # Per client IP, for login and token refresh. Syntax: "5/minute", "20/hour", "3 per 10 seconds"
     auth_rate_limit: str = "5/minute"
+    # Single-use tickets for WebSockets and MJPEG streams (browsers cannot send auth headers there)
+    ticket_ttl_seconds: float = Field(default=30.0, gt=0, le=300)
 
     @field_validator("auth_rate_limit")
     @classmethod
@@ -194,6 +196,14 @@ class VisionConfig(_Group):
         return value
 
 
+class RealtimeConfig(_Group):
+    ping_interval_seconds: float = Field(default=20.0, gt=0, le=300)
+    idle_timeout_seconds: float = Field(default=60.0, gt=0, le=3600)  # no client message -> close
+    client_queue_size: int = Field(default=64, ge=1, le=10_000)  # events a client may lag behind
+    send_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
+    stream_max_fps: float = Field(default=15.0, gt=0, le=60)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix=ENV_PREFIX,
@@ -212,6 +222,7 @@ class Settings(BaseSettings):
     db: DatabaseConfig = Field(default_factory=DatabaseConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     vision: VisionConfig = Field(default_factory=VisionConfig)
+    realtime: RealtimeConfig = Field(default_factory=RealtimeConfig)
 
     @property
     def is_prod(self) -> bool:

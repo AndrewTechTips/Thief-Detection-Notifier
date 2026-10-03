@@ -4,7 +4,7 @@
 from collections.abc import Callable
 from typing import Annotated, cast
 
-from fastapi import Depends
+from fastapi import Depends, Query
 from fastapi.security import OAuth2PasswordBearer
 from starlette.requests import HTTPConnection
 
@@ -76,6 +76,29 @@ async def get_current_principal(
 
 
 CurrentPrincipal = Annotated[Principal, Depends(get_current_principal)]
+
+
+async def get_ticket_or_bearer_principal(
+    connection: HTTPConnection,
+    container: ContainerDep,
+    token: Annotated[str | None, Depends(oauth2_scheme)],
+    ticket: Annotated[
+        str | None,
+        Query(max_length=128, description="Single-use ticket from POST /api/v1/auth/tickets"),
+    ] = None,
+) -> Principal:
+    """For endpoints browsers open without custom headers (``<img src>`` MJPEG streams)."""
+    if token:
+        principal = container.auth.authenticate(token)
+    elif ticket:
+        consumed = container.tickets.consume(ticket)
+        if consumed is None:
+            raise AuthenticationError("Ticket is invalid, expired or already used.")
+        principal = consumed
+    else:
+        raise AuthenticationError("Missing bearer token or ticket.")
+    connection.state.username = principal.username
+    return principal
 
 
 def require_role(role: Role) -> Callable[[Principal], Principal]:

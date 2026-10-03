@@ -1,11 +1,13 @@
 """Camera management. Reading needs any authenticated user; changes need the admin role."""
 
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Query, Response, status
+from fastapi.responses import StreamingResponse
 
-from vision_hub.api.deps import AdminOnly, DeviceServiceDep
+from vision_hub.api.deps import AdminOnly, DeviceServiceDep, SettingsDep
 from vision_hub.api.v1 import API_V1_PREFIX
+from vision_hub.realtime.mjpeg import MEDIA_TYPE, mjpeg_stream
 from vision_hub.schemas.devices import (
     DeviceCreate,
     DeviceOut,
@@ -153,4 +155,33 @@ async def snapshot(device_id: str, devices: DeviceServiceDep) -> Response:
             "Cache-Control": "no-store",
             "X-Captured-At": frame.captured_at.isoformat(),
         },
+    )
+
+
+# Mounted on the ticket-or-bearer router: <img src> cannot send an Authorization header.
+stream_router = APIRouter(prefix="/devices", tags=["devices"])
+
+
+@stream_router.get(
+    "/{device_id}/stream",
+    summary="Live MJPEG stream",
+    response_class=StreamingResponse,
+    responses={
+        200: {"content": {MEDIA_TYPE: {}}, "description": "One JPEG per multipart part"},
+        **_problems(401, 404, 503),
+    },
+)
+async def stream(
+    device_id: str,
+    devices: DeviceServiceDep,
+    settings: SettingsDep,
+    fps: Annotated[float | None, Query(gt=0, le=60, description="Frame rate cap")] = None,
+) -> StreamingResponse:
+    """Use directly as `<img src=".../stream?ticket=...">`. Ends when the camera stops."""
+    frames = await devices.live_frames(device_id)
+    max_fps = min(fps or settings.realtime.stream_max_fps, settings.realtime.stream_max_fps)
+    return StreamingResponse(
+        mjpeg_stream(frames, max_fps=max_fps, still_running=lambda: devices.is_running(device_id)),
+        media_type=MEDIA_TYPE,
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )

@@ -11,12 +11,17 @@ from vision_hub.core.security import PasswordHasher, TokenService
 from vision_hub.domain.events import CameraEvent, topic_for
 from vision_hub.domain.health import HealthCheck
 from vision_hub.domain.notifications import Notifier
-from vision_hub.infra.auth import InMemoryTokenRevocationStore, SettingsUserRepository
+from vision_hub.infra.auth import (
+    InMemoryTicketStore,
+    InMemoryTokenRevocationStore,
+    SettingsUserRepository,
+)
 from vision_hub.infra.bus.memory import InMemoryEventBus
 from vision_hub.infra.devices import InMemoryDeviceRepository
 from vision_hub.infra.notifiers.email import EmailNotifier
 from vision_hub.infra.process_lock import ProcessLock
 from vision_hub.infra.rate_limit import RateLimiter
+from vision_hub.realtime.connections import ConnectionManager
 from vision_hub.services.auth import AuthService
 from vision_hub.services.devices import DeviceService
 from vision_hub.services.notifications import NotificationService
@@ -43,6 +48,8 @@ class Container:
     bus: InMemoryEventBus[CameraEvent]
     notifications: NotificationService
     devices: DeviceService
+    tickets: InMemoryTicketStore
+    realtime: ConnectionManager
     health_checks: tuple[HealthCheck, ...] = ()
 
 
@@ -69,6 +76,8 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
 
         bus: InMemoryEventBus[CameraEvent] = InMemoryEventBus()
         stack.callback(bus.close)
+        realtime = ConnectionManager(bus, settings.realtime)
+        stack.callback(realtime.close_all)  # runs before bus.close: clients get 1001
         notifications = NotificationService(
             bus,
             _build_notifiers(settings),
@@ -105,6 +114,8 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
             bus=bus,
             notifications=notifications,
             devices=devices,
+            tickets=InMemoryTicketStore(settings.security.ticket_ttl_seconds),
+            realtime=realtime,
         )
         await devices.start_enabled()
 

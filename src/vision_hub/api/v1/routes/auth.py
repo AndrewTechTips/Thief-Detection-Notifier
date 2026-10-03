@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from vision_hub.api.deps import AuthServiceDep, ContainerDep, CurrentPrincipal
-from vision_hub.schemas.auth import PrincipalOut, RefreshRequest, TokenResponse
+from vision_hub.schemas.auth import PrincipalOut, RefreshRequest, TicketOut, TokenResponse
 from vision_hub.schemas.problem import ProblemDetail
 from vision_hub.services.auth import TokenPair
 
@@ -81,3 +81,13 @@ identity_router = APIRouter(prefix="/auth", tags=["auth"])
 @identity_router.get("/me", summary="Current user")
 async def me(principal: CurrentPrincipal) -> PrincipalOut:
     return PrincipalOut.model_validate(principal)
+
+
+@identity_router.post(
+    "/tickets", summary="Issue a stream ticket", dependencies=[Depends(_no_store)]
+)
+async def issue_ticket(principal: CurrentPrincipal, container: ContainerDep) -> TicketOut:
+    """Browsers cannot send an `Authorization` header when opening a WebSocket or an `<img>`
+    MJPEG stream; they pass this short-lived, single-use ticket as `?ticket=` instead."""
+    tickets = container.tickets
+    return TicketOut(ticket=tickets.issue(principal), expires_in=tickets.ttl_seconds)
