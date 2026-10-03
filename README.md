@@ -1,114 +1,89 @@
 <div align="center">
 
-  <h1>🚨 Thief Detection Notifier</h1>
+  <h1>🚨 IoT Vision Hub</h1>
 
   <p>
-    A real-time <strong>motion detection security system</strong> built with Python and OpenCV.<br />
-    When an intruder is detected, the system captures the best frame of the event
-    and sends it straight to your inbox — automatically.
+    An asynchronous <strong>camera monitoring hub</strong> built with FastAPI and OpenCV.<br />
+    It pulls video from your cameras, detects motion in real time, stores evidence snapshots,
+    and pushes alerts and live feeds to your devices.
   </p>
 
   <p>
-    <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
+    <img src="https://img.shields.io/badge/Python_3.14-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.14" />
+    <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
+    <img src="https://img.shields.io/badge/Pydantic_v2-E92063?style=for-the-badge&logo=pydantic&logoColor=white" alt="Pydantic v2" />
     <img src="https://img.shields.io/badge/OpenCV-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white" alt="OpenCV" />
-    <img src="https://img.shields.io/badge/Threading-✓-brightgreen?style=for-the-badge" alt="Threading" />
-    <img src="https://img.shields.io/badge/SMTP-Gmail-D14836?style=for-the-badge&logo=gmail&logoColor=white" alt="Gmail SMTP" />
+    <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL" />
+    <img src="https://img.shields.io/badge/uv-DE5FE9?style=for-the-badge&logo=uv&logoColor=white" alt="uv" />
   </p>
 
 </div>
 
 <br />
 
----
-
-## ✨ How It Works
-
-1. The webcam captures a live feed and establishes a **static background frame**
-2. Each new frame is compared to the background — significant pixel differences signal **motion**
-3. While motion is active, frames are stored **in RAM** (not disk) to avoid SSD wear
-4. The moment motion **stops**, the middle frame is picked as the clearest shot of the intruder
-5. That single image is saved to disk and **emailed as an attachment** on a background thread
-6. The image is **deleted from disk** after the email is sent
+> 🚧 **Work in progress.** This project is being rebuilt from a single OpenCV script
+> (*Thief Detection Notifier*) into a modular, async platform. Progress is tracked in
+> [`ROADMAP.md`](ROADMAP.md).
 
 ---
 
-## 🧠 Under the Hood
+## ✨ Planned Features
 
-### Motion Detection Pipeline
-Each frame goes through a preprocessing chain before comparison — grayscale → blur → diff → threshold → dilate → contours:
-
-```python
-gray_frame_gau = cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (21, 21), 0)
-delta_frame = cv2.absdiff(first_frame, gray_frame_gau)
-thresh_frame = cv2.threshold(delta_frame, 60, 255, cv2.THRESH_BINARY)[1]
-dil_frame = cv2.dilate(thresh_frame, None, iterations=2)
-contours, _ = cv2.findContours(dil_frame, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-```
-
-### Trigger on Motion Stop
-The alert fires only when motion **ends** — tracked via a 2-element status buffer. This avoids spamming emails during continuous movement:
-
-```python
-status_list = status_list[-2:]  # keep only last 2 states
-
-if status_list[0] == 1 and status_list[1] == 0:  # motion just stopped
-    best_frame = motion_frames[len(motion_frames) // 2]  # pick the middle frame
-    cv2.imwrite(image_path, best_frame)
-    Thread(target=send_email, args=(image_path,)).start()
-```
-
-### Non-Blocking Email
-The email is sent on a **daemon thread** so the camera feed never freezes while the SMTP connection is open:
-
-```python
-email_thread = Thread(target=send_email, args=(image_path,))
-email_thread.daemon = True
-email_thread.start()
-```
+- **Multi-camera ingestion** — USB webcams, RTSP/HTTP IP cameras and video files, each on its own worker thread so the API never blocks
+- **Smarter motion detection** — adaptive background model, debounced events and best-frame selection
+- **Real-time delivery** — WebSocket alerts and MJPEG live streams
+- **Notifications** — email alerts with the evidence snapshot attached, with retries and per-camera cooldowns
+- **History** — events and snapshots stored in PostgreSQL and on disk, with a REST API to query them
+- **Secure by default** — JWT auth, strict production config validation, secrets never logged
 
 ---
 
-## 📁 Project Structure
+## 🏗️ Architecture
 
 ```
-Thief-Detection-Notifier/
-├── images/          # Temporary intruder snapshots (auto-deleted after email)
-├── main.py          # Motion detection loop & OpenCV pipeline
-├── emailing.py      # Email builder & Gmail SMTP sender
-├── pyproject.toml   # Project metadata & dependencies (managed by uv)
-├── uv.lock
-└── README.md
+src/vision_hub/
+├── core/       # Configuration, logging, security, errors, service container
+├── api/        # FastAPI routers, dependencies, middleware
+├── schemas/    # Pydantic request/response and WebSocket models
+├── domain/     # Pure domain models and ports (Protocols)
+├── services/   # Application logic orchestrating the ports
+├── vision/     # Frame sources, motion detector, camera workers
+├── realtime/   # WebSocket connections and live frame broadcasting
+└── infra/      # Adapters: event bus, notifiers, storage, database
 ```
+
+Key design decisions are recorded in [`ROADMAP.md`](ROADMAP.md#-architecture-decisions).
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Development
 
-1. **Clone the repository:**
-    ```bash
-    git clone https://github.com/AndrewTechTips/Thief-Detection-Notifier.git
-    cd Thief-Detection-Notifier
-    ```
+**Requirements:** [uv](https://docs.astral.sh/uv/) (it installs Python 3.14 automatically if needed).
 
-2. **Install dependencies** (requires [uv](https://docs.astral.sh/uv/)):
-    ```bash
-    uv sync --group legacy
-    ```
+```bash
+git clone https://github.com/AndrewTechTips/Thief-Detection-Notifier.git
+cd Thief-Detection-Notifier
+uv sync                       # create .venv and install all dependencies
+uv run pre-commit install     # enable lint/type checks on every commit
+cp .env.example .env          # then adjust values
+```
 
-3. **Set your credentials as environment variables:**
-    ```bash
-    export EMAIL="your@gmail.com"
-    export PASSWORD="your_gmail_app_password"
-    ```
-    > ⚠️ Use a [Gmail App Password](https://myaccount.google.com/apppasswords), not your real account password.
+### Configuration
 
-4. **Run the system:**
-    ```bash
-    uv run --group legacy python main.py
-    ```
-    Press **`q`** to stop the camera feed safely.
+All settings are environment variables prefixed with `VISION_HUB_`, with `__` separating nested groups
+(for example `VISION_HUB_SMTP__PASSWORD`). Every option is documented in [`.env.example`](.env.example).
 
-> 💡 **Tip:** Adjust `MIN_CONTOUR_AREA` in `main.py` if the camera is further away — lower values increase sensitivity.
+When `VISION_HUB_APP__ENV=prod`, the app refuses to start without an explicit JWT secret, admin
+password hash and database password, and rejects debug mode or wildcard CORS/hosts.
+
+### Quality checks
+
+```bash
+uv run ruff check          # lint
+uv run ruff format         # format
+uv run mypy                # strict type checking
+uv run pytest              # tests + coverage (minimum 85 %)
+```
 
 ---
 
