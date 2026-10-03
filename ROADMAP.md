@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 3 — Persistence & Optimization
 - **Working branch:** `main`
-- **Next task:** 3.2 Snapshots & event history → "`LocalSnapshotStore` (date-partitioned dirs under `data/snapshots/`)"
+- **Next task:** 3.3 Reliability → "Notification outbox: `notifications` table + migration"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -260,15 +260,15 @@
 - [x] Integration tests against real PostgreSQL (repository and migration tests run on SQLite and PostgreSQL; CI `postgres` service); CI Docker job runs the full compose stack and checks `/health/ready`
 
 ### 3.2 Snapshots & event history
-- [ ] `motion_events` and `snapshots` tables + migration; index `motion_events (device_id, started_at DESC)`; boxes/areas as JSON
-- [ ] `LocalSnapshotStore` (date-partitioned dirs under `data/snapshots/`), path-traversal-safe
-- [ ] Persist best frame + thumbnail per event; save metadata row
-- [ ] Persist each event to the DB *before* publishing it on the bus (DB is the system of record)
-- [ ] `GET /api/v1/events` (cursor pagination; filter by device, time range)
-- [ ] `GET /api/v1/events/{id}` and `GET /api/v1/events/{id}/snapshot` (authenticated `FileResponse`)
-- [ ] WS replay: client sends `last_event_id` on reconnect and receives missed events from the DB
-- [ ] Retention policy job (delete events/snapshots older than *N* days, configurable per device)
-- [ ] Optional: short MP4 clip per event (pre-roll + event) written by the worker
+- [x] `motion_events` and `snapshots` tables + migration; indexes on `(device_id, started_at)` and `started_at` (plain columns: SQLite cannot reflect `DESC` expression indexes, and B-trees scan both ways); boxes as JSON
+- [x] `LocalSnapshotStore` (date-partitioned dirs under `data/snapshots/`, atomic writes), path-traversal-safe
+- [x] Persist clean frame, annotated frame and thumbnail per event; save metadata row
+- [x] Persist each event to the DB *before* publishing it on the bus (DB is the system of record); a failed write is logged and the event is still published, so alerts are never lost
+- [x] `GET /api/v1/events` (cursor pagination; filter by device, time range)
+- [x] `GET /api/v1/events/{id}` and `GET /api/v1/events/{id}/snapshot` (`FileResponse`; bearer token or an expiring HMAC-signed link, so `<img>` tags work)
+- [x] WS replay: client sends `{"type": "resume", "after": "<event id>"}` on reconnect and receives missed events from the DB, then `replay.done`
+- [x] Retention policy job (delete events/snapshots older than *N* days, `retention_days` per device; history of deleted cameras follows the default)
+- [ ] Optional: short MP4 clip per event (pre-roll + event) written by the worker — deferred to *Future*
 
 ### 3.3 Reliability (single node)
 - [ ] Notification outbox: `notifications` table + migration; pending notifications stored there; background loop dispatches and retries, surviving restarts
@@ -321,6 +321,7 @@ Not part of the MVP. The ports introduced above (`EventBus`, `SnapshotStore`, re
 - [ ] Control channel: API publishes `start/stop/config` commands; owning worker applies them
 - [ ] Redis-backed rate limiting and WS ticket store (required once there is more than one API replica)
 - [ ] `S3SnapshotStore` (`aioboto3`, MinIO locally) with presigned URLs
+- [ ] Short MP4 clip per event (pre-roll ring buffer + event) written by the worker
 - [ ] Multiple API replicas behind a reverse proxy; verify rebalancing on worker loss
 - [ ] Optional push-mode edge devices (device API keys or MQTT) alongside the pull model
 

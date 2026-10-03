@@ -38,7 +38,8 @@
 - **Multi-camera ingestion:** USB webcams, RTSP cameras (with automatic reconnection), video files and a built-in simulator, each on its own worker thread so the API never blocks
 - **Smart motion detection:** an adaptive background that ignores dusk and passing clouds, a reset instead of an alarm when the lights switch on, debounced events, per-camera regions of interest, and best-frame selection
 - **Email alerts:** the annotated snapshot sent inline and as an attachment, with per-camera cooldowns and retries
-- **Real time:** WebSocket alerts with per-camera subscriptions, and MJPEG live streams that work in a plain `<img>` tag
+- **Real time:** WebSocket alerts with per-camera subscriptions and replay of events missed while offline, and MJPEG live streams that work in a plain `<img>` tag
+- **Event history:** every event is stored with its clean frame, annotated frame and thumbnail, browsable through the API, with signed image links and per-camera retention
 - **Device API:** add, update, start and stop cameras, hot-reload detection settings, and test a source before saving it
 - **Persistent:** PostgreSQL via async SQLAlchemy and Alembic migrations (applied on startup); camera passwords encrypted at rest with rotatable keys
 - **Secure by default:** JWT with rotating refresh tokens (reuse detection survives restarts), roles, rate-limited login, single-use stream tickets, write-only camera passwords, security headers, and strict production config checks
@@ -58,11 +59,14 @@ flowchart LR
         S["Source<br/>webcam · RTSP · file · simulator"] --> D["Motion detector"] --> T["Event tracker"] --> J["JPEG encoder"]
     end
     J -->|"LoopBridge<br/>(latest frame wins)"| F["Live frames"]
-    J -->|"LoopBridge<br/>(events never dropped)"| B[("Event bus")]
+    J -->|"LoopBridge<br/>(events never dropped)"| R["Event recorder"]
     subgraph loop["asyncio event loop"]
+        R -->|"store first"| P[("PostgreSQL<br/>+ snapshot files")]
+        R -->|"then publish"| B[("Event bus")]
         F --> M["MJPEG streams<br/>& snapshots"]
         B --> N["Notification service"] --> E["Email (SMTP)"]
         B --> W["WebSocket clients"]
+        P -. "replay & history" .-> W
         A["REST API"] --> DS["Device service"] --> CM["Camera manager"]
     end
     CM -. "start / stop / restart" .-> threads
@@ -79,10 +83,10 @@ src/vision_hub/
 ├── api/        # FastAPI routers, dependencies, middleware
 ├── schemas/    # Pydantic request/response and WebSocket models
 ├── domain/     # Pure domain models and ports (Protocols)
-├── services/   # Application logic: auth, devices, health, notifications
+├── services/   # Application logic: auth, devices, events, health, notifications
 ├── vision/     # Frame sources, motion detector, tracker, camera workers
 ├── realtime/   # WebSocket connections and MJPEG streaming
-└── infra/      # Adapters: database, event bus, notifiers, auth stores, rate limiting
+└── infra/      # Adapters: database, snapshot storage, event bus, notifiers, auth stores, rate limiting
 ```
 
 Design decisions are recorded in [`ROADMAP.md`](ROADMAP.md#-architecture-decisions), and the
@@ -136,6 +140,8 @@ keeps its data in the `hub-data` and `pg-data` volumes.
 | `POST /api/v1/devices/test` | Check a source works before saving it | admin |
 | `GET /api/v1/devices/{id}/snapshot` | Latest frame as JPEG | logged in |
 | `GET /api/v1/devices/{id}/stream` | MJPEG live stream | logged in (bearer or ticket) |
+| `GET /api/v1/events` · `/events/{id}` | Event history (filter by camera and time) | logged in |
+| `GET /api/v1/events/{id}/snapshot?kind=` | Event image: `annotated`, `clean` or `thumbnail` | bearer or signed link |
 | `WS /api/v1/ws/events` | Live motion and status events | ticket |
 | `GET /api/v1/health/live` · `/ready` | Probes for Docker and Kubernetes | public |
 
@@ -162,7 +168,11 @@ ws.onmessage = ({ data }) => {
   if (message.type === "motion.started") console.log(`Motion on ${message.device_id}`);
 };
 ws.onopen = () => ws.send(JSON.stringify({ type: "subscribe", devices: ["porch", "gate"] }));
+// After a reconnect: {type: "resume", after: lastEventId} replays what was missed
 ```
+
+Event responses include ready-to-use image URLs (`snapshots[].url`), signed and valid for an
+hour, so `<img src="...">` works without a token.
 
 ---
 
@@ -184,6 +194,8 @@ mode, wildcard CORS/hosts and unencrypted SMTP.
   production a key file is generated once in `data/`. Back it up, or stored camera passwords
   cannot be decrypted.
 - **Migrations** run on startup. For schema work: `uv run alembic revision --autogenerate -m "..."`.
+- **Event history** is kept for `VISION_HUB_STORAGE__RETENTION_DAYS` (30) days; a camera can
+  override it with `retention_days`. Images live under `VISION_HUB_STORAGE__SNAPSHOTS_DIR`.
 - **Email alerts** need `VISION_HUB_SMTP__ENABLED=true` plus a server; Gmail with an App
   Password works.
 - **Sensitivity** is set per camera: `min_motion_area` (fraction of the frame),
