@@ -169,7 +169,8 @@ class VisionConfig(_Group):
     """Defaults for motion detection; each device can override them (Phase 2)."""
 
     target_fps: float = Field(default=10.0, gt=0, le=60)
-    min_contour_area: int = Field(default=10_000, ge=1)
+    # Fraction of the frame a moving region must cover; resolution-independent.
+    min_motion_area: float = Field(default=0.01, gt=0, lt=1)
     blur_kernel_size: int = Field(default=21, ge=3)
     threshold: int = Field(default=60, ge=1, le=255)
     motion_end_grace_seconds: float = Field(default=2.0, ge=0)

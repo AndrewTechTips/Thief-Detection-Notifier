@@ -17,6 +17,8 @@ dependencies = [
     "pyjwt>=2.15.1",
     "python-multipart>=0.0.32",
     "limits>=5.8.0",
+    "opencv-python-headless>=5.0.0.93",
+    "numpy>=2.5.3",
 ]
 
 [project.scripts]

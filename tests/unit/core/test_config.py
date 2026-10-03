@@ -43,7 +43,7 @@ class TestDefaults:
         assert settings.is_prod is False
         assert settings.app.host == "127.0.0.1"
         assert settings.smtp.enabled is False
-        assert settings.vision.min_contour_area == 10_000
+        assert settings.vision.min_motion_area == 0.01
 
     def test_dev_jwt_secret_is_random_and_strong(self) -> None:
         first, second = Settings().security.jwt_secret, Settings().security.jwt_secret
