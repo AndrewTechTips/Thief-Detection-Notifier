@@ -120,20 +120,24 @@ class SmtpConfig(_Group):
     enabled: bool = False
     host: str = "smtp.gmail.com"
     port: int = Field(default=587, ge=1, le=65535)
-    starttls: bool = True
+    # starttls: upgrade a plain connection (port 587); implicit: TLS from the start (port 465)
+    tls: Literal["starttls", "implicit", "none"] = "starttls"
     timeout_seconds: float = Field(default=10.0, gt=0)
+    local_hostname: str | None = None  # name sent in EHLO; defaults to the machine's hostname
     username: str | None = None
     password: SecretStr | None = None
     sender: EmailStr | None = None  # defaults to username
     recipients: CsvEmailList = Field(default_factory=list)  # defaults to sender
 
     @model_validator(mode="after")
-    def _require_credentials_when_enabled(self) -> Self:
-        if not self.enabled:
-            return self
-        missing = [name for name in ("username", "password") if getattr(self, name) is None]
-        if missing:
-            msg = f"SMTP is enabled but {' and '.join(missing)} not set"
+    def _consistent_credentials(self) -> Self:
+        """Credentials are optional (local relays often need none), but a password needs a
+        username, and without a username there must be an explicit sender address."""
+        if self.password is not None and self.username is None:
+            msg = "SMTP password requires a username"
+            raise ValueError(msg)
+        if self.enabled and self.effective_sender is None:
+            msg = "SMTP is enabled but neither username nor sender is set"
             raise ValueError(msg)
         return self
 
@@ -242,6 +246,10 @@ class Settings(BaseSettings):
             problems.append(f"{env_name('app', 'debug')} must be false")
         if "*" in self.security.cors_origins:
             problems.append(f"{env_name('security', 'cors_origins')} must not contain '*'")
+        if self.smtp.enabled and self.smtp.tls == "none":
+            problems.append(
+                f"{env_name('smtp', 'tls')} must not be 'none' (password in clear text)"
+            )
         if "*" in self.security.allowed_hosts:
             problems.append(f"{env_name('security', 'allowed_hosts')} must not contain '*'")
 

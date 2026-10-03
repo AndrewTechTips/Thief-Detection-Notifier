@@ -171,6 +171,7 @@ class TestSecrets:
         set_env(
             monkeypatch,
             security__jwt_secret=STRONG_SECRET,
+            smtp__username="alerts@example.com",
             smtp__password="smtp-secret-value",
             db__password="db-secret-value",
         )
@@ -205,10 +206,23 @@ class TestSecrets:
 
 
 class TestSmtp:
-    def test_enabled_without_credentials_is_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_enabled_without_any_address_is_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
         set_env(monkeypatch, smtp__enabled="true")
 
-        with pytest.raises(ValidationError, match="username and password not set"):
+        with pytest.raises(ValidationError, match="neither username nor sender"):
+            Settings()
+
+    def test_unauthenticated_relay_needs_only_a_sender(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        set_env(monkeypatch, smtp__enabled="true", smtp__sender="hub@home.lan")
+
+        assert Settings().smtp.effective_recipients == ["hub@home.lan"]
+
+    def test_password_requires_username(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        set_env(monkeypatch, smtp__password="secret")
+
+        with pytest.raises(ValidationError, match="requires a username"):
             Settings()
 
     def test_sender_and_recipients_default_to_username(
@@ -262,12 +276,14 @@ class TestProductionSafety:
             ("app__debug", "true", "VISION_HUB_APP__DEBUG"),
             ("security__cors_origins", "*", "VISION_HUB_SECURITY__CORS_ORIGINS"),
             ("security__allowed_hosts", "*", "VISION_HUB_SECURITY__ALLOWED_HOSTS"),
+            ("smtp__enabled", "true", "VISION_HUB_SMTP__TLS"),
         ],
     )
     def test_unsafe_production_values_are_rejected(
         self, monkeypatch: pytest.MonkeyPatch, key: str, value: str, variable: str
     ) -> None:
         prod_env(monkeypatch)
+        set_env(monkeypatch, smtp__username="u@example.com", smtp__password="pw", smtp__tls="none")
         set_env(monkeypatch, **{key: value})
 
         with pytest.raises(ValidationError, match=variable):

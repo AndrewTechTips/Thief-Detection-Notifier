@@ -3,6 +3,7 @@ arrays), so they can cross from worker threads into asyncio and later onto a mes
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import assert_never
 
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.motion import BoundingBox, MotionEvent
@@ -30,3 +31,21 @@ class MotionEndedEvent:
 
 
 type CameraEvent = DeviceStatusChanged | MotionStartedEvent | MotionEndedEvent
+
+
+# Topics are "<kind>.<device_id>"; subscribe with globs such as "motion.ended.*".
+MOTION_STARTED = "motion.started"
+MOTION_ENDED = "motion.ended"
+DEVICE_STATUS = "device.status"
+
+
+def topic_for(event: CameraEvent) -> str:
+    match event:
+        case DeviceStatusChanged():
+            return f"{DEVICE_STATUS}.{event.device_id}"
+        case MotionStartedEvent():
+            return f"{MOTION_STARTED}.{event.event.device_id}"
+        case MotionEndedEvent():
+            return f"{MOTION_ENDED}.{event.event.device_id}"
+        case _:  # pragma: no cover - mypy proves the match is exhaustive
+            assert_never(event)

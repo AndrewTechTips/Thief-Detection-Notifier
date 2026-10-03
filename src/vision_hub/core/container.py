@@ -8,11 +8,16 @@ from typing import TypedDict
 from vision_hub.core.config import Settings, env_name
 from vision_hub.core.logging import get_logger
 from vision_hub.core.security import PasswordHasher, TokenService
+from vision_hub.domain.events import CameraEvent, topic_for
 from vision_hub.domain.health import HealthCheck
+from vision_hub.domain.notifications import Notifier
 from vision_hub.infra.auth import InMemoryTokenRevocationStore, SettingsUserRepository
+from vision_hub.infra.bus.memory import InMemoryEventBus
+from vision_hub.infra.notifiers.email import EmailNotifier
 from vision_hub.infra.process_lock import ProcessLock
 from vision_hub.infra.rate_limit import RateLimiter
 from vision_hub.services.auth import AuthService
+from vision_hub.services.notifications import NotificationService
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.fleet import DeviceSpec, load_fleet
 from vision_hub.vision.manager import CameraManager, camera_worker_factory
@@ -33,6 +38,8 @@ class Container:
     auth: AuthService
     auth_rate_limiter: RateLimiter
     cameras: CameraManager
+    bus: InMemoryEventBus[CameraEvent]
+    notifications: NotificationService
     fleet: tuple[DeviceSpec, ...] = ()
     health_checks: tuple[HealthCheck, ...] = ()
 
@@ -56,7 +63,21 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
         stack.callback(lock.release)
 
         fleet = _load_fleet(settings)
+        names = {spec.id: spec.name for spec in fleet}
+
+        bus: InMemoryEventBus[CameraEvent] = InMemoryEventBus()
+        stack.callback(bus.close)
+        notifications = NotificationService(
+            bus,
+            _build_notifiers(settings),
+            device_name=lambda device_id: names.get(device_id, device_id),
+            cooldown_seconds=settings.vision.alert_cooldown_seconds,
+        )
+        notifications.start()  # subscribes before any camera can publish
+        stack.push_async_callback(notifications.stop)
+
         cameras = CameraManager(
+            on_event=lambda event: bus.publish(topic_for(event), event),
             worker_factory=camera_worker_factory(
                 default_fps=settings.vision.target_fps,
                 encoding=EncodingSettings(
@@ -73,6 +94,8 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
             auth=_build_auth(settings),
             auth_rate_limiter=RateLimiter(settings.security.auth_rate_limit),
             cameras=cameras,
+            bus=bus,
+            notifications=notifications,
             fleet=fleet,
         )
         for spec in fleet:
@@ -92,6 +115,13 @@ def _load_fleet(settings: Settings) -> tuple[DeviceSpec, ...]:
         return ()
     defaults = DetectionConfig.from_settings(settings.vision)
     return tuple(load_fleet(settings.vision.devices_file, defaults=defaults))
+
+
+def _build_notifiers(settings: Settings) -> list[Notifier]:
+    if not settings.smtp.enabled:
+        logger.info("email_alerts_disabled", hint=f"set {env_name('smtp', 'enabled')}=true")
+        return []
+    return [EmailNotifier(settings.smtp)]
 
 
 def _build_auth(settings: Settings) -> AuthService:
