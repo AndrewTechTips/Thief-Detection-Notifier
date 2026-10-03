@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from vision_hub.core.config import Settings, env_name
 from vision_hub.core.encryption import SecretBox
 from vision_hub.core.logging import get_logger
-from vision_hub.core.security import PasswordHasher, TokenService
+from vision_hub.core.security import PasswordHasher, TokenService, UrlSigner
 from vision_hub.domain.auth import Role
 from vision_hub.domain.events import CameraEvent, topic_for
 from vision_hub.domain.health import HealthCheck
@@ -24,14 +24,17 @@ from vision_hub.infra.db.engine import Sessions, create_engine, create_sessions
 from vision_hub.infra.db.health import DatabaseHealthCheck
 from vision_hub.infra.db.migrate import upgrade_to_head
 from vision_hub.infra.db.repositories.devices import SqlDeviceRepository
+from vision_hub.infra.db.repositories.events import SqlEventRepository
 from vision_hub.infra.db.repositories.tokens import SqlTokenRevocationStore
 from vision_hub.infra.db.repositories.users import SqlUserRepository
 from vision_hub.infra.notifiers.email import EmailNotifier
 from vision_hub.infra.process_lock import ProcessLock
 from vision_hub.infra.rate_limit import RateLimiter
+from vision_hub.infra.storage.local import LocalSnapshotStore
 from vision_hub.realtime.connections import ConnectionManager
 from vision_hub.services.auth import AuthService
 from vision_hub.services.devices import DeviceService
+from vision_hub.services.events import EventRecorder, EventService, RetentionService
 from vision_hub.services.notifications import NotificationService
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.fleet import DeviceSpec, load_fleet
@@ -59,6 +62,8 @@ class Container:
     bus: InMemoryEventBus[CameraEvent]
     notifications: NotificationService
     devices: DeviceService
+    events: EventService
+    url_signer: UrlSigner
     tickets: InMemoryTicketStore
     realtime: ConnectionManager
     health_checks: tuple[HealthCheck, ...] = ()
@@ -99,9 +104,13 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
         if seeded:
             logger.info("devices_seeded_from_file", devices=list(seeded))
 
+        snapshots = LocalSnapshotStore(settings.storage.snapshots_dir)
+        event_repository = SqlEventRepository(sessions)
+        events = EventService(event_repository, snapshots)
+
         bus: InMemoryEventBus[CameraEvent] = InMemoryEventBus()
         stack.callback(bus.close)
-        realtime = ConnectionManager(bus, settings.realtime)
+        realtime = ConnectionManager(bus, settings.realtime, history=events)
         stack.callback(realtime.close_all)  # runs before bus.close: clients get 1001
         notifications = NotificationService(
             bus,
@@ -112,14 +121,23 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
         notifications.start()  # subscribes before any camera can publish
         stack.push_async_callback(notifications.stop)
 
+        # Persist first, then publish: stops after the cameras (so their final events are kept)
+        # and before notifications drain.
+        recorder = EventRecorder(
+            event_repository, snapshots, publish=lambda event: bus.publish(topic_for(event), event)
+        )
+        recorder.start()
+        stack.push_async_callback(recorder.stop)
+
         cameras = CameraManager(
-            on_event=lambda event: bus.publish(topic_for(event), event),
+            on_event=recorder.submit,
             worker_factory=camera_worker_factory(
                 default_fps=settings.vision.target_fps,
                 encoding=EncodingSettings(
                     stream_jpeg_quality=settings.vision.stream_jpeg_quality,
                     stream_max_width=settings.vision.stream_max_width,
                     snapshot_jpeg_quality=settings.storage.jpeg_quality,
+                    thumbnail_width=settings.storage.thumbnail_width,
                 ),
             ),
         )
@@ -130,6 +148,15 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
             detection_defaults=detection_defaults,
             media_dir=settings.vision.media_dir,
         )
+        retention = RetentionService(
+            event_repository,
+            snapshots,
+            default_days=settings.storage.retention_days,
+            overrides=lambda: _retention_overrides(device_repository),
+            interval_seconds=settings.storage.retention_check_minutes * 60,
+        )
+        retention.start()
+        stack.push_async_callback(retention.stop)
 
         container = Container(
             settings=settings,
@@ -146,6 +173,10 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
             bus=bus,
             notifications=notifications,
             devices=devices,
+            events=events,
+            url_signer=UrlSigner(
+                settings.security.jwt_secret, ttl_seconds=settings.security.signed_url_ttl_seconds
+            ),
             tickets=InMemoryTicketStore(settings.security.ticket_ttl_seconds),
             realtime=realtime,
             health_checks=(DatabaseHealthCheck(engine),),
@@ -164,18 +195,20 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
 async def _wait_for_database(engine: AsyncEngine, attempts: int = 10) -> None:
     """Containers often start before the database accepts connections; retry briefly."""
     backoff = Backoff(initial=0.5, maximum=5)
-    for attempt in range(1, attempts + 1):
+    attempt = 1
+    while True:
         try:
             async with engine.connect() as connection:
                 await connection.execute(text("SELECT 1"))
         except (OperationalError, OSError) as exc:
-            if attempt == attempts:
+            if attempt >= attempts:
                 raise
             delay = backoff.next_delay()
             logger.warning(
                 "database_unavailable", attempt=attempt, retry_in_s=round(delay, 1), error=str(exc)
             )
             await asyncio.sleep(delay)
+            attempt += 1
         else:
             return
 
@@ -194,6 +227,10 @@ async def _bootstrap_users(users: SqlUserRepository, settings: Settings) -> None
             hint=f"create one with `vision-hub create-user NAME --role admin`, or set "
             f"{env_name('security', 'admin_password_hash')}; all logins will fail until then",
         )
+
+
+async def _retention_overrides(devices: SqlDeviceRepository) -> dict[str, int]:
+    return {d.id: d.retention_days for d in await devices.list() if d.retention_days is not None}
 
 
 def _load_fleet(settings: Settings, defaults: DetectionConfig) -> list[DeviceSpec]:

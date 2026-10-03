@@ -38,6 +38,10 @@ OPENAPI_TAGS = [
         "name": "devices",
         "description": "Cameras: configuration, start/stop, source tests and live snapshots.",
     },
+    {
+        "name": "events",
+        "description": "Recorded motion events with their snapshots.",
+    },
 ]
 DOCS_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc"})
 

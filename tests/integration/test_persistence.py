@@ -77,6 +77,15 @@ async def test_admin_is_bootstrapped_once_and_can_log_in_after_restart(
     assert refreshed.access.token
 
 
+async def test_can_skip_migrations_on_startup(settings: Settings) -> None:
+    no_migrations = settings.model_copy(
+        update={"db": settings.db.model_copy(update={"migrate_on_startup": False})}
+    )
+
+    async with build_container(no_migrations) as container:  # schema already exists
+        assert await container.devices.list()
+
+
 async def test_warns_when_nobody_can_log_in(
     tmp_path: Path, log_records: LogRecords, settings_factory: Callable[..., Settings]
 ) -> None:

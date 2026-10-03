@@ -16,6 +16,7 @@ from vision_hub.domain.events import (
     MotionStartedEvent,
     topic_for,
 )
+from vision_hub.domain.history import EventRecord
 from vision_hub.domain.motion import BoundingBox, MotionEvent
 from vision_hub.infra.bus.memory import InMemoryEventBus
 from vision_hub.realtime.connections import CloseCode, ConnectionManager
@@ -306,3 +307,104 @@ async def test_failing_first_send_closes_the_connection() -> None:
     await harness.finished()
 
     assert socket.closed == (CloseCode.TRY_AGAIN_LATER, "send timed out")
+
+
+class FakeHistory:
+    """Stands in for EventService.after(): events newer than an id, oldest first."""
+
+    def __init__(self, records: list[EventRecord]) -> None:
+        self.records = records
+
+    async def after(self, event_id: str, *, limit: int) -> list[EventRecord]:
+        return [r for r in self.records if r.event.id > event_id][:limit]
+
+
+def record(n: int, device_id: str = "porch", *, complete: bool = True) -> EventRecord:
+    event = MotionEvent(
+        id=f"00000000-0000-7000-8000-{n:012d}",
+        device_id=device_id,
+        started_at=T0,
+        ended_at=T0 if complete else None,
+    )
+    return EventRecord(event=event)
+
+
+class TestResume:
+    async def test_replays_missed_events_then_reports_done(self) -> None:
+        records = [record(1), record(2, "gate"), record(3, complete=False)]
+        harness = Harness()
+        harness.manager = ConnectionManager(
+            harness.bus,
+            RealtimeConfig(),
+            history=FakeHistory(records),  # type: ignore[arg-type]
+        )
+        socket = await harness.connect()
+
+        socket.say({"type": "resume", "after": "00000000-0000-7000-8000-000000000000"})
+        done = await socket.wait_for("replay.done")
+
+        replayed = [m for m in socket.sent if m.get("replay")]
+        assert [(m["type"], m["device_id"]) for m in replayed] == [
+            ("motion.ended", "porch"),
+            ("motion.ended", "gate"),
+            ("motion.started", "porch"),  # interrupted event: it never ended
+        ]
+        assert done["data"] == {"count": 3, "truncated": False}
+        socket.leave()
+        await harness.finished()
+
+    async def test_replay_respects_the_subscription(self) -> None:
+        harness = Harness()
+        harness.manager = ConnectionManager(
+            harness.bus,
+            RealtimeConfig(),
+            history=FakeHistory([record(1), record(2, "gate")]),  # type: ignore[arg-type]
+        )
+        socket = await harness.connect()
+
+        socket.say({"type": "subscribe", "devices": ["gate"]})
+        socket.say({"type": "resume", "after": "00000000-0000-7000-8000-000000000000"})
+        done = await socket.wait_for("replay.done")
+
+        assert [m["device_id"] for m in socket.sent if m.get("replay")] == ["gate"]
+        assert done["data"]["count"] == 1
+        socket.leave()
+        await harness.finished()
+
+    async def test_large_gaps_are_truncated(self) -> None:
+        harness = Harness()
+        harness.manager = ConnectionManager(
+            harness.bus,
+            RealtimeConfig(),
+            history=FakeHistory([record(n) for n in range(1, 150)]),  # type: ignore[arg-type]
+        )
+        socket = await harness.connect()
+
+        socket.say({"type": "resume", "after": "00000000-0000-7000-8000-000000000000"})
+        done = await socket.wait_for("replay.done")
+
+        assert done["data"] == {"count": 100, "truncated": True}
+        socket.leave()
+        await harness.finished()
+
+    async def test_without_history_resume_is_an_error(self) -> None:
+        harness = Harness()
+        socket = await harness.connect()
+
+        socket.say({"type": "resume", "after": "00000000-0000-7000-8000-000000000000"})
+        error = await socket.wait_for("error")
+
+        assert error["data"]["code"] == "unsupported"
+        socket.leave()
+        await harness.finished()
+
+    async def test_resume_needs_a_valid_event_id(self) -> None:
+        harness = Harness()
+        socket = await harness.connect()
+
+        socket.say({"type": "resume", "after": "not-a-uuid"})
+        error = await socket.wait_for("error")
+
+        assert error["data"]["code"] == "invalid_message"
+        socket.leave()
+        await harness.finished()

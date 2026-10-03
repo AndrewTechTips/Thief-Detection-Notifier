@@ -62,6 +62,7 @@ class SqlDeviceRepository:
             "name": device.name,
             "enabled": device.enabled,
             "target_fps": device.target_fps,
+            "retention_days": device.retention_days,
             "source_kind": source.kind,
             # The password is excluded from serialization by the model itself.
             "source": source.model_dump(mode="json", exclude={"has_password"}),
@@ -79,6 +80,7 @@ class SqlDeviceRepository:
                 "name": row.name,
                 "enabled": row.enabled,
                 "target_fps": row.target_fps,
+                "retention_days": row.retention_days,
                 "source": source,
                 "detection": row.detection,
             }

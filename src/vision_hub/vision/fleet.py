@@ -37,6 +37,7 @@ class DeviceSpec(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     enabled: bool = True
     target_fps: float | None = Field(default=None, gt=0, le=60)
+    retention_days: int | None = Field(default=None, ge=1, le=3650)  # None: hub-wide default
     source: SourceConfig
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
 

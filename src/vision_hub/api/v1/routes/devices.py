@@ -59,6 +59,7 @@ async def create_device(
         name=body.name,
         enabled=body.enabled,
         target_fps=body.target_fps,
+        retention_days=body.retention_days,
         source=body.source,
         detection=body.detection or devices.detection_defaults,
     )

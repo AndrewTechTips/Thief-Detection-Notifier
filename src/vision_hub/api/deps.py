@@ -16,6 +16,7 @@ from vision_hub.domain.auth import Principal, Role
 from vision_hub.domain.health import HealthCheck
 from vision_hub.services.auth import AuthService
 from vision_hub.services.devices import DeviceService
+from vision_hub.services.events import EventService
 
 
 def get_container(connection: HTTPConnection) -> Container:
@@ -57,6 +58,13 @@ def get_device_service(container: ContainerDep) -> DeviceService:
 
 
 DeviceServiceDep = Annotated[DeviceService, Depends(get_device_service)]
+
+
+def get_event_service(container: ContainerDep) -> EventService:
+    return container.events
+
+
+EventServiceDep = Annotated[EventService, Depends(get_event_service)]
 
 # auto_error=False: missing tokens raise our AuthenticationError (problem+json), not FastAPI's.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{API_V1_PREFIX}/auth/token", auto_error=False)
@@ -110,6 +118,30 @@ def require_role(role: Role) -> Callable[[Principal], Principal]:
         return principal
 
     return check_role
+
+
+async def require_signature_or_bearer(
+    connection: HTTPConnection,
+    container: ContainerDep,
+    token: Annotated[str | None, Depends(oauth2_scheme)],
+    expires: Annotated[int | None, Query(description="From a signed link")] = None,
+    signature: Annotated[
+        str | None, Query(max_length=128, description="From a signed link")
+    ] = None,
+) -> None:
+    """For immutable resources linked from API responses (event snapshots): a valid signed
+    link is enough, so ``<img>`` tags work without a token or ticket."""
+    if token:
+        principal = container.auth.authenticate(token)
+        connection.state.username = principal.username
+        return
+    if expires is not None and signature is not None:
+        query = connection.query_params
+        resource = f"{connection.url.path}?kind={query.get('kind', 'annotated')}"
+        if container.url_signer.verify(resource, expires, signature):
+            return
+        raise AuthenticationError("Signed link is invalid or has expired.")
+    raise AuthenticationError("Missing bearer token or signed link.")
 
 
 AdminPrincipal = Annotated[Principal, Depends(require_role(Role.ADMIN))]

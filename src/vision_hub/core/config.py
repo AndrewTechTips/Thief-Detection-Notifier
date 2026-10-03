@@ -92,6 +92,8 @@ class SecurityConfig(_Group):
     auth_rate_limit: str = "5/minute"
     # Single-use tickets for WebSockets and MJPEG streams (browsers cannot send auth headers there)
     ticket_ttl_seconds: float = Field(default=30.0, gt=0, le=300)
+    # Lifetime of signed snapshot links (event images in <img> tags, emails, dashboards)
+    signed_url_ttl_seconds: int = Field(default=3600, ge=60, le=7 * 24 * 3600)
     # Fernet keys encrypting secrets at rest (camera passwords). The first encrypts; all decrypt,
     # so a new key can be prepended to rotate. Empty outside prod: a key file is created once.
     encryption_keys: CsvSecretList = Field(default_factory=list)
@@ -202,7 +204,9 @@ class DatabaseConfig(_Group):
 class StorageConfig(_Group):
     snapshots_dir: Path = Path("data/snapshots")
     jpeg_quality: int = Field(default=85, ge=1, le=100)
-    retention_days: int = Field(default=30, ge=1)
+    thumbnail_width: int = Field(default=320, ge=64, le=1280)
+    retention_days: int = Field(default=30, ge=1)  # devices can override
+    retention_check_minutes: float = Field(default=60.0, gt=0, le=1440)
 
 
 class VisionConfig(_Group):

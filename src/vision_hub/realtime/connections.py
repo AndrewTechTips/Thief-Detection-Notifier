@@ -33,14 +33,21 @@ from vision_hub.schemas.ws import (
     ErrorData,
     ErrorMessage,
     PingMessage,
+    ReplayDoneData,
+    ReplayDoneMessage,
+    ResumeMessage,
     ServerMessage,
     SubscribeMessage,
     SubscriptionData,
     SubscriptionMessage,
     UnsubscribeMessage,
     client_message_adapter,
+    replayed_message,
     to_message,
 )
+from vision_hub.services.events import EventService
+
+REPLAY_LIMIT = 100
 
 logger = get_logger(__name__)
 
@@ -92,7 +99,9 @@ class _Connection:
         principal: Principal,
         subscription: Subscription[CameraEvent],
         config: RealtimeConfig,
+        history: EventService | None,
     ) -> None:
+        self.history = history
         self.socket = socket
         self.principal = principal
         self.subscription = subscription
@@ -151,6 +160,9 @@ class _Connection:
             await self.send(_error(code, exc.errors(include_input=False)[0]["msg"]))
             return
         match parsed:
+            case ResumeMessage(after=after):
+                await self._replay(str(after))
+                return
             case SubscribeMessage(devices=None):
                 self.filter = _Filter()
             case SubscribeMessage(devices=devices):
@@ -164,11 +176,30 @@ class _Connection:
                 return
         await self.send(SubscriptionMessage(data=self.filter.describe()))
 
+    async def _replay(self, after: str) -> None:
+        if self.history is None:
+            await self.send(_error("unsupported", "Event history is not available."))
+            return
+        records = await self.history.after(after, limit=REPLAY_LIMIT + 1)
+        replayed = 0
+        for record in records[:REPLAY_LIMIT]:
+            if self.filter.matches(record.event.device_id):
+                await self.send(replayed_message(record))
+                replayed += 1
+        truncated = len(records) > REPLAY_LIMIT
+        await self.send(ReplayDoneMessage(data=ReplayDoneData(count=replayed, truncated=truncated)))
+
 
 class ConnectionManager:
-    def __init__(self, bus: EventBus[CameraEvent], config: RealtimeConfig) -> None:
+    def __init__(
+        self,
+        bus: EventBus[CameraEvent],
+        config: RealtimeConfig,
+        history: EventService | None = None,
+    ) -> None:
         self._bus = bus
         self._config = config
+        self._history = history
         self._connections: set[_Connection] = set()
 
     @property
@@ -184,7 +215,7 @@ class ConnectionManager:
             maxsize=self._config.client_queue_size,
             overflow="drop_newest",
         )
-        connection = _Connection(socket, principal, subscription, self._config)
+        connection = _Connection(socket, principal, subscription, self._config, self._history)
         self._connections.add(connection)
         log = logger.bind(user=principal.username)
         log.info("ws_connected", clients=self.active)

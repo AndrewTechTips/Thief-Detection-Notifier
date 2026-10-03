@@ -26,6 +26,7 @@ class MotionEndedEvent:
     event: MotionEvent
     snapshot_jpeg: bytes = field(repr=False)  # clean evidence frame, full resolution
     annotated_jpeg: bytes = field(repr=False)  # same frame with motion boxes drawn
+    thumbnail_jpeg: bytes = field(default=b"", repr=False)  # small annotated preview for lists
     boxes: tuple[BoundingBox, ...] = ()
     snapshot_at: datetime | None = None
 

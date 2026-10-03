@@ -77,6 +77,7 @@ select = [
 "tests/**" = [
     "S101", "S105", "S106", "S107", "S311",  # asserts, fake credentials, seeded randomness
     "ASYNC110",  # polling a condition with sleep is fine in tests
+    "ASYNC240",  # inspecting files from async tests is fine
 ]
 
 [tool.ruff.lint.flake8-bugbear]

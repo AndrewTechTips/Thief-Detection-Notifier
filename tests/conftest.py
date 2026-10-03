@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from vision_hub.core.config import (
     ENV_PREFIX,
     AppConfig,
+    DatabaseConfig,
     Environment,
     SecurityConfig,
     Settings,
@@ -32,7 +33,7 @@ from vision_hub.core.encryption import SecretBox
 from vision_hub.core.logging import configure_logging
 from vision_hub.core.security import PasswordHasher
 from vision_hub.infra.db.base import Base
-from vision_hub.infra.db.engine import Sessions, create_sessions
+from vision_hub.infra.db.engine import Sessions, create_engine, create_sessions
 from vision_hub.infra.db.migrate import upgrade_to_head
 from vision_hub.main import create_app
 
@@ -289,14 +290,17 @@ async def engine(request: pytest.FixtureRequest, tmp_path: Path) -> AsyncIterato
     if request.param == "postgres":
         if not POSTGRES_URL:
             pytest.skip("set VISION_HUB_TEST_POSTGRES_URL to run against PostgreSQL")
-        engine = create_async_engine(POSTGRES_URL)
+        engine = create_engine(DatabaseConfig(url=SecretStr(POSTGRES_URL)))
         await upgrade_to_head(engine)
         tables = ", ".join(table.name for table in Base.metadata.sorted_tables)
         async with engine.begin() as connection:
             await connection.execute(text(f"TRUNCATE {tables}"))
     else:
-        # The autouse fixture already copied a migrated database to tmp_path/hub.db.
-        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'hub.db'}")
+        # The autouse fixture already copied a migrated database to tmp_path/hub.db. The app's
+        # own engine factory is used so tests get the same settings (e.g. SQLite foreign keys).
+        engine = create_engine(
+            DatabaseConfig(url=SecretStr(f"sqlite+aiosqlite:///{tmp_path / 'hub.db'}"))
+        )
     yield engine
     await engine.dispose()
 

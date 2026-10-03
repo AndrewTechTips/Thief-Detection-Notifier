@@ -59,6 +59,7 @@ class EncodingSettings:
     stream_jpeg_quality: int = 70
     stream_max_width: int = 960
     snapshot_jpeg_quality: int = 85
+    thumbnail_width: int = 320
 
 
 class CameraWorker:
@@ -184,11 +185,14 @@ class CameraWorker:
             motion_frames=ended.event.motion_frames,
             peak_area_ratio=round(ended.event.peak_area_ratio, 4),
         )
+        annotated = draw_boxes(ended.best_frame, boxes)
+        thumbnail, _ = resize_to_width(annotated, self._encoding.thumbnail_width)
         self._sink.publish_event(
             MotionEndedEvent(
                 event=ended.event,
                 snapshot_jpeg=_encode(ended.best_frame, quality),
-                annotated_jpeg=_encode(draw_boxes(ended.best_frame, boxes), quality),
+                annotated_jpeg=_encode(annotated, quality),
+                thumbnail_jpeg=_encode(thumbnail, quality),
                 boxes=boxes,
                 snapshot_at=ended.best_frame_at,
             )

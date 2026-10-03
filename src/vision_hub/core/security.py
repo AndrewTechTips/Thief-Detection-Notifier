@@ -1,7 +1,11 @@
 """Cryptographic primitives: password hashing (Argon2id) and signed tokens (JWT)."""
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import secrets
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -12,6 +16,7 @@ from functools import cached_property
 import jwt
 from pwdlib import PasswordHash
 from pwdlib.exceptions import UnknownHashError
+from pydantic import SecretStr
 
 from vision_hub.core.config import SecurityConfig
 from vision_hub.core.errors import AuthenticationError
@@ -142,3 +147,39 @@ class TokenService:
             token_id=payload["jti"],
             expires_at=datetime.fromtimestamp(payload["exp"], UTC),
         )
+
+
+class UrlSigner:
+    """HMAC-signed, expiring links (like S3 presigned URLs) for resources browsers load
+    without headers, such as event thumbnails in ``<img>`` tags.
+
+    The key is derived from the JWT secret with a distinct label, so a signature can never be
+    confused with a token signature.
+    """
+
+    def __init__(
+        self,
+        secret: SecretStr,
+        *,
+        ttl_seconds: int,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        self._key = hmac.new(
+            secret.get_secret_value().encode(), b"vision-hub/signed-urls", hashlib.sha256
+        ).digest()
+        self._ttl = ttl_seconds
+        self._clock = clock
+
+    def sign(self, resource: str) -> tuple[int, str]:
+        """Return ``(expires, signature)`` for ``resource`` (path plus any bound parameters)."""
+        expires = int(self._clock()) + self._ttl
+        return expires, self._signature(resource, expires)
+
+    def verify(self, resource: str, expires: int, signature: str) -> bool:
+        if expires < self._clock():
+            return False
+        return hmac.compare_digest(signature, self._signature(resource, expires))
+
+    def _signature(self, resource: str, expires: int) -> str:
+        digest = hmac.new(self._key, f"{resource}\n{expires}".encode(), hashlib.sha256).digest()
+        return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()

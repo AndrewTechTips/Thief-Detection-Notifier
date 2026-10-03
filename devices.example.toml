@@ -3,10 +3,11 @@
 #
 # Each [[devices]] entry needs a unique `id` (lowercase letters, digits, dashes), a `name`, and a
 # [devices.source] table whose `kind` is one of: synthetic, webcam, rtsp, video_file.
-# Optional [devices.detection] keys override the VISION_HUB_VISION__* defaults for that camera.
+# Optional [devices.detection] keys override the VISION_HUB_VISION__* defaults for that camera,
+# and `retention_days` overrides VISION_HUB_STORAGE__RETENTION_DAYS.
 #
-# Keep this file private if it contains camera passwords (chmod 600). Phase 3 moves device
-# credentials into the database, encrypted.
+# The file only seeds devices the database does not have yet; their passwords are then stored
+# encrypted. Keep it private if it contains camera passwords (chmod 600).
 
 # Two simulated cameras: no hardware needed, a figure walks through every 20 s.
 [[devices]]
@@ -21,6 +22,7 @@ seed = 1
 id = "demo-garage"
 name = "Demo garage"
 target_fps = 5
+retention_days = 7
 
 [devices.source]
 kind = "synthetic"

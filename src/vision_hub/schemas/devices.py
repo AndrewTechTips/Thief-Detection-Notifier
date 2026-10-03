@@ -31,6 +31,7 @@ class DeviceOut(ApiSchema):
     name: str
     enabled: bool = Field(description="Started automatically when the hub starts")
     target_fps: float | None = Field(description="Analysed frames per second; null = default")
+    retention_days: int | None = Field(description="Days events are kept; null = hub default")
     source: SourceConfig
     detection: DetectionConfig
     status: DeviceStatus
@@ -46,6 +47,7 @@ class DeviceOut(ApiSchema):
             name=view.spec.name,
             enabled=view.spec.enabled,
             target_fps=view.spec.target_fps,
+            retention_days=view.spec.retention_days,
             source=view.spec.source,
             detection=view.spec.detection,
             status=view.status,
@@ -64,6 +66,7 @@ class DeviceCreate(RequestSchema):
     name: str = Field(min_length=1, max_length=100)
     enabled: bool = True
     target_fps: float | None = Field(default=None, gt=0, le=60)
+    retention_days: int | None = Field(default=None, ge=1, le=3650)
     source: SourceConfig
     detection: DetectionConfig | None = Field(
         default=None, description="Omit to use the hub-wide defaults"
@@ -76,6 +79,7 @@ class DeviceUpdate(RequestSchema):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     enabled: bool | None = None
     target_fps: float | None = Field(default=None, gt=0, le=60)
+    retention_days: int | None = Field(default=None, ge=1, le=3650)
     source: SourceConfig | None = None
     detection: DetectionConfig | None = None
 

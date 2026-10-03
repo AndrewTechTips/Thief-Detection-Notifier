@@ -6,6 +6,7 @@ Client -> server messages: ``subscribe``, ``unsubscribe`` and ``pong``.
 
 from datetime import datetime
 from typing import Annotated, Literal
+from uuid import UUID
 
 from pydantic import Field, TypeAdapter
 
@@ -17,6 +18,7 @@ from vision_hub.domain.events import (
     MotionEndedEvent,
     MotionStartedEvent,
 )
+from vision_hub.domain.history import EventRecord
 from vision_hub.domain.motion import BoundingBox
 from vision_hub.schemas.base import ApiSchema, RequestSchema, UtcDateTime
 
@@ -49,6 +51,11 @@ class SubscriptionData(ApiSchema):
     excluded: list[str] = Field(description="Devices excluded while subscribed to all")
 
 
+class ReplayDoneData(ApiSchema):
+    count: int
+    truncated: bool = Field(description="More events were missed than replayed; use the API")
+
+
 class ErrorData(ApiSchema):
     code: str
     message: str
@@ -57,12 +64,14 @@ class ErrorData(ApiSchema):
 class MotionStartedMessage(_ServerMessage):
     type: Literal["motion.started"] = "motion.started"
     device_id: str
+    replay: bool = False  # true when re-sent from history after a "resume"
     data: MotionStartedData
 
 
 class MotionEndedMessage(_ServerMessage):
     type: Literal["motion.ended"] = "motion.ended"
     device_id: str
+    replay: bool = False
     data: MotionEndedData
 
 
@@ -75,6 +84,11 @@ class DeviceStatusMessage(_ServerMessage):
 class SubscriptionMessage(_ServerMessage):
     type: Literal["subscription"] = "subscription"
     data: SubscriptionData
+
+
+class ReplayDoneMessage(_ServerMessage):
+    type: Literal["replay.done"] = "replay.done"
+    data: ReplayDoneData
 
 
 class PingMessage(_ServerMessage):
@@ -91,6 +105,7 @@ type ServerMessage = Annotated[
     | MotionEndedMessage
     | DeviceStatusMessage
     | SubscriptionMessage
+    | ReplayDoneMessage
     | PingMessage
     | ErrorMessage,
     Field(discriminator="type"),
@@ -113,8 +128,16 @@ class PongMessage(RequestSchema):
     type: Literal["pong"]
 
 
+class ResumeMessage(RequestSchema):
+    """After reconnecting: replay events newer than the last one the client saw."""
+
+    type: Literal["resume"]
+    after: UUID
+
+
 type ClientMessage = Annotated[
-    SubscribeMessage | UnsubscribeMessage | PongMessage, Field(discriminator="type")
+    SubscribeMessage | UnsubscribeMessage | PongMessage | ResumeMessage,
+    Field(discriminator="type"),
 ]
 client_message_adapter: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
 
@@ -144,3 +167,26 @@ def to_message(event: CameraEvent) -> ServerMessage:
             )
         case _:  # pragma: no cover - mypy proves the match is exhaustive
             raise AssertionError(event)
+
+
+def replayed_message(record: EventRecord) -> ServerMessage:
+    """A stored event as it would have been sent live, flagged as a replay."""
+    motion = record.event
+    if not record.complete:
+        return MotionStartedMessage(
+            device_id=motion.device_id,
+            replay=True,
+            data=MotionStartedData(event_id=motion.id, started_at=motion.started_at),
+        )
+    return MotionEndedMessage(
+        device_id=motion.device_id,
+        replay=True,
+        data=MotionEndedData(
+            event_id=motion.id,
+            started_at=motion.started_at,
+            ended_at=motion.ended_at,
+            peak_area_ratio=motion.peak_area_ratio,
+            motion_frames=motion.motion_frames,
+            boxes=list(record.boxes),
+        ),
+    )
