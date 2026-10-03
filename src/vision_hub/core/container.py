@@ -5,9 +5,13 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import TypedDict
 
-from vision_hub.core.config import Settings
+from vision_hub.core.config import Settings, env_name
 from vision_hub.core.logging import get_logger
+from vision_hub.core.security import PasswordHasher, TokenService
 from vision_hub.domain.health import HealthCheck
+from vision_hub.infra.auth import InMemoryTokenRevocationStore, SettingsUserRepository
+from vision_hub.infra.rate_limit import RateLimiter
+from vision_hub.services.auth import AuthService
 
 logger = get_logger(__name__)
 
@@ -21,6 +25,8 @@ class Container:
     """
 
     settings: Settings
+    auth: AuthService
+    auth_rate_limiter: RateLimiter
     health_checks: tuple[HealthCheck, ...] = ()
 
 
@@ -33,7 +39,23 @@ class LifespanState(TypedDict):
 @asynccontextmanager
 async def build_container(settings: Settings) -> AsyncIterator[Container]:
     """Create services on startup and release them, in reverse order, on shutdown."""
-    container = Container(settings=settings)
+    users = SettingsUserRepository(settings.security)
+    if not users.has_users:
+        logger.warning(
+            "no_admin_configured",
+            hint=f"set {env_name('security', 'admin_password_hash')} "
+            "(generate it with `vision-hub hash-password`); all logins will fail",
+        )
+    container = Container(
+        settings=settings,
+        auth=AuthService(
+            users=users,
+            hasher=PasswordHasher(),
+            tokens=TokenService(settings.security),
+            revocations=InMemoryTokenRevocationStore(),
+        ),
+        auth_rate_limiter=RateLimiter(settings.security.auth_rate_limit),
+    )
     logger.info("container_started")
     try:
         yield container

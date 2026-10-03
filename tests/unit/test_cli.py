@@ -1,7 +1,9 @@
+import getpass
 from typing import Any
 
 import pytest
 import uvicorn
+from pwdlib import PasswordHash
 
 from vision_hub import __main__ as cli
 
@@ -45,3 +47,38 @@ def test_reload_flag(uvicorn_calls: list[dict[str, Any]]) -> None:
     cli.main(["--reload"])
 
     assert uvicorn_calls[0]["reload"] is True
+
+
+def test_serve_subcommand(uvicorn_calls: list[dict[str, Any]]) -> None:
+    cli.main(["serve", "--reload"])
+
+    assert uvicorn_calls[0]["reload"] is True
+
+
+class TestHashPassword:
+    def prompts(self, monkeypatch: pytest.MonkeyPatch, *answers: str) -> None:
+        replies = iter(answers)
+        monkeypatch.setattr(getpass, "getpass", lambda _prompt: next(replies))
+
+    def test_prints_a_verifiable_argon2_hash(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        self.prompts(monkeypatch, "a-strong-password", "a-strong-password")
+
+        cli.main(["hash-password"])
+
+        printed = capsys.readouterr().out.strip()
+        assert printed.startswith("$argon2id$")
+        assert PasswordHash.recommended().verify("a-strong-password", printed)
+
+    def test_rejects_short_passwords(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.prompts(monkeypatch, "short")
+
+        with pytest.raises(SystemExit, match="at least 12"):
+            cli.main(["hash-password"])
+
+    def test_rejects_mismatched_confirmation(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.prompts(monkeypatch, "a-strong-password", "a-different-one!")
+
+        with pytest.raises(SystemExit, match="do not match"):
+            cli.main(["hash-password"])

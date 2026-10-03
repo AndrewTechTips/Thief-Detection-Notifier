@@ -10,6 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self
 
+from limits import parse as parse_rate_limit
 from pydantic import (
     BaseModel,
     BeforeValidator,
@@ -84,6 +85,27 @@ class SecurityConfig(_Group):
 
     cors_origins: CsvStrList = Field(default_factory=lambda: ["http://localhost:5173"])
     allowed_hosts: CsvStrList = Field(default_factory=lambda: ["localhost", "127.0.0.1"])
+    # Per client IP, for login and token refresh. Syntax: "5/minute", "20/hour", "3 per 10 seconds"
+    auth_rate_limit: str = "5/minute"
+
+    @field_validator("auth_rate_limit")
+    @classmethod
+    def _valid_rate_limit(cls, value: str) -> str:
+        try:
+            parse_rate_limit(value)
+        except ValueError:
+            msg = "must be a rate limit like '5/minute' or '20 per hour'"
+            raise ValueError(msg) from None
+        return value
+
+    @model_validator(mode="after")
+    def _secret_matches_algorithm(self) -> Self:
+        """HMAC keys shorter than the hash output weaken the signature (RFC 7518 §3.2)."""
+        minimum = {"HS256": 32, "HS384": 48, "HS512": 64}[self.jwt_algorithm]
+        if len(self.jwt_secret.get_secret_value()) < minimum:
+            msg = f"jwt_secret must be at least {minimum} characters for {self.jwt_algorithm}"
+            raise ValueError(msg)
+        return self
 
     @field_validator("admin_password_hash")
     @classmethod

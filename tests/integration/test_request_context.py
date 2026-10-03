@@ -147,7 +147,9 @@ class TestUnhandledExceptions:
 class TestWebSockets:
     def test_request_id_is_bound_for_websockets(self, app: FastAPI) -> None:
         with (
-            TestClient(app) as test_client,
-            test_client.websocket_connect("/ws", headers={REQUEST_ID_HEADER: "ws-1"}) as ws,
+            TestClient(app, base_url="http://localhost") as test_client,
+            test_client.websocket_connect(
+                "ws://localhost/ws", headers={REQUEST_ID_HEADER: "ws-1"}
+            ) as ws,
         ):
             assert ws.receive_text() == "ws-1"

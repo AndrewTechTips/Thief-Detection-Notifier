@@ -87,7 +87,7 @@ async def test_readiness_uses_configured_timeout(
     async with (
         LifespanManager(app) as manager,
         httpx2.AsyncClient(
-            transport=httpx2.ASGITransport(app=manager.app), base_url="http://test"
+            transport=httpx2.ASGITransport(app=manager.app), base_url="http://localhost"
         ) as http,
     ):
         response = await http.get("/api/v1/health/ready")

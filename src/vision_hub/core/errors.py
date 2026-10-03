@@ -30,10 +30,17 @@ class AppError(Exception):
     title: ClassVar[str] = "Internal Server Error"
     headers: ClassVar[Mapping[str, str]] = {}
 
-    def __init__(self, detail: str | None = None, **extensions: Any) -> None:
+    def __init__(
+        self,
+        detail: str | None = None,
+        *,
+        headers: Mapping[str, str] | None = None,
+        **extensions: Any,
+    ) -> None:
         super().__init__(detail or self.title)
         self.detail = detail
         self.extensions = extensions
+        self.response_headers = {**type(self).headers, **(headers or {})}
 
     @property
     def type_uri(self) -> str:
@@ -77,6 +84,18 @@ class PermissionDeniedError(AppError):
     status_code = HTTPStatus.FORBIDDEN
     code = "permission-denied"
     title = "Permission Denied"
+
+
+class RateLimitedError(AppError):
+    status_code = HTTPStatus.TOO_MANY_REQUESTS
+    code = "rate-limited"
+    title = "Too Many Requests"
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__(
+            f"Too many attempts. Retry in {retry_after_seconds} seconds.",
+            headers={"Retry-After": str(retry_after_seconds)},
+        )
 
 
 class ServiceUnavailableError(AppError):
@@ -138,7 +157,7 @@ async def _handle_app_error(request: Request, exc: Exception) -> JSONResponse:
         detail=error.detail,
         instance=request.url.path,
         request_id=_request_id(request),
-        headers=error.headers,
+        headers=error.response_headers,
         extensions=error.extensions,
     )
 

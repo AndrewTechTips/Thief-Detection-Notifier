@@ -4,7 +4,9 @@ responses (MJPEG feeds) and breaks contextvar propagation."""
 import re
 import time
 import uuid
+from collections.abc import Sequence
 from http import HTTPStatus
+from typing import ClassVar
 
 import structlog
 from starlette.datastructures import Headers, MutableHeaders
@@ -64,7 +66,7 @@ class RequestContextMiddleware:
             nonlocal status_code, response_started
             if message["type"] == "http.response.start":
                 response_started = True
-                status_code = message["status"]
+                status_code = int(message["status"])
                 MutableHeaders(scope=message).append(REQUEST_ID_HEADER, request_id)
             await send(message)
 
@@ -89,11 +91,105 @@ class RequestContextMiddleware:
                 log = logger.debug
             else:
                 log = logger.info
-            log(
-                "request",
-                method=scope["method"],
-                path=scope["path"],
-                status=status_code,
-                duration_ms=duration_ms,
-                client=scope["client"][0] if scope.get("client") else None,
-            )
+            fields: dict[str, object] = {
+                "method": scope["method"],
+                "path": scope["path"],
+                "status": status_code,
+                "duration_ms": duration_ms,
+                "client": scope["client"][0] if scope.get("client") else None,
+            }
+            if username := scope["state"].get("username"):  # set by the auth dependency
+                fields["user"] = username
+            log("request", **fields)
+
+
+class SecurityHeadersMiddleware:
+    """Adds defensive headers to every HTTP response (without overriding ones a route set).
+
+    The strict CSP suits a JSON API; ``relaxed_paths`` (Swagger UI / ReDoc, which load scripts
+    from a CDN) are served without it.
+    """
+
+    _BASE_HEADERS: ClassVar[dict[str, str]] = {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "no-referrer",
+        "Cross-Origin-Opener-Policy": "same-origin",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    }
+    _API_CSP = "default-src 'none'; frame-ancestors 'none'"
+    _HSTS = "max-age=63072000; includeSubDomains"
+
+    def __init__(
+        self, app: ASGIApp, *, hsts: bool = False, relaxed_paths: frozenset[str] = frozenset()
+    ) -> None:
+        self.app = app
+        self.hsts = hsts
+        self.relaxed_paths = relaxed_paths
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        extra = dict(self._BASE_HEADERS)
+        if scope["path"] not in self.relaxed_paths:
+            extra["Content-Security-Policy"] = self._API_CSP
+        if self.hsts:
+            extra["Strict-Transport-Security"] = self._HSTS
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for name, value in extra.items():
+                    if name not in headers:
+                        headers[name] = value
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
+class TrustedHostMiddleware:
+    """Rejects requests whose ``Host`` header is not allowed (DNS-rebinding and host-header
+    attacks). Like Starlette's version, but errors are problem+json like the rest of the API.
+    Patterns may start with ``*.`` to match subdomains; ``*`` alone disables the check."""
+
+    def __init__(self, app: ASGIApp, *, allowed_hosts: Sequence[str]) -> None:
+        self.app = app
+        self.allowed_hosts = [host.lower() for host in allowed_hosts]
+        self.allow_any = "*" in self.allowed_hosts
+
+    def is_allowed(self, host_header: str) -> bool:
+        host = _hostname(host_header.lower())
+        return any(
+            host == pattern or (pattern.startswith("*.") and host.endswith(pattern[1:]))
+            for pattern in self.allowed_hosts
+        )
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (
+            scope["type"] not in {"http", "websocket"}
+            or self.allow_any
+            or self.is_allowed(Headers(scope=scope).get("host", ""))
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        logger.warning("invalid_host_header", host=Headers(scope=scope).get("host"))
+        if scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 1008})
+            return
+        response = problem_response(
+            HTTPStatus.BAD_REQUEST,
+            detail="Invalid host header.",
+            instance=scope["path"],
+            request_id=scope.get("state", {}).get("request_id"),
+        )
+        await response(scope, receive, send)
+
+
+def _hostname(host_header: str) -> str:
+    """Strip the port: ``example.com:8000`` -> ``example.com``, ``[::1]:8000`` -> ``[::1]``."""
+    if host_header.startswith("["):
+        return host_header[: host_header.find("]") + 1]
+    return host_header.split(":", 1)[0]

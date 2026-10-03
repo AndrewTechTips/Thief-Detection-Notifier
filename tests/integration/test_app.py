@@ -55,7 +55,14 @@ async def test_lifespan_logs_startup_and_shutdown(
         pass
 
     events = [record["event"] for record in log_records()]
-    assert events == ["startup", "container_started", "container_stopped", "shutdown"]
+    # Test settings define no admin account, so startup warns about it.
+    assert events == [
+        "startup",
+        "no_admin_configured",
+        "container_started",
+        "container_stopped",
+        "shutdown",
+    ]
 
 
 def test_container_is_unavailable_before_lifespan() -> None:

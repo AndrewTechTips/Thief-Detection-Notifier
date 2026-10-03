@@ -137,6 +137,35 @@ class TestFieldValidation:
             Settings()
 
 
+class TestSecurityValidation:
+    @pytest.mark.parametrize("limit", ["5/minute", "20 per hour", "3/10 seconds"])
+    def test_accepts_rate_limit_syntax(self, monkeypatch: pytest.MonkeyPatch, limit: str) -> None:
+        set_env(monkeypatch, security__auth_rate_limit=limit)
+
+        assert Settings().security.auth_rate_limit == limit
+
+    def test_rejects_invalid_rate_limit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        set_env(monkeypatch, security__auth_rate_limit="lots")
+
+        with pytest.raises(ValidationError, match="rate limit"):
+            Settings()
+
+    @pytest.mark.parametrize(
+        ("algorithm", "length", "valid"),
+        [("HS256", 32, True), ("HS384", 47, False), ("HS384", 48, True), ("HS512", 63, False)],
+    )
+    def test_secret_length_must_match_algorithm(
+        self, monkeypatch: pytest.MonkeyPatch, algorithm: str, length: int, *, valid: bool
+    ) -> None:
+        set_env(monkeypatch, security__jwt_algorithm=algorithm, security__jwt_secret="x" * length)
+
+        if valid:
+            Settings()
+        else:
+            with pytest.raises(ValidationError, match=f"at least .* for {algorithm}"):
+                Settings()
+
+
 class TestSecrets:
     def test_secrets_never_appear_in_repr_or_dumps(self, monkeypatch: pytest.MonkeyPatch) -> None:
         set_env(

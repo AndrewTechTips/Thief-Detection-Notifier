@@ -35,7 +35,7 @@ async def fetch(app: FastAPI, path: str) -> httpx2.Response:
     async with (
         LifespanManager(app) as manager,
         httpx2.AsyncClient(
-            transport=httpx2.ASGITransport(app=manager.app), base_url="http://test"
+            transport=httpx2.ASGITransport(app=manager.app), base_url="http://localhost"
         ) as http,
     ):
         return await http.get(path)

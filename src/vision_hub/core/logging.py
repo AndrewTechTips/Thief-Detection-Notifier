@@ -2,6 +2,7 @@
 the same pipeline so every line shares one format (colored console in dev, JSON in prod)."""
 
 import logging
+import re
 import sys
 from typing import TextIO
 
@@ -21,6 +22,33 @@ _QUIET_LOGGERS = {
     "httpx2": logging.WARNING,
     "httpcore": logging.WARNING,
 }
+
+
+_SENSITIVE_KEY = re.compile(
+    r"pass(word|wd)?|secret|token|authorization|api[_-]?key|cookie|credential", re.IGNORECASE
+)
+REDACTED = "[REDACTED]"
+
+
+def _redact(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            key: REDACTED if isinstance(key, str) and _SENSITIVE_KEY.search(key) else _redact(item)
+            for key, item in value.items()
+        }
+    return value
+
+
+def redact_sensitive_fields(_: object, __: str, event_dict: EventDict) -> EventDict:
+    """Last line of defence: mask values whose key looks secret, even in nested dicts.
+
+    ``event`` (the message) is never masked; the primary rule is still "don't log secrets".
+    """
+    for key, value in event_dict.items():
+        if key == "event":
+            continue
+        event_dict[key] = REDACTED if _SENSITIVE_KEY.search(key) else _redact(value)
+    return event_dict
 
 
 def _drop_color_message(_: object, __: str, event_dict: EventDict) -> EventDict:
@@ -75,7 +103,11 @@ def configure_logging(settings: Settings, *, stream: TextIO | None = None) -> No
     )
     formatter = structlog.stdlib.ProcessorFormatter(
         foreign_pre_chain=[*shared, structlog.stdlib.ExtraAdder(), _drop_color_message],
-        processors=[structlog.stdlib.ProcessorFormatter.remove_processors_meta, *renderer],
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            redact_sensitive_fields,
+            *renderer,
+        ],
     )
 
     handler = _HubHandler(stream)

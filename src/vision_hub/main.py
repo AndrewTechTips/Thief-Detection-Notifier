@@ -7,9 +7,15 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from vision_hub import __version__
-from vision_hub.api.middleware import RequestContextMiddleware
+from vision_hub.api.middleware import (
+    REQUEST_ID_HEADER,
+    RequestContextMiddleware,
+    SecurityHeadersMiddleware,
+    TrustedHostMiddleware,
+)
 from vision_hub.api.openapi import install_problem_details_schema, operation_id
 from vision_hub.api.v1.router import QUIET_PATHS, api_router
 from vision_hub.core.config import Settings, get_settings
@@ -24,7 +30,12 @@ OPENAPI_TAGS = [
         "name": "health",
         "description": "Liveness and readiness probes for orchestrators and load balancers.",
     },
+    {
+        "name": "auth",
+        "description": "Log in with the OAuth2 password flow, rotate refresh tokens, log out.",
+    },
 ]
+DOCS_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc"})
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -53,6 +64,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_problem_details_schema(app)
     register_exception_handlers(app)
     app.include_router(api_router)
-    # Added last so it is the outermost middleware and sees every request and error.
-    app.add_middleware(RequestContextMiddleware, quiet_paths=QUIET_PATHS)
+    _add_middleware(app, settings)
     return app
+
+
+def _add_middleware(app: FastAPI, settings: Settings) -> None:
+    """Each call wraps the previous ones, so the request path is the reverse of this order:
+    RequestContext -> SecurityHeaders -> TrustedHost -> CORS -> routes."""
+    security = settings.security
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=security.cors_origins,
+        # Bearer tokens travel in the Authorization header, never in cookies.
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER],
+        expose_headers=[REQUEST_ID_HEADER, "Retry-After"],
+        max_age=600,
+    )
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=security.allowed_hosts)
+    app.add_middleware(SecurityHeadersMiddleware, hsts=settings.is_prod, relaxed_paths=DOCS_PATHS)
+    # Outermost, so request IDs and access logs cover every response, including rejections.
+    app.add_middleware(RequestContextMiddleware, quiet_paths=QUIET_PATHS)

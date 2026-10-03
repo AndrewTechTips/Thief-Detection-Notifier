@@ -159,3 +159,41 @@ class TestConfiguration:
         get_logger("vision_hub.test").info("to_stdout")
 
         assert "to_stdout" in capsys.readouterr().out
+
+
+class TestRedaction:
+    def test_sensitive_keys_are_masked_at_any_depth(self) -> None:
+        stream = io.StringIO()
+        configure_logging(json_settings(), stream=stream)
+
+        get_logger("vision_hub.test").info(
+            "outbound_call",
+            password="p1",
+            api_key="k1",
+            headers={"Authorization": "Bearer t1", "Accept": "json"},
+            nested={"deeper": {"refresh_token": "t2"}},
+            device_id="cam-1",
+        )
+
+        [record] = records(stream)
+        assert record["password"] == "[REDACTED]"
+        assert record["api_key"] == "[REDACTED]"
+        assert record["headers"] == {"Authorization": "[REDACTED]", "Accept": "json"}
+        assert record["nested"] == {"deeper": {"refresh_token": "[REDACTED]"}}
+        assert record["device_id"] == "cam-1"
+
+    def test_stdlib_extras_are_masked_too(self) -> None:
+        stream = io.StringIO()
+        configure_logging(json_settings(), stream=stream)
+
+        logging.getLogger("some.library").warning("connect", extra={"db_password": "p2"})
+
+        assert records(stream)[0]["db_password"] == "[REDACTED]"
+
+    def test_event_text_is_left_alone(self) -> None:
+        stream = io.StringIO()
+        configure_logging(json_settings(), stream=stream)
+
+        get_logger("vision_hub.test").info("refresh_token_reused")
+
+        assert records(stream)[0]["event"] == "refresh_token_reused"
