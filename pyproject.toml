@@ -68,7 +68,7 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S105", "S106"]  # asserts and fake credentials are expected in tests
+"tests/**" = ["S101", "S105", "S106", "S311"]  # asserts, fake credentials, seeded randomness
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI dependency markers are safe as default arguments
