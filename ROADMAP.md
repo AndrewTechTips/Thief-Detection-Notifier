@@ -6,8 +6,8 @@
 >
 > **How to use this file**
 > - Tick a box (`- [x]`) only when the task is done and verified (linters/tests pass where applicable).
-> - Commit each finished task (or small group) on the phase branch; merge to `main` when the phase's
->   **exit criteria** are all ticked.
+> - Commit each finished task (or small group) directly to `main` using Conventional Commits.
+> - A phase is complete when all of its **exit criteria** are ticked.
 > - Work top-to-bottom inside a phase.
 > - If a decision changes, update the *Architecture Decisions* table first, then the tasks it affects.
 > - After a context reset, read *Current Status* → *Architecture Decisions* → *Target Layout* → the first unchecked task.
@@ -17,9 +17,10 @@
 ## 📍 Current Status
 
 - **Active phase:** Phase 1 — Backend Foundation & Security
-- **Working branch:** `feat/vision-hub`
-- **Next task:** 1.2 Configuration & environment → "`core/config.py`: `Settings(BaseSettings)`"
-- **Legacy code:** `main.py` + `emailing.py` stay runnable until Phase 2 exit criteria are met, then move to `legacy/`.
+- **Working branch:** `main`
+- **Next task:** 1.3 Application core → "`main.py`: `create_app()` factory"
+- **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
+  `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
 ---
 
@@ -87,8 +88,7 @@
 │   ├── unit/
 │   ├── integration/
 │   └── fixtures/             # short test videos, synthetic frame generators
-├── frontend/                 # Phase 4
-└── legacy/                   # original main.py + emailing.py after Phase 2
+└── frontend/                 # Phase 4
 ```
 
 ---
@@ -100,7 +100,7 @@
 ### 1.0 Housekeeping & safety
 - [x] Add `images/`, `snapshots/`, `data/` and `.idea/` to `.gitignore` (intruder photos must never be committed)
 - [x] Remove `black` and its transitive deps from `requirements.txt` (dev tool mixed into runtime deps)
-- [x] Create branch `feat/vision-hub` and keep `main.py`/`emailing.py` runnable during the migration
+- [x] Create branch `feat/vision-hub` (merged into `main`; legacy script removed, kept in history at `14af13a`)
 - [x] Document the legacy behaviour and its known defects (*Appendix A*)
 
 ### 1.1 Project tooling
@@ -112,15 +112,16 @@
 - [x] Configure `mypy --strict` with the Pydantic plugin
 - [x] Configure `pytest` (`asyncio_mode = "auto"`, `--import-mode=importlib`, warnings as errors, 85 % coverage gate)
 - [x] Add `.pre-commit-config.yaml` (ruff/mypy as local `uv run` hooks, `uv lock --check`, large-file guard, detect-private-key)
-- [x] Replace `requirements.txt` with `uv.lock`; legacy deps live in the opt-in `legacy` group (`uv run --group legacy python main.py`)
+- [x] Replace `requirements.txt` with `uv.lock`
 
 ### 1.2 Configuration & environment
-- [ ] `core/config.py`: `Settings(BaseSettings)` with nested groups (`app`, `security`, `smtp`, `db`, `storage`, `vision`)
-- [ ] Use `SecretStr` for every secret; `env_prefix="VISION_HUB_"`, `env_nested_delimiter="__"`
-- [ ] Validate at startup (fail fast on missing secrets when `env=prod`)
-- [ ] Expose settings through a cached `get_settings()` dependency (overridable in tests)
-- [ ] Write `.env.example` documenting every variable with safe defaults
-- [ ] Migrate legacy `EMAIL` / `PASSWORD` env vars to `VISION_HUB_SMTP__USER` / `VISION_HUB_SMTP__PASSWORD`
+- [x] `core/config.py`: frozen `Settings(BaseSettings)` with nested groups (`app`, `security`, `smtp`, `db`, `storage`, `vision`)
+- [x] Use `SecretStr` for every secret; `env_prefix="VISION_HUB_"`, `env_nested_delimiter="__"`; comma-separated lists
+- [x] Validate at startup: prod fails fast listing *all* problems (explicit JWT secret, Argon2 admin hash, DB password, no debug, no `*` CORS/hosts)
+- [x] Reject misspelled nested variables (`extra="forbid"` per group) and never echo input values in validation errors (`hide_input_in_errors`)
+- [x] Expose settings through a cached `get_settings()` dependency (overridable in tests)
+- [x] Write `.env.example` documenting every variable; a test keeps it in sync with `Settings`
+- [x] SMTP credentials via `VISION_HUB_SMTP__USERNAME` / `VISION_HUB_SMTP__PASSWORD`; sender/recipients default to the username (legacy `EMAIL` / `PASSWORD` dropped)
 
 ### 1.3 Application core
 - [ ] `main.py`: `create_app(settings: Settings | None = None) -> FastAPI` factory
@@ -202,7 +203,7 @@
 - [ ] Topics: `events.<device_id>`, `frames.<device_id>`, `devices.status`
 - [ ] `Notifier` port + `EmailNotifier` (`aiosmtplib`, STARTTLS, configurable host/port/recipients, JPEG attachment from memory — no temp file)
 - [ ] `NotificationService`: subscribes to closed motion events, applies per-device cooldown/rate limit, retries with backoff, logs failures
-- [ ] Remove the legacy write-PNG → email → `os.remove` flow
+- [x] Remove the legacy write-PNG → email → `os.remove` flow (deleted together with the legacy script)
 
 ### 2.5 Device management (mocked multi-device)
 - [ ] `DeviceRepository` port + in-memory implementation (DB in Phase 3)
@@ -228,7 +229,7 @@
 - [ ] Integration test: MJPEG endpoint yields valid JPEG boundaries
 - [ ] Notification tests with a fake SMTP (`aiosmtpd`) server
 - [ ] Load smoke test: 5 synthetic cameras + 20 WS clients, event-loop lag stays < 50 ms
-- [ ] Move `main.py` and `emailing.py` into `legacy/`; update README
+- [ ] Update README with usage, API overview and screenshots
 
 **✅ Phase 2 exit criteria**
 - [ ] Multiple mocked cameras run concurrently; API stays responsive under load
@@ -320,6 +321,7 @@ Not part of the MVP. The ports introduced above (`EventBus`, `SnapshotStore`, re
 
 ## Appendix A — Legacy baseline (as of commit `14af13a`)
 
+The legacy script was removed from the tree; read it with `git show 14af13a:main.py`.
 Behaviour to preserve or deliberately improve:
 
 | Area | Legacy behaviour | Problem | Fixed in |

@@ -9,7 +9,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.142.2",
-    "pydantic>=2.13.5",
+    "pydantic[email]>=2.13.5",
     "pydantic-settings>=2.15.0",
     "structlog>=26.1.0",
     "uvicorn[standard]>=0.54.0",
@@ -29,19 +29,12 @@ dev = [
     "pytest-cov>=7.1.0",
     "ruff>=0.16.10",
 ]
-# Original OpenCV script (main.py / emailing.py): `uv run --group legacy python main.py`
-legacy = [
-    "numpy==2.4.4",
-    "opencv-python==4.13.0.92",
-]
 
 # ── Ruff ────────────────────────────────────────────────────
 [tool.ruff]
 line-length = 100
 target-version = "py314"
 src = ["src", "tests"]
-# Legacy script is frozen until it moves to legacy/ in Phase 2
-extend-exclude = ["main.py", "emailing.py", "legacy"]
 
 [tool.ruff.lint]
 select = [
@@ -65,7 +58,7 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]  # assert is the point of tests
+"tests/**" = ["S101", "S105", "S106"]  # asserts and fake credentials are expected in tests
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI dependency markers are safe as default arguments
