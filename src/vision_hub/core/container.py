@@ -7,6 +7,7 @@ from typing import TypedDict
 
 from vision_hub.core.config import Settings
 from vision_hub.core.logging import get_logger
+from vision_hub.domain.health import HealthCheck
 
 logger = get_logger(__name__)
 
@@ -20,6 +21,7 @@ class Container:
     """
 
     settings: Settings
+    health_checks: tuple[HealthCheck, ...] = ()
 
 
 class LifespanState(TypedDict):

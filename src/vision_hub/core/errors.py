@@ -40,6 +40,20 @@ class AppError(Exception):
         return f"{PROBLEM_TYPE_PREFIX}{self.code}"
 
 
+class BadRequestError(AppError):
+    status_code = HTTPStatus.BAD_REQUEST
+    code = "bad-request"
+    title = "Bad Request"
+
+
+class InvalidCursorError(BadRequestError):
+    code = "invalid-cursor"
+    title = "Invalid Pagination Cursor"
+
+    def __init__(self, detail: str | None = None, **extensions: Any) -> None:
+        super().__init__(detail or "Use the next_cursor value from a previous page.", **extensions)
+
+
 class NotFoundError(AppError):
     status_code = HTTPStatus.NOT_FOUND
     code = "not-found"

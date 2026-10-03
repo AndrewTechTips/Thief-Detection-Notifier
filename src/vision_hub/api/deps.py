@@ -8,6 +8,7 @@ from starlette.requests import HTTPConnection
 
 from vision_hub.core.config import Settings
 from vision_hub.core.container import Container
+from vision_hub.domain.health import HealthCheck
 
 
 def get_container(connection: HTTPConnection) -> Container:
@@ -28,3 +29,10 @@ def get_app_settings(container: ContainerDep) -> Settings:
 
 
 SettingsDep = Annotated[Settings, Depends(get_app_settings)]
+
+
+def get_health_checks(container: ContainerDep) -> tuple[HealthCheck, ...]:
+    return container.health_checks
+
+
+HealthChecksDep = Annotated[tuple[HealthCheck, ...], Depends(get_health_checks)]

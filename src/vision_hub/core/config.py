@@ -59,6 +59,8 @@ class AppConfig(_Group):
     log_format: Literal["auto", "console", "json"] = "auto"  # auto: json in prod, console otherwise
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
+    docs_enabled: bool | None = None  # None: enabled everywhere except prod
+    health_check_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
 
     @field_validator("log_level", mode="before")
     @classmethod
@@ -183,6 +185,13 @@ class Settings(BaseSettings):
     @property
     def is_prod(self) -> bool:
         return self.app.env is Environment.PROD
+
+    @property
+    def docs_enabled(self) -> bool:
+        """Interactive docs and the OpenAPI schema are hidden in prod unless explicitly enabled."""
+        if self.app.docs_enabled is None:
+            return not self.is_prod
+        return self.app.docs_enabled
 
     @property
     def log_as_json(self) -> bool:

@@ -10,12 +10,21 @@ from fastapi import FastAPI
 
 from vision_hub import __version__
 from vision_hub.api.middleware import RequestContextMiddleware
+from vision_hub.api.openapi import install_problem_details_schema, operation_id
+from vision_hub.api.v1.router import QUIET_PATHS, api_router
 from vision_hub.core.config import Settings, get_settings
 from vision_hub.core.container import LifespanState, build_container
 from vision_hub.core.errors import register_exception_handlers
 from vision_hub.core.logging import configure_logging, get_logger
 
 logger = get_logger(__name__)
+
+OPENAPI_TAGS = [
+    {
+        "name": "health",
+        "description": "Liveness and readiness probes for orchestrators and load balancers.",
+    },
+]
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -29,12 +38,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield {"container": container}
         logger.info("shutdown")
 
+    docs = settings.docs_enabled
     app = FastAPI(
         title=settings.app.name,
         version=__version__,
+        summary="Asynchronous camera monitoring: motion events, alerts and live streams.",
+        openapi_tags=OPENAPI_TAGS,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
+        generate_unique_id_function=operation_id,
         lifespan=lifespan,
     )
+    install_problem_details_schema(app)
     register_exception_handlers(app)
+    app.include_router(api_router)
     # Added last so it is the outermost middleware and sees every request and error.
-    app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(RequestContextMiddleware, quiet_paths=QUIET_PATHS)
     return app

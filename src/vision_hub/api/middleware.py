@@ -31,11 +31,13 @@ class RequestContextMiddleware:
     """Assigns a request ID, binds it to every log line, echoes it in the response, writes one
     access-log line per request, and turns unhandled exceptions into a problem+json 500.
 
-    Query strings are never logged: they may carry tokens (e.g. WebSocket tickets).
+    Query strings are never logged: they may carry tokens (e.g. WebSocket tickets). Successful
+    requests to ``quiet_paths`` (e.g. health probes) are logged at DEBUG to keep logs readable.
     """
 
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(self, app: ASGIApp, quiet_paths: frozenset[str] = frozenset()) -> None:
         self.app = app
+        self.quiet_paths = quiet_paths
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] not in {"http", "websocket"}:
@@ -81,7 +83,12 @@ class RequestContextMiddleware:
             await response(scope, receive, send_with_request_id)
         finally:
             duration_ms = round((time.perf_counter() - started) * 1000, 2)
-            log = logger.error if status_code >= HTTPStatus.INTERNAL_SERVER_ERROR else logger.info
+            if status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
+                log = logger.error
+            elif scope["path"] in self.quiet_paths:
+                log = logger.debug
+            else:
+                log = logger.info
             log(
                 "request",
                 method=scope["method"],

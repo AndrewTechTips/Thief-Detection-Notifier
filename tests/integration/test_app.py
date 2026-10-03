@@ -26,7 +26,9 @@ async def test_openapi_schema_is_served(client: httpx2.AsyncClient) -> None:
     response = await client.get("/openapi.json")
 
     assert response.status_code == 200
-    assert response.json()["info"] == {"title": "IoT Vision Hub", "version": __version__}
+    info = response.json()["info"]
+    assert (info["title"], info["version"]) == ("IoT Vision Hub", __version__)
+    assert info["summary"]
 
 
 async def test_dependencies_resolve_from_the_lifespan_container(

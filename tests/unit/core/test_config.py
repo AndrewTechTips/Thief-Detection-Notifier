@@ -252,6 +252,22 @@ class TestProductionSafety:
         Settings()
 
 
+class TestDocsVisibility:
+    def test_enabled_by_default_outside_production(self) -> None:
+        assert Settings().docs_enabled is True
+
+    def test_disabled_by_default_in_production(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        prod_env(monkeypatch)
+
+        assert Settings().docs_enabled is False
+
+    def test_explicit_setting_wins_in_production(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        prod_env(monkeypatch)
+        set_env(monkeypatch, app__docs_enabled="true")
+
+        assert Settings().docs_enabled is True
+
+
 class TestGetSettings:
     def test_returns_a_cached_instance(self) -> None:
         assert get_settings() is get_settings()
