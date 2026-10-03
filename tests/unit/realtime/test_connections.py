@@ -319,19 +319,26 @@ class FakeHistory:
         return [r for r in self.records if r.event.id > event_id][:limit]
 
 
-def record(n: int, device_id: str = "porch", *, complete: bool = True) -> EventRecord:
+def record(
+    n: int, device_id: str = "porch", *, complete: bool = True, interrupted: bool = False
+) -> EventRecord:
     event = MotionEvent(
         id=f"00000000-0000-7000-8000-{n:012d}",
         device_id=device_id,
         started_at=T0,
         ended_at=T0 if complete else None,
     )
-    return EventRecord(event=event)
+    return EventRecord(event=event, interrupted=interrupted)
 
 
 class TestResume:
     async def test_replays_missed_events_then_reports_done(self) -> None:
-        records = [record(1), record(2, "gate"), record(3, complete=False)]
+        records = [
+            record(1),
+            record(2, "gate"),
+            record(3, complete=False),
+            record(4, complete=False, interrupted=True),
+        ]
         harness = Harness()
         harness.manager = ConnectionManager(
             harness.bus,
@@ -347,8 +354,8 @@ class TestResume:
         assert [(m["type"], m["device_id"]) for m in replayed] == [
             ("motion.ended", "porch"),
             ("motion.ended", "gate"),
-            ("motion.started", "porch"),  # interrupted event: it never ended
-        ]
+            ("motion.started", "porch"),  # still in progress
+        ]  # the interrupted event is skipped: its start would show motion forever
         assert done["data"] == {"count": 3, "truncated": False}
         socket.leave()
         await harness.finished()

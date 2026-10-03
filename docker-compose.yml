@@ -41,6 +41,9 @@ services:
       #   - ./devices.toml:/app/devices.toml:ro
       # and set VISION_HUB_VISION__DEVICES_FILE=/app/devices.toml in .env
     restart: unless-stopped
+    # SIGTERM starts a graceful shutdown: streams end, cameras close their events, pending
+    # alerts get a last attempt. Allow more than VISION_HUB_APP__SHUTDOWN_TIMEOUT_SECONDS.
+    stop_grace_period: 30s
     # Hardening: immutable filesystem (except the data volume), no privilege escalation.
     read_only: true
     tmpfs:

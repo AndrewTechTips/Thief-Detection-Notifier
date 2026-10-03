@@ -1,7 +1,7 @@
 from collections.abc import Collection, Sequence
 from datetime import datetime
 
-from sqlalchemy import Select, delete, literal, select, tuple_
+from sqlalchemy import Select, delete, literal, select, tuple_, update
 
 from vision_hub.domain.history import EventRecord
 from vision_hub.domain.motion import BoundingBox, MotionEvent
@@ -103,6 +103,15 @@ class SqlEventRepository:
             )
         return int(getattr(result, "rowcount", 0))
 
+    async def mark_interrupted(self) -> int:
+        async with self._sessions.begin() as session:
+            result = await session.execute(
+                update(MotionEventRow)
+                .where(MotionEventRow.ended_at.is_(None), MotionEventRow.interrupted.is_(False))
+                .values(interrupted=True)
+            )
+        return int(getattr(result, "rowcount", 0))
+
     async def _fetch(self, query: Select[MotionEventRow]) -> Sequence[EventRecord]:
         async with self._sessions() as session:
             rows = await session.scalars(query)
@@ -137,4 +146,5 @@ def _to_record(row: MotionEventRow) -> EventRecord:
             SnapshotKind(s.kind): StoredSnapshot(SnapshotKind(s.kind), s.path, s.size_bytes)
             for s in row.snapshots
         },
+        interrupted=row.interrupted,
     )

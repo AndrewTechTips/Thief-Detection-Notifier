@@ -4,27 +4,34 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import TypedDict
 
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from vision_hub.core.config import Settings, env_name
+from vision_hub.core.backoff import Backoff
+from vision_hub.core.config import NotificationsConfig, Settings, env_name
 from vision_hub.core.encryption import SecretBox
+from vision_hub.core.lifecycle import Lifecycle, ShutdownCheck
 from vision_hub.core.logging import get_logger
 from vision_hub.core.security import PasswordHasher, TokenService, UrlSigner
+from vision_hub.core.tasks import TaskSupervisor
+from vision_hub.domain.audit import AuditAction, AuditTarget
 from vision_hub.domain.auth import Role
 from vision_hub.domain.events import CameraEvent, topic_for
 from vision_hub.domain.health import HealthCheck
-from vision_hub.domain.notifications import Notifier
+from vision_hub.domain.notifications import Notifier, RetryPolicy
 from vision_hub.infra.auth import InMemoryTicketStore
 from vision_hub.infra.bus.memory import InMemoryEventBus
 from vision_hub.infra.db.engine import Sessions, create_engine, create_sessions
 from vision_hub.infra.db.health import DatabaseHealthCheck
 from vision_hub.infra.db.migrate import upgrade_to_head
+from vision_hub.infra.db.repositories.audit import SqlAuditLog
 from vision_hub.infra.db.repositories.devices import SqlDeviceRepository
 from vision_hub.infra.db.repositories.events import SqlEventRepository
+from vision_hub.infra.db.repositories.notifications import SqlNotificationOutbox
 from vision_hub.infra.db.repositories.tokens import SqlTokenRevocationStore
 from vision_hub.infra.db.repositories.users import SqlUserRepository
 from vision_hub.infra.notifiers.email import EmailNotifier
@@ -32,6 +39,7 @@ from vision_hub.infra.process_lock import ProcessLock
 from vision_hub.infra.rate_limit import RateLimiter
 from vision_hub.infra.storage.local import LocalSnapshotStore
 from vision_hub.realtime.connections import ConnectionManager
+from vision_hub.services.audit import SYSTEM_ACTOR, Auditor
 from vision_hub.services.auth import AuthService
 from vision_hub.services.devices import DeviceService
 from vision_hub.services.events import EventRecorder, EventService, RetentionService
@@ -39,7 +47,6 @@ from vision_hub.services.notifications import NotificationService
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.fleet import DeviceSpec, load_fleet
 from vision_hub.vision.manager import CameraManager, camera_worker_factory
-from vision_hub.vision.sources import Backoff
 from vision_hub.vision.worker import EncodingSettings
 
 logger = get_logger(__name__)
@@ -63,6 +70,8 @@ class Container:
     notifications: NotificationService
     devices: DeviceService
     events: EventService
+    auditor: Auditor
+    lifecycle: Lifecycle
     url_signer: UrlSigner
     tickets: InMemoryTicketStore
     realtime: ConnectionManager
@@ -76,12 +85,20 @@ class LifespanState(TypedDict):
 
 
 @asynccontextmanager
-async def build_container(settings: Settings) -> AsyncIterator[Container]:
+async def build_container(
+    settings: Settings, lifecycle: Lifecycle | None = None
+) -> AsyncIterator[Container]:
     """Create services on startup and release them, in reverse order, on shutdown.
 
     Fails fast (the app does not start) if another process owns the cameras, the devices file
     is invalid, or the database stays unreachable.
+
+    Startup recovers from an abrupt stop: events that never ended are flagged as interrupted
+    and undelivered alerts are retried. Shutdown order: cameras stop (closing their events),
+    the recorder stores and publishes what is left, notifications get a last chance to send,
+    WebSocket clients are closed, background tasks end, then the database pool closes.
     """
+    lifecycle = lifecycle or Lifecycle()
     async with AsyncExitStack() as stack:
         lock = ProcessLock(settings.vision.lock_file)
         lock.acquire()
@@ -92,10 +109,14 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
         await _wait_for_database(engine)
         if settings.db.migrate_on_startup:
             await upgrade_to_head(engine)
+        # Registered here so it runs after every service has stopped, before the pool closes.
+        tasks = TaskSupervisor()
+        stack.push_async_callback(tasks.aclose)
         sessions = create_sessions(engine)
+        auditor = Auditor(SqlAuditLog(sessions))
 
         users = SqlUserRepository(sessions)
-        await _bootstrap_users(users, settings)
+        await _bootstrap_users(users, settings, auditor)
         detection_defaults = DetectionConfig.from_settings(settings.vision)
         device_repository = SqlDeviceRepository(
             sessions, SecretBox.from_config(settings.security, allow_key_file=not settings.is_prod)
@@ -107,6 +128,8 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
         snapshots = LocalSnapshotStore(settings.storage.snapshots_dir)
         event_repository = SqlEventRepository(sessions)
         events = EventService(event_repository, snapshots)
+        if interrupted := await event_repository.mark_interrupted():
+            logger.warning("interrupted_events_recovered", count=interrupted)
 
         bus: InMemoryEventBus[CameraEvent] = InMemoryEventBus()
         stack.callback(bus.close)
@@ -115,16 +138,23 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
         notifications = NotificationService(
             bus,
             _build_notifiers(settings),
+            outbox=SqlNotificationOutbox(sessions),
+            evidence=events.evidence,
             device_name=lambda device_id: devices.name_of(device_id),
             cooldown_seconds=settings.vision.alert_cooldown_seconds,
+            policy=_retry_policy(settings.notifications),
+            tasks=tasks,
         )
-        notifications.start()  # subscribes before any camera can publish
+        await notifications.start()  # subscribes before any camera can publish
         stack.push_async_callback(notifications.stop)
 
         # Persist first, then publish: stops after the cameras (so their final events are kept)
         # and before notifications drain.
         recorder = EventRecorder(
-            event_repository, snapshots, publish=lambda event: bus.publish(topic_for(event), event)
+            event_repository,
+            snapshots,
+            publish=lambda event: bus.publish(topic_for(event), event),
+            tasks=tasks,
         )
         recorder.start()
         stack.push_async_callback(recorder.stop)
@@ -142,9 +172,11 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
             ),
         )
         stack.push_async_callback(cameras.stop_all)
+        lifecycle.on_shutdown(cameras.close_streams)
         devices = DeviceService(
             device_repository,
             cameras,
+            auditor=auditor,
             detection_defaults=detection_defaults,
             media_dir=settings.vision.media_dir,
         )
@@ -154,6 +186,7 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
             default_days=settings.storage.retention_days,
             overrides=lambda: _retention_overrides(device_repository),
             interval_seconds=settings.storage.retention_check_minutes * 60,
+            tasks=tasks,
         )
         retention.start()
         stack.push_async_callback(retention.stop)
@@ -174,12 +207,14 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
             notifications=notifications,
             devices=devices,
             events=events,
+            auditor=auditor,
+            lifecycle=lifecycle,
             url_signer=UrlSigner(
                 settings.security.jwt_secret, ttl_seconds=settings.security.signed_url_ttl_seconds
             ),
             tickets=InMemoryTicketStore(settings.security.ticket_ttl_seconds),
             realtime=realtime,
-            health_checks=(DatabaseHealthCheck(engine),),
+            health_checks=(DatabaseHealthCheck(engine), ShutdownCheck(lifecycle)),
         )
         await devices.start_enabled()
 
@@ -188,6 +223,7 @@ async def build_container(settings: Settings) -> AsyncIterator[Container]:
         try:
             yield container
         finally:
+            lifecycle.begin_shutdown()  # no-op when the server already signalled it
             logger.info("container_stopping")
     logger.info("container_stopped")
 
@@ -213,7 +249,7 @@ async def _wait_for_database(engine: AsyncEngine, attempts: int = 10) -> None:
             return
 
 
-async def _bootstrap_users(users: SqlUserRepository, settings: Settings) -> None:
+async def _bootstrap_users(users: SqlUserRepository, settings: Settings, auditor: Auditor) -> None:
     security = settings.security
     if security.admin_password_hash is not None:
         created = await users.create_if_missing(
@@ -221,6 +257,14 @@ async def _bootstrap_users(users: SqlUserRepository, settings: Settings) -> None
         )
         if created:
             logger.info("admin_created", username=security.admin_username)
+            await auditor.record(
+                SYSTEM_ACTOR,
+                AuditAction.USER_CREATED,
+                AuditTarget.USER,
+                security.admin_username,
+                role=Role.ADMIN,
+                source=env_name("security", "admin_password_hash"),
+            )
     if await users.count() == 0:
         logger.warning(
             "no_users",
@@ -237,6 +281,15 @@ def _load_fleet(settings: Settings, defaults: DetectionConfig) -> list[DeviceSpe
     if settings.vision.devices_file is None:
         return []
     return load_fleet(settings.vision.devices_file, defaults=defaults)
+
+
+def _retry_policy(config: NotificationsConfig) -> RetryPolicy:
+    return RetryPolicy(
+        max_attempts=config.max_attempts,
+        initial_delay=timedelta(seconds=config.retry_initial_seconds),
+        max_delay=timedelta(seconds=config.retry_max_seconds),
+        max_age=timedelta(hours=config.max_age_hours),
+    )
 
 
 def _build_notifiers(settings: Settings) -> list[Notifier]:

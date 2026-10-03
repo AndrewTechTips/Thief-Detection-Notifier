@@ -2,9 +2,11 @@ import asyncio
 import threading
 from datetime import UTC, datetime
 
+import pytest
+
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import CameraEvent, DeviceStatusChanged
-from vision_hub.vision.bridge import FramePacket, LatestFrame, LoopBridge
+from vision_hub.vision.bridge import FramePacket, FramesClosedError, LatestFrame, LoopBridge
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -59,6 +61,20 @@ class TestLatestFrame:
         async with frames.watching(), frames.watching():
             assert frames.viewers == 2
         assert frames.viewers == 0
+
+    async def test_close_wakes_consumers_and_keeps_the_latest_frame(self) -> None:
+        frames = LatestFrame()
+        frames.publish(packet(1))
+        waiting = asyncio.ensure_future(frames.next(after_sequence=1))
+        await asyncio.sleep(0)
+
+        frames.close()
+
+        with pytest.raises(FramesClosedError):
+            await waiting
+        with pytest.raises(FramesClosedError):
+            await frames.next()
+        assert frames.latest == packet(1)
 
 
 class TestLoopBridge:

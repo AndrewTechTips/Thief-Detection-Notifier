@@ -2,6 +2,8 @@ import asyncio
 import time
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from vision_hub.domain.auth import Principal, Role
 from vision_hub.infra.auth import InMemoryTicketStore
 from vision_hub.realtime.mjpeg import BOUNDARY, MEDIA_TYPE, mjpeg_stream, part
@@ -29,6 +31,20 @@ class TestMjpeg:
             b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: 3\r\n\r\nabc\r\n"
         )
         assert f"multipart/x-mixed-replace; boundary={BOUNDARY}" == MEDIA_TYPE
+
+    async def test_stream_ends_when_frames_are_closed(self) -> None:
+        frames = LatestFrame()
+        frames.publish(packet(1))
+        stream = mjpeg_stream(frames, max_fps=100, still_running=lambda: True)
+        await anext(stream)
+        pending = asyncio.ensure_future(anext(stream))
+        await asyncio.sleep(0)
+
+        frames.close()  # the hub is shutting down
+
+        with pytest.raises(StopAsyncIteration):
+            await pending
+        assert frames.viewers == 0
 
     async def test_streams_each_new_frame_once_and_counts_as_a_viewer(self) -> None:
         frames = LatestFrame()

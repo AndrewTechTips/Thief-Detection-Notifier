@@ -32,6 +32,10 @@ class FramePacket:
     jpeg: bytes = field(repr=False)
 
 
+class FramesClosedError(Exception):
+    """The hub is shutting down: live streams must end."""
+
+
 class LatestFrame:
     """The newest frame of one camera, for any number of async consumers. Loop thread only."""
 
@@ -39,6 +43,7 @@ class LatestFrame:
         self._packet: FramePacket | None = None
         self._changed = asyncio.Event()
         self._viewers = 0
+        self._closed = False
 
     @property
     def latest(self) -> FramePacket | None:
@@ -54,13 +59,23 @@ class LatestFrame:
         changed, self._changed = self._changed, asyncio.Event()
         changed.set()
 
+    def close(self) -> None:
+        """Wake every waiting consumer with ``FramesClosedError``; ``latest`` stays readable."""
+        self._closed = True
+        self._changed.set()
+
     async def next(self, after_sequence: int | None = None) -> FramePacket:
-        """Wait for a frame newer than ``after_sequence`` (or any frame, if None)."""
-        while (packet := self._packet) is None or (
-            after_sequence is not None and packet.sequence <= after_sequence
-        ):
+        """Wait for a frame newer than ``after_sequence`` (or any frame, if None).
+
+        Raises ``FramesClosedError`` once the frames are closed.
+        """
+        while True:
+            if self._closed:
+                raise FramesClosedError
+            packet = self._packet
+            if packet is not None and (after_sequence is None or packet.sequence > after_sequence):
+                return packet
             await self._changed.wait()
-        return packet
 
     @asynccontextmanager
     async def watching(self) -> AsyncIterator[LatestFrame]:

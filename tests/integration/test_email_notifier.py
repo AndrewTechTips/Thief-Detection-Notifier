@@ -84,6 +84,15 @@ class TestMessage:
         assert attachment.get_content_type() == "image/jpeg"
         assert attachment.get_content() == JPEG
 
+    def test_missing_snapshot_sends_text_only(self) -> None:
+        alert = Alert(ALERT.device_id, ALERT.device_name, ALERT.event, image_jpeg=b"")
+
+        message = EmailNotifier(smtp_config(25)).build_message(alert)
+
+        assert list(message.iter_attachments()) == []
+        assert message.get_body(preferencelist=("html",)) is None
+        assert "no longer available" in message.get_content()
+
     def test_html_is_escaped(self) -> None:
         alert = Alert(
             device_id="x",

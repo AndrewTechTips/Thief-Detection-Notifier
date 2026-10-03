@@ -12,8 +12,10 @@ from vision_hub.core.errors import (
     ServiceUnavailableError,
 )
 from vision_hub.core.logging import get_logger
+from vision_hub.domain.audit import AuditAction, AuditTarget
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.motion import MotionEvent
+from vision_hub.services.audit import Auditor
 from vision_hub.vision.bridge import FramePacket, LatestFrame
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.fleet import DeviceSpec
@@ -25,7 +27,7 @@ logger = get_logger(__name__)
 
 
 class DeviceRepository(Protocol):
-    """Storage port for device definitions (in memory now, a database in Phase 3)."""
+    """Storage port for device definitions."""
 
     async def list(self) -> list[DeviceSpec]: ...
 
@@ -53,6 +55,7 @@ class DeviceService:
         repository: DeviceRepository,
         cameras: CameraManager,
         *,
+        auditor: Auditor,
         detection_defaults: DetectionConfig,
         media_dir: Path,
         probe_timeout: float = 15.0,
@@ -60,6 +63,7 @@ class DeviceService:
     ) -> None:
         self._repository = repository
         self._cameras = cameras
+        self._auditor = auditor
         self._detection_defaults = detection_defaults
         self._media_dir = media_dir
         self._probe_timeout = probe_timeout
@@ -88,7 +92,7 @@ class DeviceService:
     async def get(self, device_id: str) -> DeviceView:
         return self._view(await self._require(device_id))
 
-    async def create(self, spec: DeviceSpec) -> DeviceView:
+    async def create(self, spec: DeviceSpec, *, actor: str) -> DeviceView:
         async with self._lock:
             if await self._repository.get(spec.id) is not None:
                 raise ConflictError(f"Device '{spec.id}' already exists.", device_id=spec.id)
@@ -98,9 +102,16 @@ class DeviceService:
             if spec.enabled:
                 await self._cameras.start(spec)
             logger.info("device_created", device_id=spec.id, kind=spec.source.kind)
+            await self._audit(
+                actor,
+                AuditAction.DEVICE_CREATED,
+                spec.id,
+                kind=spec.source.kind,
+                enabled=spec.enabled,
+            )
             return self._view(spec)
 
-    async def update(self, device_id: str, changes: dict[str, Any]) -> DeviceView:
+    async def update(self, device_id: str, changes: dict[str, Any], *, actor: str) -> DeviceView:
         """Apply a partial update. Changes that affect capture restart a running camera."""
         async with self._lock:
             current = await self._require(device_id)
@@ -113,31 +124,41 @@ class DeviceService:
             self._names[device_id] = updated.name
             await self._apply(current, updated)
             logger.info("device_updated", device_id=device_id, fields=sorted(changes))
+            # Field names only: values may contain secrets (camera passwords).
+            await self._audit(actor, AuditAction.DEVICE_UPDATED, device_id, fields=sorted(changes))
             return self._view(updated)
 
-    async def set_detection(self, device_id: str, detection: DetectionConfig) -> DeviceView:
-        return await self.update(device_id, {"detection": detection})
+    async def set_detection(
+        self, device_id: str, detection: DetectionConfig, *, actor: str
+    ) -> DeviceView:
+        return await self.update(device_id, {"detection": detection}, actor=actor)
 
-    async def delete(self, device_id: str) -> None:
+    async def delete(self, device_id: str, *, actor: str) -> None:
         async with self._lock:
             await self._require(device_id)
             await self._cameras.forget(device_id)
             await self._repository.delete(device_id)
             self._names.pop(device_id, None)
             logger.info("device_deleted", device_id=device_id)
+            await self._audit(actor, AuditAction.DEVICE_DELETED, device_id)
 
-    async def start(self, device_id: str) -> DeviceView:
+    async def start(self, device_id: str, *, actor: str) -> DeviceView:
         """Run the camera now (``enabled`` only controls what starts at boot)."""
         async with self._lock:
             spec = await self._require(device_id)
-            if not self._cameras.is_running(device_id):
+            # A crashed camera waiting to restart is already wanted: starting it again is a no-op.
+            if not self._cameras.is_wanted(device_id):
                 await self._cameras.start(spec)
+                await self._audit(actor, AuditAction.DEVICE_STARTED, device_id)
             return self._view(spec)
 
-    async def stop(self, device_id: str) -> DeviceView:
+    async def stop(self, device_id: str, *, actor: str) -> DeviceView:
         async with self._lock:
             spec = await self._require(device_id)
-            await self._cameras.stop(device_id)
+            wanted = self._cameras.is_wanted(device_id)
+            await self._cameras.stop(device_id)  # also cancels a pending crash restart
+            if wanted:
+                await self._audit(actor, AuditAction.DEVICE_STOPPED, device_id)
             return self._view(spec)
 
     async def snapshot(self, device_id: str) -> FramePacket:
@@ -205,6 +226,9 @@ class DeviceService:
             msg = "Video files must be inside the media directory."
             raise BadRequestError(msg, media_dir=str(self._media_dir))
         return source.model_copy(update={"path": resolved})
+
+    async def _audit(self, actor: str, action: AuditAction, device_id: str, **details: Any) -> None:
+        await self._auditor.record(actor, action, AuditTarget.DEVICE, device_id, **details)
 
     async def _require(self, device_id: str) -> DeviceSpec:
         spec = await self._repository.get(device_id)

@@ -36,6 +36,9 @@ class LocalSnapshotStore:
             raise SnapshotPathError(msg)
         return candidate
 
+    async def read(self, path: str) -> bytes:
+        return await asyncio.to_thread(self.resolve(path).read_bytes)
+
     async def delete(self, path: str) -> None:
         target = self.resolve(path)
         await asyncio.to_thread(target.unlink, missing_ok=True)

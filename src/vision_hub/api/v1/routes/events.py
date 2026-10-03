@@ -1,6 +1,5 @@
 """Event history: list and inspect recorded motion events, fetch their snapshots."""
 
-from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query
@@ -35,11 +34,12 @@ async def list_events(
 ) -> Page[EventOut]:
     """Newest first. Snapshot links in the response are signed and expire after
     `VISION_HUB_SECURITY__SIGNED_URL_TTL_SECONDS`."""
-    before = None
-    if page.cursor:
-        before = (datetime.fromisoformat(str(page.cursor["started_at"])), str(page.cursor["id"]))
     records = await events.list(
-        limit=page.limit + 1, device_id=device_id, since=since, until=until, before=before
+        limit=page.limit + 1,
+        device_id=device_id,
+        since=since,
+        until=until,
+        before=page.time_position("started_at"),
     )
     items = records[: page.limit]
     next_cursor = None

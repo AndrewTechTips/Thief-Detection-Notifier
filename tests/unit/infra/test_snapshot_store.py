@@ -17,6 +17,7 @@ async def test_saves_into_date_partitioned_directories(tmp_path: Path) -> None:
     assert stored.path == "2026/10/03/evt-1-thumbnail.jpg"
     assert stored.size_bytes == 4
     assert (tmp_path / "snapshots" / stored.path).read_bytes() == b"jpeg"
+    assert await store.read(stored.path) == b"jpeg"
     assert store.resolve(stored.path) == (tmp_path / "snapshots" / stored.path).resolve()
 
 

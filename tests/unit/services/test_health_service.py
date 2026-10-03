@@ -1,7 +1,10 @@
 import asyncio
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
+from vision_hub.domain.health import Unhealthy
 from vision_hub.services.health import run_health_checks
 
 
@@ -58,3 +61,16 @@ async def test_checks_run_concurrently() -> None:
 
     assert report.healthy is True
     assert time.perf_counter() - started < 0.3  # sequential would take 0.5 s
+
+
+async def test_expected_unhealthy_states_are_logged_without_a_traceback(
+    log_records: Callable[[], list[dict[str, Any]]],
+) -> None:
+    report = await run_health_checks(
+        [FakeCheck("accepting_traffic", Unhealthy("shutting down"))], check_timeout=1
+    )
+
+    assert report.healthy is False
+    [record] = [r for r in log_records() if r["event"] == "health_check_unhealthy"]
+    assert record["reason"] == "shutting down"
+    assert "exception" not in record

@@ -8,7 +8,7 @@ import asyncio
 import time
 from collections.abc import AsyncGenerator, Callable
 
-from vision_hub.vision.bridge import LatestFrame
+from vision_hub.vision.bridge import FramesClosedError, LatestFrame
 
 BOUNDARY = "frame"
 MEDIA_TYPE = f"multipart/x-mixed-replace; boundary={BOUNDARY}"
@@ -29,7 +29,8 @@ async def mjpeg_stream(
     stall_timeout: float = 5.0,
 ) -> AsyncGenerator[bytes]:
     """Yield parts until the camera stops (checked whenever no frame arrives for
-    ``stall_timeout`` seconds). Client disconnects cancel the generator from outside."""
+    ``stall_timeout`` seconds) or the hub shuts down. Client disconnects cancel the generator
+    from outside."""
     interval = 1.0 / max_fps
     last_sequence: int | None = None
     async with frames.watching():
@@ -40,6 +41,8 @@ async def mjpeg_stream(
             except TimeoutError:
                 if still_running():
                     continue
+                return
+            except FramesClosedError:
                 return
             last_sequence = packet.sequence
             yield part(packet.jpeg)

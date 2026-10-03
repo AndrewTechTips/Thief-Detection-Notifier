@@ -2,6 +2,7 @@
 
 from typing import assert_never
 
+from vision_hub.core.backoff import Backoff
 from vision_hub.vision.sources.base import FrameSource, Pacer, SourceError, SourceStoppedError
 from vision_hub.vision.sources.config import (
     RtspSourceConfig,
@@ -11,7 +12,7 @@ from vision_hub.vision.sources.config import (
     WebcamSourceConfig,
 )
 from vision_hub.vision.sources.opencv import RtspSource, VideoFileSource, WebcamSource
-from vision_hub.vision.sources.reconnecting import Backoff, ReconnectingSource
+from vision_hub.vision.sources.reconnecting import ReconnectingSource
 from vision_hub.vision.sources.synthetic import SyntheticSource
 
 

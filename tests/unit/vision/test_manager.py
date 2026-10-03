@@ -8,6 +8,7 @@ import pytest
 from vision_hub.core.security import utc_now
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import CameraEvent, DeviceStatusChanged, MotionEndedEvent
+from vision_hub.vision.bridge import FramesClosedError
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.fleet import DeviceSpec
 from vision_hub.vision.manager import CameraManager, Worker, camera_worker_factory
@@ -135,6 +136,9 @@ class TestSupervision:
         await asyncio.sleep(0.05)
 
         assert len(factory.workers) == 1
+        assert manager.is_wanted("cam-1") is False  # finished: may be started again
+        await manager.start(spec())
+        assert len(factory.workers) == 2
 
     async def test_stop_cancels_a_pending_restart(self) -> None:
         factory = FakeFactory(crash=True)
@@ -143,6 +147,7 @@ class TestSupervision:
         )
         await manager.start(spec())
         await wait_for(lambda: "cam-1" in manager._restarts)
+        assert manager.is_wanted("cam-1") is True  # not running, but waiting to restart
 
         await manager.stop("cam-1")
         await asyncio.sleep(0.05)
@@ -205,6 +210,17 @@ class TestSupervision:
 
         assert manager.status("cam-1") is DeviceStatus.ONLINE
         assert any(r["event"] == "camera_event_listener_failed" for r in log_records())
+
+    async def test_close_streams_ends_live_views_but_not_cameras(self) -> None:
+        manager = CameraManager(worker_factory=FakeFactory())
+        await manager.start(spec())
+
+        manager.close_streams()
+
+        with pytest.raises(FramesClosedError):
+            await manager.frames("cam-1").next()
+        assert manager.is_running("cam-1") is True
+        await manager.stop_all()
 
     async def test_unknown_devices(self) -> None:
         manager = CameraManager(worker_factory=FakeFactory())

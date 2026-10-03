@@ -13,6 +13,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -82,6 +83,8 @@ class MotionEventRow(Base):
     peak_area_ratio: Mapped[float] = mapped_column(Float, default=0.0)
     motion_frames: Mapped[int] = mapped_column(default=0)
     boxes: Mapped[list[dict[str, int]]] = mapped_column(JsonDocument, default=list)
+    # Never ended because the hub stopped abruptly; set by the startup recovery.
+    interrupted: Mapped[bool] = mapped_column(default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
     snapshots: Mapped[list[SnapshotRow]] = relationship(
         back_populates="event", cascade="all, delete-orphan", passive_deletes=True, lazy="selectin"
@@ -104,3 +107,48 @@ class SnapshotRow(Base):
     size_bytes: Mapped[int]
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
     event: Mapped[MotionEventRow] = relationship(back_populates="snapshots")
+
+
+class NotificationRow(Base):
+    """Outbox: one row per alert and channel, kept until it is sent or given up on, so
+    deliveries survive restarts. Deleted together with its event."""
+
+    __tablename__ = "notifications"
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'sent', 'failed')", name="status"),
+        UniqueConstraint("event_id", "channel"),
+        Index("ix_notifications_status_next_attempt_at", "status", "next_attempt_at"),
+        Index("ix_notifications_device_id_created_at", "device_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_new_id)
+    event_id: Mapped[str] = mapped_column(
+        Uuid(as_uuid=False), ForeignKey("motion_events.id", ondelete="CASCADE")
+    )
+    device_id: Mapped[str] = mapped_column(String(63))
+    channel: Mapped[str] = mapped_column(String(30))
+    status: Mapped[str] = mapped_column(String(10), default="pending")
+    attempts: Mapped[int] = mapped_column(default=0)
+    next_attempt_at: Mapped[datetime]
+    last_error: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+    finished_at: Mapped[datetime | None]
+
+
+class AuditLogRow(Base):
+    """Who changed which device or user, and when. Append-only."""
+
+    __tablename__ = "audit_log"
+    __table_args__ = (
+        Index("ix_audit_log_at", "at"),
+        Index("ix_audit_log_target_type_target_id_at", "target_type", "target_id", "at"),
+    )
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_new_id)
+    at: Mapped[datetime] = mapped_column(default=utc_now)
+    actor: Mapped[str] = mapped_column(String(100))
+    action: Mapped[str] = mapped_column(String(50))
+    target_type: Mapped[str] = mapped_column(String(20))
+    target_id: Mapped[str] = mapped_column(String(100))
+    details: Mapped[dict[str, Any]] = mapped_column(JsonDocument, default=dict)
+    request_id: Mapped[str | None] = mapped_column(String(64))

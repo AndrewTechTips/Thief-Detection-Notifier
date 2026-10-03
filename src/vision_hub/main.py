@@ -21,6 +21,7 @@ from vision_hub.api.v1.router import PROBE_PATHS, api_router
 from vision_hub.core.config import Settings, get_settings
 from vision_hub.core.container import LifespanState, build_container
 from vision_hub.core.errors import register_exception_handlers
+from vision_hub.core.lifecycle import Lifecycle
 from vision_hub.core.logging import configure_logging, get_logger
 
 logger = get_logger(__name__)
@@ -42,6 +43,10 @@ OPENAPI_TAGS = [
         "name": "events",
         "description": "Recorded motion events with their snapshots.",
     },
+    {
+        "name": "audit",
+        "description": "Who changed which device or user, and when (admins only).",
+    },
 ]
 DOCS_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc"})
 
@@ -49,11 +54,12 @@ DOCS_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc"})
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings)
+    lifecycle = Lifecycle()  # the server signals shutdown through app.state.lifecycle
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[LifespanState]:
         logger.info("startup", app=settings.app.name, version=__version__, env=settings.app.env)
-        async with build_container(settings) as container:
+        async with build_container(settings, lifecycle) as container:
             yield {"container": container}
         logger.info("shutdown")
 
@@ -69,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         generate_unique_id_function=operation_id,
         lifespan=lifespan,
     )
+    app.state.lifecycle = lifecycle
     install_problem_details_schema(app)
     register_exception_handlers(app)
     app.include_router(api_router)

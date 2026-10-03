@@ -19,8 +19,10 @@ from vision_hub.core.config import (
     get_settings,
 )
 from vision_hub.core.container import _wait_for_database, build_container
+from vision_hub.domain.audit import AuditTarget
 from vision_hub.domain.auth import Role
 from vision_hub.infra.db.engine import create_engine, create_sessions
+from vision_hub.infra.db.repositories.audit import SqlAuditLog
 from vision_hub.infra.db.repositories.users import SqlUserRepository
 from vision_hub.vision.fleet import DeviceSpec
 from vision_hub.vision.sources import SyntheticSourceConfig
@@ -51,15 +53,21 @@ def settings(tmp_path: Path, admin_password_hash: SecretStr) -> Settings:
 async def test_api_changes_survive_a_restart(settings: Settings) -> None:
     async with build_container(settings) as first:
         await first.devices.create(
-            DeviceSpec(id="garage", name="Garage", enabled=False, source=SyntheticSourceConfig())
+            DeviceSpec(id="garage", name="Garage", enabled=False, source=SyntheticSourceConfig()),
+            actor="alice",
         )
-        await first.devices.update("porch", {"name": "Front porch"})
+        await first.devices.update("porch", {"name": "Front porch"}, actor="alice")
 
     async with build_container(settings) as second:
         names = {view.spec.id: view.spec.name for view in await second.devices.list()}
+        trail = await second.auditor.list(limit=10, target_type=AuditTarget.DEVICE)
 
     # The fleet file seeded "porch" once; afterwards the database is the source of truth.
     assert names == {"garage": "Garage", "porch": "Front porch"}
+    assert [(e.actor, e.action, e.target_id) for e in trail] == [
+        ("alice", "device.updated", "porch"),
+        ("alice", "device.created", "garage"),
+    ]
 
 
 async def test_admin_is_bootstrapped_once_and_can_log_in_after_restart(
@@ -73,8 +81,10 @@ async def test_admin_is_bootstrapped_once_and_can_log_in_after_restart(
         refreshed = await restarted.auth.refresh(pair.refresh.token)
         with pytest.raises(Exception, match="revoked"):
             await restarted.auth.refresh(pair.refresh.token)  # reuse detected across restarts
+        [created] = await restarted.auditor.list(limit=10)  # once, not on every start
 
     assert refreshed.access.token
+    assert (created.actor, created.action, created.target_id) == ("system", "user.created", "admin")
 
 
 async def test_can_skip_migrations_on_startup(settings: Settings) -> None:
@@ -131,12 +141,38 @@ class TestCreateUserCommand:
         get_settings.cache_clear()
         engine = create_engine(get_settings().db)
         try:
-            bob = await SqlUserRepository(create_sessions(engine)).get_by_username("bob")
+            sessions = create_sessions(engine)
+            bob = await SqlUserRepository(sessions).get_by_username("bob")
+            [entry] = await SqlAuditLog(sessions).list(limit=10)
         finally:
             await engine.dispose()
         assert bob is not None
         assert bob.role is Role.ADMIN
         assert bob.password_hash.startswith("$argon2id$")
+        assert (entry.actor, entry.action, entry.target_id) == (
+            f"cli:{getpass.getuser()}",
+            "user.created",
+            "bob",
+        )
+        assert entry.details == {"role": "admin"}
+
+    def test_audit_actor_without_an_os_user(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def no_user() -> str:
+            raise OSError("no passwd entry")
+
+        monkeypatch.setattr(getpass, "getuser", no_user)
+
+        assert cli._cli_actor() == "cli"
+
+    def test_works_without_startup_migrations(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.setenv("VISION_HUB_DB__MIGRATE_ON_STARTUP", "false")  # already migrated
+        self.answer(monkeypatch, "a-strong-password")
+
+        cli.main(["create-user", "carol"])
+
+        assert "Created user carol (viewer)." in capsys.readouterr().out
 
     def test_rejects_bad_usernames(self) -> None:
         with pytest.raises(SystemExit, match="3 to 100"):

@@ -13,6 +13,7 @@ from pydantic import SecretStr
 from vision_hub.core.config import AppConfig, Environment, SecurityConfig, Settings, VisionConfig
 from vision_hub.core.security import TokenService, TokenType
 from vision_hub.domain.auth import Principal, Role
+from vision_hub.schemas.pagination import encode_cursor
 
 EVENTS = "/api/v1/events"
 FLEET = """
@@ -71,6 +72,7 @@ async def test_recorded_events_are_listed_with_signed_snapshots(
     [event, *_] = await wait_for_events(client, bearer)
 
     assert event["device_id"] == "porch"
+    assert event["interrupted"] is False
     assert event["duration_seconds"] > 0
     assert event["boxes"]
     links = {link["kind"]: link["url"] for link in event["snapshots"]}
@@ -146,3 +148,7 @@ async def test_errors(client: httpx2.AsyncClient, bearer: dict[str, str]) -> Non
     assert (
         await client.get(EVENTS, params={"since": "not-a-date"}, headers=bearer)
     ).status_code == 422
+    wrong_cursor = encode_cursor({"at": "2026-10-03T10:00:00+00:00", "id": unknown})  # audit's
+    assert (
+        await client.get(EVENTS, params={"cursor": wrong_cursor}, headers=bearer)
+    ).status_code == 400

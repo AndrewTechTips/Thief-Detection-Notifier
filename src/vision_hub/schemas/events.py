@@ -21,7 +21,8 @@ class EventOut(ApiSchema):
     started_at: datetime
     ended_at: datetime | None
     duration_seconds: float | None
-    complete: bool = Field(description="False if the hub stopped before the event ended")
+    complete: bool = Field(description="True once the event has ended")
+    interrupted: bool = Field(description="The hub stopped abruptly before the event ended")
     peak_area_ratio: float = Field(description="Largest moving region, as a fraction of the frame")
     motion_frames: int
     boxes: list[BoundingBox]
@@ -49,6 +50,7 @@ class EventOut(ApiSchema):
             ended_at=event.ended_at,
             duration_seconds=duration,
             complete=record.complete,
+            interrupted=record.interrupted,
             peak_area_ratio=event.peak_area_ratio,
             motion_frames=event.motion_frames,
             boxes=list(record.boxes),

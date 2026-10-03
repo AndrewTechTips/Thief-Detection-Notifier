@@ -8,8 +8,10 @@ from pathlib import Path
 from vision_hub.core.errors import NotFoundError
 from vision_hub.core.logging import get_logger
 from vision_hub.core.security import utc_now
+from vision_hub.core.tasks import TaskSupervisor
 from vision_hub.domain.events import CameraEvent, MotionEndedEvent, MotionStartedEvent
 from vision_hub.domain.history import EventRecord, EventRepository
+from vision_hub.domain.motion import MotionEvent
 from vision_hub.domain.storage import SnapshotKind, SnapshotStore, StoredSnapshot
 
 logger = get_logger(__name__)
@@ -29,10 +31,13 @@ class EventRecorder:
         repository: EventRepository,
         store: SnapshotStore,
         publish: Callable[[CameraEvent], None],
+        *,
+        tasks: TaskSupervisor | None = None,
     ) -> None:
         self._repository = repository
         self._store = store
         self._publish = publish
+        self._tasks = tasks or TaskSupervisor()
         self._queue: asyncio.Queue[CameraEvent] = asyncio.Queue()  # unbounded: events are rare
         self._task: asyncio.Task[None] | None = None
 
@@ -41,7 +46,7 @@ class EventRecorder:
         self._queue.put_nowait(event)
 
     def start(self) -> None:
-        self._task = asyncio.create_task(self._run(), name="event-recorder")
+        self._task = self._tasks.spawn("event-recorder", self._run)
 
     async def stop(self) -> None:
         """Record and publish everything already submitted, then stop."""
@@ -116,6 +121,20 @@ class EventService:
     async def after(self, event_id: str, *, limit: int) -> Sequence[EventRecord]:
         return await self._repository.after(event_id, limit=limit)
 
+    async def evidence(self, event_id: str) -> tuple[MotionEvent, bytes] | None:
+        """The event and its annotated image, for alerts; the image is empty if it is gone."""
+        record = await self._repository.get(event_id)
+        if record is None:
+            return None
+        snapshot = record.snapshots.get(SnapshotKind.ANNOTATED)
+        image = b""
+        if snapshot is not None:
+            try:
+                image = await self._store.read(snapshot.path)
+            except OSError, ValueError:
+                logger.warning("evidence_image_unavailable", event_id=event_id)
+        return record.event, image
+
 
 class RetentionService:
     """Deletes events (rows and snapshot files) older than their retention period: the
@@ -132,6 +151,7 @@ class RetentionService:
         default_days: int,
         overrides: Callable[[], Awaitable[Mapping[str, int]]],
         interval_seconds: float,
+        tasks: TaskSupervisor | None = None,
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
         self._repository = repository
@@ -139,11 +159,12 @@ class RetentionService:
         self._default = timedelta(days=default_days)
         self._overrides = overrides
         self._interval = interval_seconds
+        self._tasks = tasks or TaskSupervisor()
         self._clock = clock
         self._task: asyncio.Task[None] | None = None
 
     def start(self) -> None:
-        self._task = asyncio.create_task(self._loop(), name="retention")
+        self._task = self._tasks.spawn("retention", self._loop)
 
     async def stop(self) -> None:
         if self._task is not None:

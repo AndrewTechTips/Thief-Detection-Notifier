@@ -78,6 +78,10 @@ class CameraManager:
     def is_running(self, device_id: str) -> bool:
         return device_id in self._workers
 
+    def is_wanted(self, device_id: str) -> bool:
+        """Started and not stopped since: running, or waiting to restart after a crash."""
+        return device_id in self._wanted
+
     def status(self, device_id: str) -> DeviceStatus:
         return self._statuses.get(device_id, DeviceStatus.STOPPED)
 
@@ -120,6 +124,11 @@ class CameraManager:
         for state in (self._specs, self._frames, self._statuses, self._last_events, self._backoffs):
             state.pop(device_id, None)
 
+    def close_streams(self) -> None:
+        """End every live stream (shutdown has begun); cameras keep running until stopped."""
+        for frames in self._frames.values():
+            frames.close()
+
     async def stop_all(self) -> None:
         await asyncio.gather(*(self.stop(device_id) for device_id in list(self._specs)))
 
@@ -154,8 +163,10 @@ class CameraManager:
         if self._workers.get(device_id) is not worker:
             return  # a replaced or explicitly stopped worker
         del self._workers[device_id]
-        if not crashed or device_id not in self._wanted:
+        if not crashed:  # finished on its own (e.g. a video file ended): start it again at will
+            self._wanted.discard(device_id)
             return
+        # Still wanted: stop() removes the worker first, so its exit returns early above.
         delay = self._backoffs[device_id].next_delay()
         logger.warning(
             "camera_worker_restart_scheduled", device_id=device_id, delay_s=round(delay, 1)

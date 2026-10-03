@@ -3,6 +3,7 @@
 import base64
 import binascii
 import json
+from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import Depends, Query
@@ -25,6 +26,19 @@ class Page[T](ApiSchema):
 class PageParams(ApiSchema):
     limit: int
     cursor: dict[str, Any] | None
+
+    def time_position(self, time_key: str) -> tuple[datetime, str] | None:
+        """The ``(timestamp, id)`` keyset position of a cursor made by ``encode_cursor``."""
+        if self.cursor is None:
+            return None
+        try:
+            at = datetime.fromisoformat(self.cursor[time_key])
+            position = at, str(self.cursor["id"])
+        except KeyError, TypeError, ValueError:
+            raise InvalidCursorError from None
+        if at.tzinfo is None:
+            raise InvalidCursorError
+        return position
 
 
 def encode_cursor(position: dict[str, Any]) -> str:

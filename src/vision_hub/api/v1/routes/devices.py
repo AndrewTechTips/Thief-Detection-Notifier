@@ -5,7 +5,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Query, Response, status
 from fastapi.responses import StreamingResponse
 
-from vision_hub.api.deps import AdminOnly, DeviceServiceDep, SettingsDep
+from vision_hub.api.deps import AdminOnly, AdminPrincipal, DeviceServiceDep, SettingsDep
 from vision_hub.api.v1 import API_V1_PREFIX
 from vision_hub.realtime.mjpeg import MEDIA_TYPE, mjpeg_stream
 from vision_hub.schemas.devices import (
@@ -45,15 +45,13 @@ async def list_devices(devices: DeviceServiceDep, page: PageParamsDep) -> Page[D
 @router.post(
     "",
     summary="Add a device",
-    dependencies=[AdminOnly],
     status_code=status.HTTP_201_CREATED,
     responses=_problems(400, 409),
 )
 async def create_device(
-    body: DeviceCreate, response: Response, devices: DeviceServiceDep
+    body: DeviceCreate, response: Response, devices: DeviceServiceDep, principal: AdminPrincipal
 ) -> DeviceOut:
-    """Starts the camera right away when `enabled`. Changes last until the hub restarts (the
-    devices file is loaded at startup); persistent storage arrives with the database."""
+    """Starts the camera right away when `enabled`."""
     spec = DeviceSpec(
         id=body.id,
         name=body.name,
@@ -63,7 +61,7 @@ async def create_device(
         source=body.source,
         detection=body.detection or devices.detection_defaults,
     )
-    view = await devices.create(spec)
+    view = await devices.create(spec, actor=principal.username)
     response.headers["Location"] = f"{API_V1_PREFIX}/devices/{view.spec.id}"
     return DeviceOut.from_view(view)
 
@@ -83,58 +81,62 @@ async def get_device(device_id: str, devices: DeviceServiceDep) -> DeviceOut:
 @router.patch(
     "/{device_id}",
     summary="Update a device",
-    dependencies=[AdminOnly],
     responses=_problems(400, 404),
 )
-async def update_device(device_id: str, body: DeviceUpdate, devices: DeviceServiceDep) -> DeviceOut:
+async def update_device(
+    device_id: str, body: DeviceUpdate, devices: DeviceServiceDep, principal: AdminPrincipal
+) -> DeviceOut:
     """Only fields present in the body change. Changing the source, detection or frame rate
     restarts a running camera."""
     changes = {field: getattr(body, field) for field in body.model_fields_set}
-    return DeviceOut.from_view(await devices.update(device_id, changes))
+    return DeviceOut.from_view(await devices.update(device_id, changes, actor=principal.username))
 
 
 @router.delete(
     "/{device_id}",
     summary="Delete a device",
-    dependencies=[AdminOnly],
     status_code=status.HTTP_204_NO_CONTENT,
     responses=_problems(404),
 )
-async def delete_device(device_id: str, devices: DeviceServiceDep) -> None:
-    await devices.delete(device_id)
+async def delete_device(
+    device_id: str, devices: DeviceServiceDep, principal: AdminPrincipal
+) -> None:
+    await devices.delete(device_id, actor=principal.username)
 
 
 @router.post(
     "/{device_id}/start",
     summary="Start a camera",
-    dependencies=[AdminOnly],
     status_code=status.HTTP_202_ACCEPTED,
     responses=_problems(404),
 )
-async def start_device(device_id: str, devices: DeviceServiceDep) -> DeviceOut:
+async def start_device(
+    device_id: str, devices: DeviceServiceDep, principal: AdminPrincipal
+) -> DeviceOut:
     """Accepted: the camera connects in the background; watch `status` become `online`."""
-    return DeviceOut.from_view(await devices.start(device_id))
+    return DeviceOut.from_view(await devices.start(device_id, actor=principal.username))
 
 
-@router.post(
-    "/{device_id}/stop", summary="Stop a camera", dependencies=[AdminOnly], responses=_problems(404)
-)
-async def stop_device(device_id: str, devices: DeviceServiceDep) -> DeviceOut:
-    return DeviceOut.from_view(await devices.stop(device_id))
+@router.post("/{device_id}/stop", summary="Stop a camera", responses=_problems(404))
+async def stop_device(
+    device_id: str, devices: DeviceServiceDep, principal: AdminPrincipal
+) -> DeviceOut:
+    return DeviceOut.from_view(await devices.stop(device_id, actor=principal.username))
 
 
 @router.put(
     "/{device_id}/detection-config",
     summary="Replace detection settings",
-    dependencies=[AdminOnly],
     responses=_problems(404),
 )
 async def set_detection_config(
-    device_id: str, body: DetectionConfig, devices: DeviceServiceDep
+    device_id: str, body: DetectionConfig, devices: DeviceServiceDep, principal: AdminPrincipal
 ) -> DeviceOut:
     """Hot reload: a running camera restarts with the new settings (its background model
     re-learns for a moment)."""
-    return DeviceOut.from_view(await devices.set_detection(device_id, body))
+    return DeviceOut.from_view(
+        await devices.set_detection(device_id, body, actor=principal.username)
+    )
 
 
 @router.get(

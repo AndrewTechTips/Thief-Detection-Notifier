@@ -6,6 +6,7 @@ from pydantic import BaseModel, ValidationError
 
 from vision_hub.core.config import (
     Environment,
+    NotificationsConfig,
     SecurityConfig,
     Settings,
     env_name,
@@ -341,3 +342,8 @@ class TestEnvExample:
             assert issubclass(info.default_factory, BaseModel)
             for field in info.default_factory.model_fields:
                 assert env_name(group, field) in documented
+
+
+def test_notification_retry_delays_must_be_ordered() -> None:
+    with pytest.raises(ValidationError, match="retry_max_seconds"):
+        NotificationsConfig(retry_initial_seconds=60, retry_max_seconds=10)

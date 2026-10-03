@@ -3,17 +3,23 @@
 import argparse
 import asyncio
 import getpass
+import socket
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import uvicorn
 
 from vision_hub.core.config import env_name, get_settings
 from vision_hub.core.security import PasswordHasher
+from vision_hub.domain.audit import AuditAction, AuditTarget
 from vision_hub.domain.auth import Role
 from vision_hub.infra.db.engine import create_engine, create_sessions
 from vision_hub.infra.db.migrate import upgrade_to_head
+from vision_hub.infra.db.repositories.audit import SqlAuditLog
 from vision_hub.infra.db.repositories.users import SqlUserRepository
+from vision_hub.main import create_app
+from vision_hub.services.audit import Auditor
 
 MIN_PASSWORD_LENGTH = 12
 
@@ -50,21 +56,40 @@ def main(argv: Sequence[str] | None = None) -> None:
         _serve(reload=args.reload)
 
 
+class GracefulServer(uvicorn.Server):
+    """Signals the application as soon as shutdown begins, *before* uvicorn waits for open
+    connections, so endless responses (MJPEG streams) end instead of blocking shutdown."""
+
+    def __init__(self, config: uvicorn.Config, *, on_shutdown: Callable[[], None]) -> None:
+        super().__init__(config)
+        self._on_shutdown = on_shutdown
+
+    async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
+        self._on_shutdown()
+        await super().shutdown(sockets)
+
+
 def _serve(*, reload: bool) -> None:
     settings = get_settings()
-    uvicorn.run(
-        "vision_hub.main:create_app",
-        factory=True,
-        host=settings.app.host,
-        port=settings.app.port,
-        reload=reload,
+    options: dict[str, Any] = {
+        "host": settings.app.host,
+        "port": settings.app.port,
         # Cameras are owned by the process: never run more than one worker (AD-8).
-        workers=1,
+        "workers": 1,
         # Logging is configured by create_app(); uvicorn must not install its own config.
-        log_config=None,
-        access_log=False,
-        server_header=False,
-    )
+        "log_config": None,
+        "access_log": False,
+        "server_header": False,
+        # Backstop: cancel requests still running this long after shutdown began.
+        "timeout_graceful_shutdown": settings.app.shutdown_timeout_seconds,
+    }
+    if reload:  # development only: the reloader imports the app in a subprocess
+        uvicorn.run("vision_hub.main:create_app", factory=True, reload=True, **options)
+        return
+    app = create_app(settings)
+    GracefulServer(
+        uvicorn.Config(app, **options), on_shutdown=app.state.lifecycle.begin_shutdown
+    ).run()
 
 
 def _prompt_new_password() -> str:
@@ -91,9 +116,26 @@ async def _save_user(username: str, password_hash: str, role: Role) -> bool:
     try:
         if settings.db.migrate_on_startup:
             await upgrade_to_head(engine)
-        return await SqlUserRepository(create_sessions(engine)).save(username, password_hash, role)
+        sessions = create_sessions(engine)
+        created = await SqlUserRepository(sessions).save(username, password_hash, role)
+        await Auditor(SqlAuditLog(sessions)).record(
+            _cli_actor(),
+            AuditAction.USER_CREATED if created else AuditAction.USER_UPDATED,
+            AuditTarget.USER,
+            username,
+            role=role,
+        )
+        return created
     finally:
         await engine.dispose()
+
+
+def _cli_actor() -> str:
+    """``cli:<os user>``: the operator who ran the command."""
+    try:
+        return f"cli:{getpass.getuser()}"
+    except OSError, KeyError:  # e.g. a container uid without a passwd entry
+        return "cli"
 
 
 if __name__ == "__main__":

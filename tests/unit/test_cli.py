@@ -3,6 +3,7 @@ from typing import Any
 
 import pytest
 import uvicorn
+from fastapi import FastAPI
 from pwdlib import PasswordHash
 
 from vision_hub import __main__ as cli
@@ -10,26 +11,65 @@ from vision_hub import __main__ as cli
 
 @pytest.fixture
 def uvicorn_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """Records how the server would be started: ``uvicorn.run`` with --reload, otherwise
+    ``GracefulServer.run`` with a ready-made app."""
     calls: list[dict[str, Any]] = []
 
     def fake_run(app: str, **kwargs: Any) -> None:
         calls.append({"app": app, **kwargs})
 
+    def fake_server_run(server: cli.GracefulServer) -> None:
+        config = server.config
+        calls.append(
+            {
+                "app": config.app,
+                "server": server,
+                "reload": config.reload,
+                **{
+                    option: getattr(config, option)
+                    for option in (
+                        "host",
+                        "port",
+                        "workers",
+                        "log_config",
+                        "access_log",
+                        "server_header",
+                        "timeout_graceful_shutdown",
+                    )
+                },
+            }
+        )
+
     monkeypatch.setattr(uvicorn, "run", fake_run)
+    monkeypatch.setattr(cli.GracefulServer, "run", fake_server_run)
     return calls
 
 
-def test_runs_factory_with_safe_server_options(uvicorn_calls: list[dict[str, Any]]) -> None:
+def test_runs_the_app_with_safe_server_options(uvicorn_calls: list[dict[str, Any]]) -> None:
     cli.main([])
 
     [call] = uvicorn_calls
-    assert call["app"] == "vision_hub.main:create_app"
-    assert call["factory"] is True
+    assert isinstance(call["app"], FastAPI)
     assert call["workers"] == 1
     assert call["reload"] is False
     assert call["log_config"] is None
     assert call["access_log"] is False
     assert call["server_header"] is False
+    assert call["timeout_graceful_shutdown"] == 10
+
+
+async def test_server_signals_the_app_before_waiting_for_connections(
+    uvicorn_calls: list[dict[str, Any]],
+) -> None:
+    cli.main([])
+    [call] = uvicorn_calls
+    server: cli.GracefulServer = call["server"]
+    server.servers = []  # never started: no listening sockets
+    server.force_exit = True  # skip waiting and the lifespan
+
+    await server.shutdown()
+
+    assert call["app"].state.lifecycle.stopping is True
 
 
 def test_host_and_port_come_from_settings(
@@ -43,10 +83,14 @@ def test_host_and_port_come_from_settings(
     assert (uvicorn_calls[0]["host"], uvicorn_calls[0]["port"]) == ("0.0.0.0", 9090)  # noqa: S104
 
 
-def test_reload_flag(uvicorn_calls: list[dict[str, Any]]) -> None:
+def test_reload_runs_the_factory_through_uvicorn(uvicorn_calls: list[dict[str, Any]]) -> None:
     cli.main(["--reload"])
 
-    assert uvicorn_calls[0]["reload"] is True
+    [call] = uvicorn_calls
+    assert call["app"] == "vision_hub.main:create_app"
+    assert call["factory"] is True
+    assert call["reload"] is True
+    assert call["timeout_graceful_shutdown"] == 10
 
 
 def test_serve_subcommand(uvicorn_calls: list[dict[str, Any]]) -> None:

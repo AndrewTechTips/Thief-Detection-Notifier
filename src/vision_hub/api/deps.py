@@ -14,6 +14,7 @@ from vision_hub.core.container import Container
 from vision_hub.core.errors import AuthenticationError, PermissionDeniedError
 from vision_hub.domain.auth import Principal, Role
 from vision_hub.domain.health import HealthCheck
+from vision_hub.services.audit import Auditor
 from vision_hub.services.auth import AuthService
 from vision_hub.services.devices import DeviceService
 from vision_hub.services.events import EventService
@@ -65,6 +66,13 @@ def get_event_service(container: ContainerDep) -> EventService:
 
 
 EventServiceDep = Annotated[EventService, Depends(get_event_service)]
+
+
+def get_auditor(container: ContainerDep) -> Auditor:
+    return container.auditor
+
+
+AuditorDep = Annotated[Auditor, Depends(get_auditor)]
 
 # auto_error=False: missing tokens raise our AuthenticationError (problem+json), not FastAPI's.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{API_V1_PREFIX}/auth/token", auto_error=False)

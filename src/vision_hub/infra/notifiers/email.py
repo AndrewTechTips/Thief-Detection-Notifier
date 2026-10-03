@@ -67,11 +67,19 @@ class EmailNotifier:
         message["To"] = ", ".join(self._config.effective_recipients)
         message["X-Vision-Hub-Event"] = event.id
 
+        image = alert.image_jpeg
         summary = (
             f"Motion was detected by {alert.device_name} at {started} "
-            f"and lasted {duration:.1f} s. The best frame of the event is attached."
+            f"and lasted {duration:.1f} s. "
+            + (
+                "The best frame of the event is attached."
+                if image
+                else "The snapshot of the event is no longer available."
+            )
         )
         message.set_content(f"{summary}\n\nEvent ID: {event.id}\n")
+        if not image:
+            return message
 
         image_cid = make_msgid(domain="vision-hub.local")
         message.add_alternative(
@@ -84,6 +92,6 @@ class EmailNotifier:
         if html_part is None:  # pragma: no cover - added just above
             msg = "HTML body missing"
             raise RuntimeError(msg)
-        html_part.add_related(alert.image_jpeg, "image", "jpeg", cid=image_cid)
-        message.add_attachment(alert.image_jpeg, "image", "jpeg", filename=filename)
+        html_part.add_related(image, "image", "jpeg", cid=image_cid)
+        message.add_attachment(image, "image", "jpeg", filename=filename)
         return message

@@ -5,7 +5,7 @@ import time
 from collections.abc import Sequence
 
 from vision_hub.core.logging import get_logger
-from vision_hub.domain.health import CheckResult, HealthCheck, HealthReport
+from vision_hub.domain.health import CheckResult, HealthCheck, HealthReport, Unhealthy
 
 logger = get_logger(__name__)
 
@@ -25,6 +25,9 @@ async def _run_check(check: HealthCheck, check_timeout: float) -> CheckResult:
     except TimeoutError:
         healthy = False
         logger.warning("health_check_timeout", check=check.name, timeout_s=check_timeout)
+    except Unhealthy as exc:
+        healthy = False
+        logger.info("health_check_unhealthy", check=check.name, reason=str(exc))
     except Exception:
         healthy = False
         # Details go to the logs only: health endpoints are unauthenticated.

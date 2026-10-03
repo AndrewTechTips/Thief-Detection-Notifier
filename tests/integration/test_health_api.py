@@ -44,8 +44,23 @@ async def test_readiness_checks_the_database(client: httpx2.AsyncClient) -> None
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-    assert [(c["name"], c["healthy"]) for c in body["checks"]] == [("database", True)]
+    assert [(c["name"], c["healthy"]) for c in body["checks"]] == [
+        ("database", True),
+        ("accepting_traffic", True),
+    ]
     assert response.headers["Cache-Control"] == "no-store"
+
+
+async def test_readiness_fails_once_shutdown_begins(
+    app: FastAPI, client: httpx2.AsyncClient
+) -> None:
+    app.state.lifecycle.begin_shutdown()  # what the server does on SIGTERM
+
+    response = await client.get("/api/v1/health/ready")
+
+    assert response.status_code == 503
+    checks = {c["name"]: c["healthy"] for c in response.json()["checks"]}
+    assert checks == {"database": True, "accepting_traffic": False}
 
 
 async def test_readiness_reports_each_check(app: FastAPI, client: httpx2.AsyncClient) -> None:

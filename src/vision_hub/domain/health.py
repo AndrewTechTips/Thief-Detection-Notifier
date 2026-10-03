@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from typing import Protocol
 
 
+class Unhealthy(Exception):  # noqa: N818 - reads naturally: ``raise Unhealthy("...")``
+    """An expected unhealthy state (e.g. shutting down): logged without a stack trace."""
+
+
 class HealthCheck(Protocol):
     """A dependency the hub needs in order to serve traffic."""
 

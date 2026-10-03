@@ -65,6 +65,8 @@ class AppConfig(_Group):
     port: int = Field(default=8000, ge=1, le=65535)
     docs_enabled: bool | None = None  # None: enabled everywhere except prod
     health_check_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
+    # How long shutdown waits for open requests before cancelling them.
+    shutdown_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
 
     @field_validator("log_level", mode="before")
     @classmethod
@@ -175,6 +177,23 @@ class SmtpConfig(_Group):
         return [self.effective_sender] if self.effective_sender else []
 
 
+class NotificationsConfig(_Group):
+    """Delivery policy for every alert channel. Pending alerts are stored in the database, so
+    retries continue across restarts."""
+
+    max_attempts: int = Field(default=8, ge=1, le=50)
+    retry_initial_seconds: float = Field(default=10.0, gt=0, le=3600)  # doubles each attempt
+    retry_max_seconds: float = Field(default=900.0, gt=0, le=86400)
+    max_age_hours: float = Field(default=24.0, gt=0, le=720)  # older alerts are dropped
+
+    @model_validator(mode="after")
+    def _ordered_delays(self) -> Self:
+        if self.retry_max_seconds < self.retry_initial_seconds:
+            msg = "retry_max_seconds must not be less than retry_initial_seconds"
+            raise ValueError(msg)
+        return self
+
+
 class DatabaseConfig(_Group):
     # A full SQLAlchemy URL overrides the PostgreSQL fields below (tests use SQLite this way).
     url: SecretStr | None = None
@@ -257,6 +276,7 @@ class Settings(BaseSettings):
     app: AppConfig = Field(default_factory=AppConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     smtp: SmtpConfig = Field(default_factory=SmtpConfig)
+    notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     db: DatabaseConfig = Field(default_factory=DatabaseConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     vision: VisionConfig = Field(default_factory=VisionConfig)

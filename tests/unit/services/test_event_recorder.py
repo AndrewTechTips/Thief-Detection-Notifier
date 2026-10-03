@@ -59,6 +59,9 @@ class FakeRepository:
     async def delete(self, event_ids: Collection[str]) -> int:  # pragma: no cover - unused
         return 0
 
+    async def mark_interrupted(self) -> int:  # pragma: no cover - unused
+        return 0
+
 
 def ended() -> MotionEndedEvent:
     return MotionEndedEvent(

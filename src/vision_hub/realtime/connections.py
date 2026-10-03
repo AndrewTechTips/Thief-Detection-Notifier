@@ -183,7 +183,8 @@ class _Connection:
         records = await self.history.after(after, limit=REPLAY_LIMIT + 1)
         replayed = 0
         for record in records[:REPLAY_LIMIT]:
-            if self.filter.matches(record.event.device_id):
+            # Interrupted events never ended: replaying their start would show motion forever.
+            if self.filter.matches(record.event.device_id) and not record.interrupted:
                 await self.send(replayed_message(record))
                 replayed += 1
         truncated = len(records) > REPLAY_LIMIT

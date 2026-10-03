@@ -14,10 +14,11 @@ class EventRecord:
     event: MotionEvent
     boxes: tuple[BoundingBox, ...] = ()
     snapshots: dict[SnapshotKind, StoredSnapshot] = field(default_factory=dict)
+    interrupted: bool = False  # the hub stopped abruptly before the event ended
 
     @property
     def complete(self) -> bool:
-        """False for an event interrupted by a crash before it ended."""
+        """False while the event is in progress, and for interrupted events."""
         return self.event.ended_at is not None
 
 
@@ -58,3 +59,8 @@ class EventRepository(Protocol):
     ) -> Sequence[EventRecord]: ...
 
     async def delete(self, event_ids: Collection[str]) -> int: ...
+
+    async def mark_interrupted(self) -> int:
+        """Flag events that never ended (the hub stopped abruptly); run before cameras start.
+        Returns how many were flagged."""
+        ...

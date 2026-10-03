@@ -1,10 +1,12 @@
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 
+from vision_hub.core.security import utc_now
 from vision_hub.domain.events import (
     CameraEvent,
     MotionEndedEvent,
@@ -12,18 +14,21 @@ from vision_hub.domain.events import (
     topic_for,
 )
 from vision_hub.domain.motion import MotionEvent
-from vision_hub.domain.notifications import Alert, NotificationError
+from vision_hub.domain.notifications import (
+    Alert,
+    Delivery,
+    DeliveryStatus,
+    NotificationError,
+    RetryPolicy,
+)
 from vision_hub.infra.bus.memory import InMemoryEventBus
 from vision_hub.services.notifications import NotificationService
-from vision_hub.vision.sources import Backoff
 
 type LogRecords = Callable[[], list[dict[str, Any]]]
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
-
-
-def ended(device_id: str = "porch", event_id: str = "e1") -> MotionEndedEvent:
-    event = MotionEvent(id=event_id, device_id=device_id, started_at=T0, ended_at=T0)
-    return MotionEndedEvent(event=event, snapshot_jpeg=b"clean", annotated_jpeg=b"boxes")
+FAST = RetryPolicy(
+    max_attempts=3, initial_delay=timedelta(milliseconds=1), max_delay=timedelta(milliseconds=1)
+)
 
 
 class FakeNotifier:
@@ -31,11 +36,11 @@ class FakeNotifier:
         self,
         name: str = "fake",
         *,
-        failures: list[NotificationError] | None = None,
+        failures: Sequence[Exception] = (),
         delay: float = 0,
     ) -> None:
         self._name = name
-        self.failures = list(failures or [])
+        self.failures = list(failures)
         self.delay = delay
         self.attempts = 0
         self.sent: list[Alert] = []
@@ -54,6 +59,90 @@ class FakeNotifier:
         self.delivered.set()
 
 
+@dataclass
+class Row:
+    id: str
+    event_id: str
+    device_id: str
+    channel: str
+    created_at: datetime
+    next_attempt_at: datetime
+    status: DeliveryStatus = DeliveryStatus.PENDING
+    attempts: int = 0
+    last_error: str | None = None
+
+
+class MemoryOutbox:
+    def __init__(self) -> None:
+        self.rows: dict[str, Row] = {}
+        self.broken = False
+
+    async def enqueue(
+        self, event_id: str, device_id: str, channels: Sequence[str], *, at: datetime
+    ) -> None:
+        self._check()
+        for channel in channels:
+            row_id = f"{event_id}:{channel}"
+            self.rows.setdefault(row_id, Row(row_id, event_id, device_id, channel, at, at))
+
+    async def due(
+        self, now: datetime, *, channels: Collection[str], limit: int
+    ) -> Sequence[Delivery]:
+        self._check()
+        rows = sorted(
+            (
+                row
+                for row in self.rows.values()
+                if row.status is DeliveryStatus.PENDING
+                and row.next_attempt_at <= now
+                and row.channel in channels
+            ),
+            key=lambda row: row.next_attempt_at,
+        )
+        return [
+            Delivery(r.id, r.event_id, r.device_id, r.channel, r.attempts, r.created_at)
+            for r in rows[:limit]
+        ]
+
+    async def mark_sent(self, delivery_id: str, *, attempts: int, at: datetime) -> None:
+        self._check()
+        self._set(delivery_id, status=DeliveryStatus.SENT, attempts=attempts)
+
+    async def mark_failed(
+        self, delivery_id: str, *, attempts: int, at: datetime, error: str
+    ) -> None:
+        self._set(delivery_id, status=DeliveryStatus.FAILED, attempts=attempts, last_error=error)
+
+    async def retry_later(
+        self, delivery_id: str, *, attempts: int, next_attempt_at: datetime, error: str
+    ) -> None:
+        self._set(delivery_id, attempts=attempts, next_attempt_at=next_attempt_at, last_error=error)
+
+    async def pending_count(self) -> int:
+        self._check()
+        return sum(row.status is DeliveryStatus.PENDING for row in self.rows.values())
+
+    async def last_alerts(self, *, since: datetime) -> Mapping[str, datetime]:
+        self._check()
+        last: dict[str, datetime] = {}
+        for row in self.rows.values():
+            if row.created_at >= since:
+                last[row.device_id] = max(row.created_at, last.get(row.device_id, row.created_at))
+        return last
+
+    def statuses(self) -> list[tuple[DeliveryStatus, int]]:
+        return [(row.status, row.attempts) for row in self.rows.values()]
+
+    def _set(self, delivery_id: str, **values: Any) -> None:
+        row = self.rows[delivery_id]
+        for key, value in values.items():
+            setattr(row, key, value)
+
+    def _check(self) -> None:
+        if self.broken:
+            raise ConnectionError("database down")
+
+
 class Clock:
     def __init__(self) -> None:
         self.now = T0
@@ -62,17 +151,44 @@ class Clock:
         return self.now
 
 
-def service(
-    bus: InMemoryEventBus[CameraEvent], *notifiers: FakeNotifier, clock: Clock | None = None
-) -> NotificationService:
-    return NotificationService(
-        bus,
-        notifiers,
-        device_name=lambda device_id: {"porch": "Front porch"}.get(device_id, device_id),
-        cooldown_seconds=60,
-        backoff=lambda: Backoff(initial=0.001, maximum=0.001),
-        clock=clock or Clock(),
-    )
+class Harness:
+    """A bus, an outbox and the stored events the service loads evidence from."""
+
+    def __init__(self) -> None:
+        self.bus: InMemoryEventBus[CameraEvent] = InMemoryEventBus()
+        self.outbox = MemoryOutbox()
+        self.events: dict[str, MotionEvent] = {}
+
+    def ended(self, device_id: str = "porch", event_id: str = "e1") -> MotionEndedEvent:
+        event = MotionEvent(id=event_id, device_id=device_id, started_at=T0, ended_at=T0)
+        self.events[event_id] = event
+        return MotionEndedEvent(event=event, snapshot_jpeg=b"clean", annotated_jpeg=b"in-memory")
+
+    async def evidence(self, event_id: str) -> tuple[MotionEvent, bytes] | None:
+        event = self.events.get(event_id)
+        return (event, b"stored") if event else None
+
+    def service(
+        self,
+        *notifiers: FakeNotifier,
+        clock: Callable[[], datetime] = utc_now,
+        policy: RetryPolicy = FAST,
+        cooldown_seconds: float = 60,
+    ) -> NotificationService:
+        return NotificationService(
+            self.bus,
+            notifiers,
+            outbox=self.outbox,
+            evidence=self.evidence,
+            device_name=lambda device_id: {"porch": "Front porch"}.get(device_id, device_id),
+            cooldown_seconds=cooldown_seconds,
+            policy=policy,
+            clock=clock,
+            poll_interval=0.01,
+        )
+
+    def publish(self, event: CameraEvent) -> None:
+        self.bus.publish(topic_for(event), event)
 
 
 async def settle() -> None:
@@ -80,175 +196,324 @@ async def settle() -> None:
         await asyncio.sleep(0.01)
 
 
+async def eventually(condition: Callable[[], bool], within: float = 2) -> None:
+    async with asyncio.timeout(within):
+        while not condition():
+            await asyncio.sleep(0.01)
+
+
 @pytest.fixture
-def bus() -> InMemoryEventBus[CameraEvent]:
-    return InMemoryEventBus()
-
-
-def publish(bus: InMemoryEventBus[CameraEvent], event: CameraEvent) -> None:
-    bus.publish(topic_for(event), event)
+def hub() -> Harness:
+    return Harness()
 
 
 class TestAlerts:
-    async def test_finished_motion_becomes_an_alert(
-        self, bus: InMemoryEventBus[CameraEvent]
-    ) -> None:
+    async def test_finished_motion_becomes_an_alert(self, hub: Harness) -> None:
         notifier = FakeNotifier()
-        alerts = service(bus, notifier)
-        alerts.start()
+        alerts = hub.service(notifier)
+        await alerts.start()
 
-        publish(bus, ended())
+        hub.publish(hub.ended())
         await asyncio.wait_for(notifier.delivered.wait(), 1)
         await alerts.stop()
 
         [alert] = notifier.sent
         assert (alert.device_id, alert.device_name) == ("porch", "Front porch")
-        assert alert.image_jpeg == b"boxes"  # the annotated frame
+        assert alert.image_jpeg == b"stored"  # loaded like after a restart: one code path
 
-    async def test_motion_start_does_not_alert(self, bus: InMemoryEventBus[CameraEvent]) -> None:
+    async def test_motion_start_does_not_alert(self, hub: Harness) -> None:
         notifier = FakeNotifier()
-        alerts = service(bus, notifier)
-        alerts.start()
+        alerts = hub.service(notifier)
+        await alerts.start()
 
-        publish(bus, MotionStartedEvent(event=ended().event))
+        hub.publish(MotionStartedEvent(event=hub.ended().event))
         await settle()
         await alerts.stop()
 
         assert notifier.sent == []
+        assert hub.outbox.rows == {}
 
-    async def test_every_channel_receives_the_alert(
-        self, bus: InMemoryEventBus[CameraEvent]
-    ) -> None:
+    async def test_every_channel_receives_the_alert(self, hub: Harness) -> None:
         email, webhook = FakeNotifier("email"), FakeNotifier("webhook")
-        alerts = service(bus, email, webhook)
-        alerts.start()
+        alerts = hub.service(email, webhook)
+        await alerts.start()
 
-        publish(bus, ended())
+        hub.publish(hub.ended())
         await alerts.stop()
 
         assert len(email.sent) == len(webhook.sent) == 1
+        assert sorted(hub.outbox.rows) == ["e1:email", "e1:webhook"]
 
-    async def test_other_messages_on_the_topic_are_ignored(
-        self, bus: InMemoryEventBus[CameraEvent]
-    ) -> None:
+    async def test_other_messages_on_the_topic_are_ignored(self, hub: Harness) -> None:
         notifier = FakeNotifier()
-        alerts = service(bus, notifier)
-        alerts.start()
+        alerts = hub.service(notifier)
+        await alerts.start()
 
-        bus.publish("motion.ended.porch", MotionStartedEvent(event=ended().event))
+        hub.bus.publish("motion.ended.porch", MotionStartedEvent(event=hub.ended().event))
         await alerts.stop()
 
         assert notifier.sent == []
 
-    def test_needs_at_least_one_attempt(self, bus: InMemoryEventBus[CameraEvent]) -> None:
-        with pytest.raises(ValueError, match="at least 1"):
-            NotificationService(bus, [], device_name=str, cooldown_seconds=0, max_attempts=0)
+    async def test_disabled_without_channels(self, hub: Harness) -> None:
+        alerts = hub.service()
 
-    async def test_disabled_without_channels(self, bus: InMemoryEventBus[CameraEvent]) -> None:
-        alerts = service(bus)
-
-        alerts.start()
+        await alerts.start()
         await alerts.stop()
 
         assert alerts.enabled is False
-        assert bus.subscriber_count == 0
+        assert hub.bus.subscriber_count == 0
+
+    async def test_starting_twice_subscribes_once(self, hub: Harness) -> None:
+        alerts = hub.service(FakeNotifier())
+
+        await alerts.start()
+        await alerts.start()
+
+        assert hub.bus.subscriber_count == 1
+        await alerts.stop()
+
+
+class TestOutbox:
+    async def test_alerts_are_stored_before_they_are_sent(self, hub: Harness) -> None:
+        notifier = FakeNotifier()
+        alerts = hub.service(notifier)
+
+        await alerts.handle(hub.ended())
+
+        assert hub.outbox.statuses() == [(DeliveryStatus.PENDING, 0)]
+        await alerts.stop()
+        assert hub.outbox.statuses() == [(DeliveryStatus.SENT, 1)]
+
+    async def test_deliveries_left_by_a_previous_run_are_sent_on_start(
+        self, hub: Harness, log_records: LogRecords
+    ) -> None:
+        hub.ended("porch", "old")
+        await hub.outbox.enqueue("old", "porch", ["fake"], at=utc_now())
+        notifier = FakeNotifier()
+        alerts = hub.service(notifier)
+
+        await alerts.start()
+        await asyncio.wait_for(notifier.delivered.wait(), 1)
+        await alerts.stop()
+
+        assert notifier.sent[0].event.id == "old"
+        started = next(r for r in log_records() if r["event"] == "notifications_started")
+        assert started["pending"] == 1
+
+    async def test_cooldown_survives_a_restart(self, hub: Harness) -> None:
+        clock = Clock()
+        await hub.outbox.enqueue("earlier", "porch", ["fake"], at=clock.now)
+        hub.outbox.rows["earlier:fake"].status = DeliveryStatus.SENT
+        notifier = FakeNotifier()
+        alerts = hub.service(notifier, clock=clock)
+        await alerts.start()
+
+        clock.now += timedelta(seconds=30)
+        await alerts.handle(hub.ended("porch", "e2"))
+        await alerts.stop()
+
+        assert notifier.sent == []  # within the cooldown of the alert sent before the restart
+
+    async def test_without_the_outbox_alerts_are_sent_from_memory(
+        self, hub: Harness, log_records: LogRecords
+    ) -> None:
+        hub.outbox.broken = True
+        notifier = FakeNotifier(failures=[NotificationError("busy", retryable=True)])
+        alerts = hub.service(notifier)
+        await alerts.start()  # also tolerates the outbox being down
+
+        hub.publish(hub.ended())
+        await asyncio.wait_for(notifier.delivered.wait(), 1)
+        await alerts.stop()
+
+        assert notifier.sent[0].image_jpeg == b"in-memory"
+        events = [r["event"] for r in log_records()]
+        assert "outbox_unavailable" in events
+        sent = next(r for r in log_records() if r["event"] == "alert_sent")
+        assert (sent["outbox"], sent["attempts"]) == (False, 2)
+
+    async def test_direct_sending_gives_up_like_the_outbox(self, hub: Harness) -> None:
+        hub.outbox.broken = True
+        bad_login = FakeNotifier("a", failures=[NotificationError("auth", retryable=False)])
+        down = FakeNotifier("b", failures=[NotificationError("down", retryable=True)] * 5)
+        alerts = hub.service(bad_login, down)
+
+        await alerts.handle(hub.ended())
+        await alerts.stop()
+
+        assert (bad_login.attempts, down.attempts) == (1, 3)
+
+    async def test_stale_alerts_are_dropped(self, hub: Harness, log_records: LogRecords) -> None:
+        hub.ended("porch", "old")
+        await hub.outbox.enqueue("old", "porch", ["fake"], at=utc_now() - timedelta(days=2))
+        notifier = FakeNotifier()
+        alerts = hub.service(notifier)
+
+        await alerts.stop()
+
+        assert notifier.attempts == 0
+        assert hub.outbox.rows["old:fake"].last_error == "expired"
+        assert any(r["event"] == "alert_expired" for r in log_records())
+
+    async def test_alerts_for_deleted_events_are_dropped(self, hub: Harness) -> None:
+        await hub.outbox.enqueue("gone", "porch", ["fake"], at=utc_now())
+        notifier = FakeNotifier()
+
+        await hub.service(notifier).stop()
+
+        assert notifier.attempts == 0
+        assert hub.outbox.statuses() == [(DeliveryStatus.FAILED, 0)]
+
+    async def test_outbox_errors_leave_the_delivery_pending(
+        self, hub: Harness, log_records: LogRecords
+    ) -> None:
+        notifier = FakeNotifier()
+        alerts = hub.service(notifier)
+        await alerts.handle(hub.ended())
+
+        async def broken(*_: object, **__: object) -> None:
+            raise ConnectionError("database down")
+
+        hub.outbox.mark_sent = broken  # type: ignore[method-assign]
+        await alerts.stop()
+
+        assert len(notifier.sent) == 1
+        assert hub.outbox.statuses() == [(DeliveryStatus.PENDING, 0)]  # sent again later
+        assert any(r["event"] == "alert_dispatch_failed" for r in log_records())
+
+    async def test_shutdown_survives_an_unavailable_outbox(
+        self, hub: Harness, log_records: LogRecords
+    ) -> None:
+        alerts = hub.service(FakeNotifier())
+        await alerts.start()
+        hub.outbox.broken = True
+
+        await alerts.stop()
+
+        assert "outbox_unavailable" in [r["event"] for r in log_records()]
 
 
 class TestCooldown:
     async def test_suppresses_repeat_alerts_per_device(
-        self, bus: InMemoryEventBus[CameraEvent], log_records: LogRecords
+        self, hub: Harness, log_records: LogRecords
     ) -> None:
         clock = Clock()
         notifier = FakeNotifier()
-        alerts = service(bus, notifier, clock=clock)
+        alerts = hub.service(notifier, clock=clock)
 
-        alerts.handle(ended("porch", "e1"))
+        await alerts.handle(hub.ended("porch", "e1"))
         clock.now += timedelta(seconds=30)
-        alerts.handle(ended("porch", "e2"))  # within 60 s: suppressed
-        alerts.handle(ended("gate", "e3"))  # other device: not affected
+        await alerts.handle(hub.ended("porch", "e2"))  # within 60 s: suppressed
+        await alerts.handle(hub.ended("gate", "e3"))  # other device: not affected
         clock.now += timedelta(seconds=31)
-        alerts.handle(ended("porch", "e4"))  # cooldown over
+        await alerts.handle(hub.ended("porch", "e4"))  # cooldown over
         await alerts.stop()
 
-        assert [a.event.id for a in notifier.sent] == ["e1", "e3", "e4"]
+        assert sorted(a.event.id for a in notifier.sent) == ["e1", "e3", "e4"]
         assert any(r["event"] == "alert_suppressed_by_cooldown" for r in log_records())
 
 
 class TestRetries:
     async def test_transient_failures_are_retried(
-        self, bus: InMemoryEventBus[CameraEvent], log_records: LogRecords
+        self, hub: Harness, log_records: LogRecords
     ) -> None:
         notifier = FakeNotifier(failures=[NotificationError("timeout", retryable=True)] * 2)
-        alerts = service(bus, notifier)
+        alerts = hub.service(notifier)
+        await alerts.start()
 
-        alerts.handle(ended())
+        hub.publish(hub.ended())
+        await asyncio.wait_for(notifier.delivered.wait(), 2)
         await alerts.stop()
 
         assert notifier.attempts == 3
-        assert len(notifier.sent) == 1
+        assert hub.outbox.statuses() == [(DeliveryStatus.SENT, 3)]
         sent = next(r for r in log_records() if r["event"] == "alert_sent")
         assert sent["attempts"] == 3
+        assert hub.outbox.rows["e1:fake"].last_error == "timeout"
 
     async def test_permanent_failures_are_not_retried(
-        self, bus: InMemoryEventBus[CameraEvent], log_records: LogRecords
+        self, hub: Harness, log_records: LogRecords
     ) -> None:
         notifier = FakeNotifier(failures=[NotificationError("bad login", retryable=False)])
-        alerts = service(bus, notifier)
+        alerts = hub.service(notifier)
 
-        alerts.handle(ended())
+        await alerts.handle(hub.ended())
         await alerts.stop()
 
         assert notifier.attempts == 1
+        assert hub.outbox.statuses() == [(DeliveryStatus.FAILED, 1)]
         failed = next(r for r in log_records() if r["event"] == "alert_failed")
         assert (failed["retryable"], failed["level"]) == (False, "error")
 
-    async def test_gives_up_after_max_attempts(self, bus: InMemoryEventBus[CameraEvent]) -> None:
+    async def test_gives_up_after_max_attempts(self, hub: Harness) -> None:
         notifier = FakeNotifier(failures=[NotificationError("down", retryable=True)] * 10)
-        alerts = service(bus, notifier)
+        alerts = hub.service(notifier)
+        await alerts.start()
 
-        alerts.handle(ended())
+        hub.publish(hub.ended())
+        await eventually(lambda: hub.outbox.statuses() == [(DeliveryStatus.FAILED, 3)])
         await alerts.stop()
 
         assert notifier.attempts == 3
         assert notifier.sent == []
 
+    async def test_unexpected_errors_count_as_transient_failures(self, hub: Harness) -> None:
+        notifier = FakeNotifier(failures=[RuntimeError("bug in a channel")])
+        alerts = hub.service(notifier)
+        await alerts.handle(hub.ended())
+
+        await alerts.stop()  # the first attempt fails and is rescheduled
+
+        [row] = hub.outbox.rows.values()
+        assert (row.status, row.attempts) == (DeliveryStatus.PENDING, 1)
+        assert row.last_error is not None
+        assert "bug in a channel" in row.last_error
+
+    def test_delays_double_up_to_the_maximum(self) -> None:
+        policy = RetryPolicy(initial_delay=timedelta(seconds=10), max_delay=timedelta(minutes=1))
+
+        delays = [policy.delay(attempts).total_seconds() for attempts in (1, 2, 3, 4, 100)]
+
+        assert delays == [10, 20, 40, 60, 60]
+
+    def test_needs_at_least_one_attempt(self) -> None:
+        with pytest.raises(ValueError, match="at least 1"):
+            RetryPolicy(max_attempts=0)
+
 
 class TestConcurrencyAndShutdown:
-    async def test_slow_channel_does_not_delay_others(
-        self, bus: InMemoryEventBus[CameraEvent]
-    ) -> None:
+    async def test_slow_channel_does_not_delay_others(self, hub: Harness) -> None:
         slow, fast = FakeNotifier("slow", delay=1), FakeNotifier("fast")
-        alerts = service(bus, slow, fast)
-        alerts.start()
+        alerts = hub.service(slow, fast)
+        await alerts.start()
 
-        publish(bus, ended())
+        hub.publish(hub.ended())
         await asyncio.wait_for(fast.delivered.wait(), 0.5)
 
         assert slow.sent == []
         await alerts.stop()
         assert len(slow.sent) == 1  # drained on shutdown
 
-    async def test_stop_handles_already_queued_events(
-        self, bus: InMemoryEventBus[CameraEvent]
-    ) -> None:
+    async def test_stop_handles_already_queued_events(self, hub: Harness) -> None:
         notifier = FakeNotifier()
-        alerts = service(bus, notifier)
-        alerts.start()
+        alerts = hub.service(notifier)
+        await alerts.start()
 
-        publish(bus, ended("porch"))
-        publish(bus, ended("gate"))
+        hub.publish(hub.ended("porch", "e1"))
+        hub.publish(hub.ended("gate", "e2"))
         await alerts.stop()  # without yielding first: both are still queued
 
         assert {a.device_id for a in notifier.sent} == {"porch", "gate"}
 
-    async def test_hanging_delivery_is_abandoned_after_the_drain_timeout(
-        self, bus: InMemoryEventBus[CameraEvent], log_records: LogRecords
+    async def test_unfinished_deliveries_stay_pending_for_the_next_run(
+        self, hub: Harness, log_records: LogRecords
     ) -> None:
         notifier = FakeNotifier(delay=30)
-        alerts = service(bus, notifier)
-        alerts.handle(ended())
+        alerts = hub.service(notifier)
+        await alerts.handle(hub.ended())
 
         await alerts.stop(drain_timeout=0.05)
 
         assert notifier.sent == []
-        assert any(r["event"] == "notifications_abandoned_on_shutdown" for r in log_records())
+        assert hub.outbox.statuses() == [(DeliveryStatus.PENDING, 0)]
+        assert any(r["event"] == "notifications_interrupted_by_shutdown" for r in log_records())

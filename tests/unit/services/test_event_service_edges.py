@@ -43,6 +43,49 @@ async def test_missing_snapshot_file_is_not_found(sessions: Sessions, tmp_path: 
     ] == [EVENT.id]
 
 
+class TestEvidence:
+    async def test_event_and_annotated_image(self, sessions: Sessions, tmp_path: Path) -> None:
+        repository, store = SqlEventRepository(sessions), LocalSnapshotStore(tmp_path / "snaps")
+        stored = await store.save(EVENT.id, SnapshotKind.ANNOTATED, b"boxes", T0)
+        await repository.complete(EVENT, [], [stored])
+
+        evidence = await EventService(repository, store).evidence(EVENT.id)
+
+        assert evidence is not None
+        assert evidence[0].id == EVENT.id
+        assert evidence[1] == b"boxes"
+
+    async def test_missing_image_is_empty(
+        self, sessions: Sessions, tmp_path: Path, log_records: LogRecords
+    ) -> None:
+        repository, store = SqlEventRepository(sessions), LocalSnapshotStore(tmp_path / "snaps")
+        stored = await store.save(EVENT.id, SnapshotKind.ANNOTATED, b"boxes", T0)
+        await repository.complete(EVENT, [], [stored])
+        await store.delete(stored.path)
+
+        evidence = await EventService(repository, store).evidence(EVENT.id)
+
+        assert evidence is not None
+        assert evidence[1] == b""
+        assert any(r["event"] == "evidence_image_unavailable" for r in log_records())
+
+    async def test_event_without_an_annotated_snapshot(
+        self, sessions: Sessions, tmp_path: Path
+    ) -> None:
+        repository = SqlEventRepository(sessions)
+        await repository.complete(EVENT, [], [])
+
+        evidence = await EventService(repository, LocalSnapshotStore(tmp_path)).evidence(EVENT.id)
+
+        assert evidence is not None
+        assert evidence[1] == b""
+
+    async def test_unknown_event(self, sessions: Sessions, tmp_path: Path) -> None:
+        service = EventService(SqlEventRepository(sessions), LocalSnapshotStore(tmp_path))
+
+        assert await service.evidence(EVENT.id) is None
+
+
 async def test_deleting_nothing(sessions: Sessions) -> None:
     assert await SqlEventRepository(sessions).delete([]) == 0
 
