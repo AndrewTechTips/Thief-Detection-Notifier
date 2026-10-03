@@ -17,7 +17,7 @@ from vision_hub.api.middleware import (
     TrustedHostMiddleware,
 )
 from vision_hub.api.openapi import install_problem_details_schema, operation_id
-from vision_hub.api.v1.router import QUIET_PATHS, api_router
+from vision_hub.api.v1.router import PROBE_PATHS, api_router
 from vision_hub.core.config import Settings, get_settings
 from vision_hub.core.container import LifespanState, build_container
 from vision_hub.core.errors import register_exception_handlers
@@ -82,7 +82,9 @@ def _add_middleware(app: FastAPI, settings: Settings) -> None:
         expose_headers=[REQUEST_ID_HEADER, "Retry-After"],
         max_age=600,
     )
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=security.allowed_hosts)
+    app.add_middleware(
+        TrustedHostMiddleware, allowed_hosts=security.allowed_hosts, exempt_paths=PROBE_PATHS
+    )
     app.add_middleware(SecurityHeadersMiddleware, hsts=settings.is_prod, relaxed_paths=DOCS_PATHS)
     # Outermost, so request IDs and access logs cover every response, including rejections.
-    app.add_middleware(RequestContextMiddleware, quiet_paths=QUIET_PATHS)
+    app.add_middleware(RequestContextMiddleware, quiet_paths=PROBE_PATHS)

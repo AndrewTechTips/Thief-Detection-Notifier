@@ -78,12 +78,18 @@ class TestTrustedHost:
 
         assert (response.status_code == 200) is accepted
 
+    async def test_health_probes_are_exempt(self, client: httpx2.AsyncClient) -> None:
+        response = await client.get("/api/v1/health/live", headers={"Host": "10.1.2.3:8000"})
+
+        assert response.status_code == 200
+
     async def test_rejection_is_a_problem_with_request_id(self, client: httpx2.AsyncClient) -> None:
-        response = await client.get("/api/v1/health/live", headers={"Host": "evil.example"})
+        response = await client.get("/api/v1/auth/me", headers={"Host": "evil.example"})
 
         assert response.status_code == 400
         assert response.headers["content-type"] == PROBLEM_JSON
         assert response.json()["detail"] == "Invalid host header."
+        assert response.json()["instance"] == "/api/v1/auth/me"
         assert response.json()["request_id"] == response.headers["X-Request-ID"]
 
     async def test_websockets_with_bad_host_are_closed(self) -> None:

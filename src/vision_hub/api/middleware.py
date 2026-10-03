@@ -152,12 +152,21 @@ class SecurityHeadersMiddleware:
 class TrustedHostMiddleware:
     """Rejects requests whose ``Host`` header is not allowed (DNS-rebinding and host-header
     attacks). Like Starlette's version, but errors are problem+json like the rest of the API.
-    Patterns may start with ``*.`` to match subdomains; ``*`` alone disables the check."""
+    Patterns may start with ``*.`` to match subdomains; ``*`` alone disables the check.
+    ``exempt_paths`` (health probes, which expose nothing) are reachable under any host.
+    """
 
-    def __init__(self, app: ASGIApp, *, allowed_hosts: Sequence[str]) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        allowed_hosts: Sequence[str],
+        exempt_paths: frozenset[str] = frozenset(),
+    ) -> None:
         self.app = app
         self.allowed_hosts = [host.lower() for host in allowed_hosts]
         self.allow_any = "*" in self.allowed_hosts
+        self.exempt_paths = exempt_paths
 
     def is_allowed(self, host_header: str) -> bool:
         host = _hostname(host_header.lower())
@@ -170,6 +179,7 @@ class TrustedHostMiddleware:
         if (
             scope["type"] not in {"http", "websocket"}
             or self.allow_any
+            or scope["path"] in self.exempt_paths
             or self.is_allowed(Headers(scope=scope).get("host", ""))
         ):
             await self.app(scope, receive, send)

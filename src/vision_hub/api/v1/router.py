@@ -33,5 +33,6 @@ PUBLIC_PATHS = frozenset(
     }
 )
 
-# Polled every few seconds by orchestrators; logged at DEBUG unless they fail.
-QUIET_PATHS = frozenset({f"{API_V1_PREFIX}/health/live", f"{API_V1_PREFIX}/health/ready"})
+# Polled by orchestrators: logged at DEBUG unless they fail, and exempt from the Host check
+# (Docker/Kubernetes probes use the container IP as Host).
+PROBE_PATHS = frozenset({f"{API_V1_PREFIX}/health/live", f"{API_V1_PREFIX}/health/ready"})
