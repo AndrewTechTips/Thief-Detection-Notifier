@@ -1,10 +1,30 @@
-# Local stack. Phase 3 adds a `postgres` service.
-#   docker compose up --build
+# Local stack: the hub and PostgreSQL.
+#   docker compose up --build --wait
 #   open http://localhost:8000/docs
+# The database password comes from VISION_HUB_DB__PASSWORD in .env (default: vision_hub).
 services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: vision_hub
+      POSTGRES_PASSWORD: ${VISION_HUB_DB__PASSWORD:-vision_hub}
+      POSTGRES_DB: vision_hub
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vision_hub -d vision_hub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    # No published port: only the hub (on the compose network) can reach the database.
+
   api:
     build: .
     image: vision-hub:local
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "127.0.0.1:8000:8000" # localhost only; put a reverse proxy in front for LAN/remote access
     env_file:
@@ -13,6 +33,8 @@ services:
     environment:
       # Must listen on all interfaces inside the container, whatever .env says.
       VISION_HUB_APP__HOST: 0.0.0.0
+      VISION_HUB_DB__HOST: postgres
+      VISION_HUB_DB__PASSWORD: ${VISION_HUB_DB__PASSWORD:-vision_hub}
     volumes:
       - hub-data:/app/data
       # Camera fleet (may contain passwords, so it is mounted, never baked into the image):
@@ -30,3 +52,4 @@ services:
 
 volumes:
   hub-data:
+  pg-data:

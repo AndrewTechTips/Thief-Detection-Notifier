@@ -22,6 +22,20 @@ jobs:
     name: Lint, types & tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vision_hub_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -47,11 +61,13 @@ jobs:
       - name: Type check
         run: uv run --frozen mypy
 
-      - name: Test
+      - name: Test (SQLite and PostgreSQL)
         run: uv run --frozen pytest --cov-report=term-missing --cov-report=xml
+        env:
+          VISION_HUB_TEST_POSTGRES_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/vision_hub_test
 
   docker:
-    name: Docker image
+    name: Docker image & compose stack
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: quality
@@ -60,20 +76,21 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build
-        run: docker build --tag vision-hub:ci .
+      - name: Build and start (hub + PostgreSQL)
+        run: docker compose up --build --detach --wait --wait-timeout 120
 
-      - name: Smoke test
+      - name: Smoke test (readiness includes the database)
         run: |
-          docker run --detach --name hub --publish 8000:8000 vision-hub:ci
-          for _ in $(seq 1 30); do
-            if curl --fail --silent http://localhost:8000/api/v1/health/live; then
-              echo; echo "Container is healthy"; exit 0
-            fi
-            sleep 1
-          done
-          docker logs hub
-          exit 1
+          curl --fail --silent --show-error http://localhost:8000/api/v1/health/ready | tee ready.json
+          grep -q '"name":"database","healthy":true' ready.json
 
       - name: Runs as non-root
-        run: test "$(docker run --rm --entrypoint id vision-hub:ci -u)" != "0"
+        run: test "$(docker compose exec -T api id -u)" != "0"
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down --volumes
