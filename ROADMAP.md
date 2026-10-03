@@ -1,0 +1,335 @@
+# 🗺️ IoT Vision Hub — Roadmap
+
+> **Source of truth** for the migration from the single-script *Thief Detection Notifier* into an
+> asynchronous, modular **IoT Vision Hub** (FastAPI + OpenCV). The MVP runs as a **single process on a
+> single node**; every infrastructure boundary sits behind an interface so it can scale out later.
+>
+> **How to use this file**
+> - Tick a box (`- [x]`) only when the task is done and verified (linters/tests pass where applicable).
+> - Commit each finished task (or small group) on the phase branch; merge to `main` when the phase's
+>   **exit criteria** are all ticked.
+> - Work top-to-bottom inside a phase.
+> - If a decision changes, update the *Architecture Decisions* table first, then the tasks it affects.
+> - After a context reset, read *Current Status* → *Architecture Decisions* → *Target Layout* → the first unchecked task.
+
+---
+
+## 📍 Current Status
+
+- **Active phase:** Phase 1 — Backend Foundation & Security
+- **Working branch:** `feat/vision-hub`
+- **Next task:** 1.1 Project tooling → "Install `uv` and initialise `pyproject.toml`"
+- **Legacy code:** `main.py` + `emailing.py` stay runnable until Phase 2 exit criteria are met, then move to `legacy/`.
+
+---
+
+## 🧭 Architecture Decisions
+
+| # | Decision | Choice | Rationale |
+|---|----------|--------|-----------|
+| AD-1 | Language / runtime | **Python 3.14**, `uv` for env + lockfile, `pyproject.toml` (PEP 621) | Already the local interpreter; stdlib `uuid.uuid7()`; `uv.lock` gives reproducible installs. |
+| AD-2 | Web framework | **FastAPI** + **Uvicorn**, app factory + `lifespan` | Async-native, Pydantic v2 integration, first-class WebSockets. |
+| AD-3 | Validation / config | **Pydantic v2** models, **pydantic-settings** (`.env`, `SecretStr`) | Typed config, secrets never logged. |
+| AD-4 | Dependency injection | FastAPI `Depends` with `Annotated[...]` aliases; services built once in `lifespan` and held in a typed container on `app.state` | No module-level globals; trivially overridable in tests. |
+| AD-5 | Layering | `api` → `services` → `domain` (pure) ← `infra` adapters, via `typing.Protocol` ports | Business logic testable without FastAPI, camera hardware, SMTP or a DB. |
+| AD-6 | Ingestion model | **Pull**: the hub opens each video source (USB webcam, RTSP/HTTP IP camera, video file, synthetic) and runs detection locally | Cameras stay dumb; no edge agents to deploy or authenticate. |
+| AD-7 | OpenCV concurrency | **One dedicated thread per camera** (OpenCV releases the GIL in its C++ calls) bridged to asyncio with `loop.call_soon_threadsafe` | Never blocks the event loop; a long-lived thread keeps the capture device open. |
+| AD-8 | Deployment topology | **Single process**: API + `CameraManager` in one Uvicorn process, run with **exactly one worker** | Cameras are owned by the process — multiple Uvicorn workers would each open every camera. |
+| AD-9 | Internal messaging | `EventBus` port with an **in-memory** implementation only (asyncio fan-out, bounded per-subscriber queues). Redis is deferred to *Future* | Zero extra infrastructure for the MVP; the port keeps a later swap cheap. |
+| AD-10 | Real-time transport | **WebSocket** for alerts/state (JSON envelopes, discriminated unions); **MJPEG** over HTTP for live video (WS binary frames as an option) | MJPEG works in a plain `<img>` tag and is cheap; WebRTC is a possible later upgrade. |
+| AD-11 | Back-pressure | Frames: **latest-frame-wins** (drop stale frames per client). Events: **never dropped** — persisted to the DB *before* publishing, replayable with a cursor | Slow clients can't stall cameras or the loop; the in-memory bus isn't the system of record. |
+| AD-12 | Auth | **Users:** OAuth2 password flow → short-lived JWT (+ refresh), Argon2 hashing. **WebSockets:** short-lived single-use ticket (in-memory TTL store), never long-lived tokens in URLs. **Cameras:** no inbound auth (pull model); their source credentials are stored as secrets and never returned by the API | Matches the pull model — only humans call the hub. |
+| AD-13 | Database | **PostgreSQL 17** + **SQLAlchemy 2.0 async** (`asyncpg`) + **Alembic**; SQLite (`aiosqlite`) only for fast unit tests | Relational device/event/user model; `JSONB` for flexible detection metadata; mature async story. |
+| AD-14 | Snapshot storage | `SnapshotStore` port with a **local filesystem** implementation (`data/snapshots/`). DB stores metadata + relative path only. JPEG (q≈85), not PNG. S3/MinIO deferred to *Future* | Blobs out of the DB; ~10× smaller files than the current 2 MB PNGs; no extra infra. |
+| AD-15 | Notifications | `Notifier` port: **async SMTP (`aiosmtplib`)** first, webhook/Telegram later; dispatched by an in-process background task with retries; DB-backed outbox in Phase 3 | Replaces the fire-and-forget thread + bare `except`. |
+| AD-16 | Quality gates | **ruff** (lint + format, replaces black), **mypy --strict**, **pytest** + `pytest-asyncio`, `httpx.AsyncClient`, **pre-commit**, GitHub Actions | |
+| AD-17 | Observability | **structlog** (JSON in prod), request-ID middleware, `/health/live` + `/health/ready`, Prometheus metrics (Phase 3) | |
+| AD-18 | Packaging / deploy | Multi-stage **Docker** image (`opencv-python-headless`), `docker compose` with **api + postgres** only | Headless OpenCV: no `imshow` on a server. Minimal moving parts. |
+
+---
+
+## 🗂️ Target Layout
+
+```
+.
+├── pyproject.toml            # deps, ruff, mypy, pytest config
+├── uv.lock
+├── .env.example              # every setting documented, no real secrets
+├── Dockerfile
+├── docker-compose.yml        # api + postgres
+├── alembic/                  # migrations (Phase 3)
+├── src/vision_hub/
+│   ├── main.py               # create_app() factory + lifespan
+│   ├── core/                 # config.py, logging.py, security.py, errors.py, container.py
+│   ├── api/
+│   │   ├── deps.py           # Annotated DI aliases (CurrentUser, DeviceSvc, ...)
+│   │   ├── middleware.py     # request-id, security headers
+│   │   └── v1/
+│   │       ├── router.py
+│   │       └── routes/       # health.py, auth.py, devices.py, events.py, stream.py, ws.py
+│   ├── schemas/              # Pydantic request/response + WS message models
+│   ├── domain/               # pure dataclasses/enums + ports (Protocols): EventBus, Notifier, SnapshotStore, repos
+│   ├── services/             # device_service.py, event_service.py, notification_service.py, auth_service.py
+│   ├── vision/
+│   │   ├── sources.py        # FrameSource protocol: WebcamSource, RtspSource, VideoFileSource, SyntheticSource
+│   │   ├── detector.py       # MotionDetector — pure: frame in → DetectionResult out
+│   │   ├── tracker.py        # event state machine (debounce, cooldown, best-frame selection)
+│   │   ├── worker.py         # CameraWorker thread: source → detector → tracker → bus
+│   │   └── manager.py        # CameraManager: start/stop/supervise workers, restart with backoff
+│   ├── realtime/             # ConnectionManager, per-client queues, frame broadcaster
+│   └── infra/
+│       ├── bus/              # memory.py
+│       ├── notifiers/        # email.py, webhook.py
+│       ├── storage/          # local.py
+│       └── db/               # session.py, models.py, repositories/
+├── data/                     # runtime snapshots (git-ignored)
+├── tests/
+│   ├── unit/
+│   ├── integration/
+│   └── fixtures/             # short test videos, synthetic frame generators
+├── frontend/                 # Phase 4
+└── legacy/                   # original main.py + emailing.py after Phase 2
+```
+
+---
+
+## Phase 1 — Backend Foundation & Security
+
+**Goal:** a typed, tested, secured FastAPI skeleton with configuration, logging, auth and CI — no OpenCV yet.
+
+### 1.0 Housekeeping & safety
+- [x] Add `images/`, `snapshots/`, `data/` and `.idea/` to `.gitignore` (intruder photos must never be committed)
+- [x] Remove `black` and its transitive deps from `requirements.txt` (dev tool mixed into runtime deps)
+- [x] Create branch `feat/vision-hub` and keep `main.py`/`emailing.py` runnable during the migration
+- [x] Document the legacy behaviour and its known defects (*Appendix A*)
+
+### 1.1 Project tooling
+- [ ] Install `uv` and initialise `pyproject.toml` with `uv init --package` (name `vision-hub`, `requires-python = ">=3.14"`)
+- [ ] Add runtime deps: `fastapi`, `uvicorn[standard]`, `pydantic>=2`, `pydantic-settings`, `structlog`
+- [ ] Add dev deps: `ruff`, `mypy`, `pytest`, `pytest-asyncio`, `httpx`, `pre-commit`, `pytest-cov`
+- [ ] Adopt `src/` layout (`src/vision_hub/`) as described in *Target Layout*
+- [ ] Configure `ruff` (lint rules incl. `I`, `UP`, `B`, `S`, `ASYNC`, `PT`; formatter on)
+- [ ] Configure `mypy --strict` with the Pydantic plugin
+- [ ] Configure `pytest` (`asyncio_mode = "auto"`, `tests/` path, coverage threshold)
+- [ ] Add `.pre-commit-config.yaml` (ruff, ruff-format, mypy, end-of-file, detect-private-key)
+- [ ] Replace `requirements.txt` with `uv.lock` (keep an exported copy only while the legacy script needs it)
+
+### 1.2 Configuration & environment
+- [ ] `core/config.py`: `Settings(BaseSettings)` with nested groups (`app`, `security`, `smtp`, `db`, `storage`, `vision`)
+- [ ] Use `SecretStr` for every secret; `env_prefix="VISION_HUB_"`, `env_nested_delimiter="__"`
+- [ ] Validate at startup (fail fast on missing secrets when `env=prod`)
+- [ ] Expose settings through a cached `get_settings()` dependency (overridable in tests)
+- [ ] Write `.env.example` documenting every variable with safe defaults
+- [ ] Migrate legacy `EMAIL` / `PASSWORD` env vars to `VISION_HUB_SMTP__USER` / `VISION_HUB_SMTP__PASSWORD`
+
+### 1.3 Application core
+- [ ] `main.py`: `create_app(settings: Settings | None = None) -> FastAPI` factory
+- [ ] `lifespan` async context manager that builds and tears down the service container
+- [ ] `core/container.py`: typed `Container` dataclass stored on `app.state` (no module globals)
+- [ ] `api/deps.py`: `Annotated` aliases (`SettingsDep`, `ContainerDep`, ...)
+- [ ] `core/logging.py`: structlog config (console in dev, JSON in prod), stdlib + uvicorn log capture
+- [ ] Request-ID middleware (accept/propagate `X-Request-ID`, bind to log context)
+- [ ] `core/errors.py`: domain exception hierarchy + handlers returning RFC 9457 `application/problem+json`
+
+### 1.4 Routing & API conventions
+- [ ] Versioned router mounted at `/api/v1`
+- [ ] `GET /api/v1/health/live` (process up) and `GET /api/v1/health/ready` (dependencies up)
+- [ ] Conventions doc in `docs/api-conventions.md`: plural nouns, cursor pagination envelope, UTC ISO-8601 timestamps, UUIDv7 ids, problem+json errors
+- [ ] Shared schemas: `Page[T]` generic, `ProblemDetail`, base model config (`from_attributes`, `extra="forbid"` on inputs)
+- [ ] OpenAPI metadata (title, version, tags); disable `/docs` in prod via settings
+
+### 1.5 Security baseline
+- [ ] `core/security.py`: Argon2 password hashing (`pwdlib[argon2]`), JWT encode/decode (`pyjwt`)
+- [ ] `POST /api/v1/auth/token` — OAuth2 password flow; bootstrap a single admin from settings (hashed password in env) until Phase 3 adds a users table
+- [ ] Short access-token TTL (15 min) + refresh token; `iss`/`aud`/`exp` validated
+- [ ] `CurrentUser` dependency; protect every non-health route by default (router-level dependency)
+- [ ] Role model: `admin` (manage devices/config) and `viewer` (read + live view)
+- [ ] CORS with explicit allow-list from settings (no `*` with credentials)
+- [ ] `TrustedHostMiddleware` + security headers (HSTS in prod, `X-Content-Type-Options`, `Referrer-Policy`, CSP for future dashboard)
+- [ ] Rate limiting on `/auth/token` (`slowapi` with in-memory storage)
+- [ ] Never log secrets/tokens; add a structlog processor that redacts known keys
+
+### 1.6 Testing & CI
+- [ ] `tests/conftest.py`: settings override, app fixture, `httpx.AsyncClient` with `ASGITransport`
+- [ ] Tests: health endpoints, settings validation, token issue/refresh/expiry, unauthorized access → 401/403
+- [ ] GitHub Actions: `uv sync --frozen` → ruff → mypy → pytest with coverage
+- [ ] `Dockerfile` (multi-stage, non-root user, `uv` install, healthcheck, `uvicorn --workers 1`)
+- [ ] `docker-compose.yml` with the `api` service (`postgres` added in Phase 3)
+
+**✅ Phase 1 exit criteria**
+- [ ] `docker compose up` serves `/api/v1/health/live` and Swagger UI (dev)
+- [ ] CI green: lint, strict types, tests ≥ 85 % coverage on `src/`
+- [ ] Protected routes reject unauthenticated requests
+
+---
+
+## Phase 2 — IoT Engine & Real-Time
+
+**Goal:** port the motion pipeline into testable, non-blocking components; pull from multiple (mocked) cameras; push alerts and live video over WebSockets/MJPEG.
+
+### 2.1 Vision domain (pure, no I/O)
+- [ ] `domain/` models: `Device`, `SourceKind`, `DeviceStatus`, `MotionEvent`, `DetectionResult`, `BoundingBox`
+- [ ] `vision/detector.py`: `MotionDetector.process(frame) -> DetectionResult` (port of the legacy grayscale → blur → diff → threshold → dilate → contours chain)
+- [ ] Replace the frozen `first_frame` with an adaptive background (`cv2.createBackgroundSubtractorMOG2` or `accumulateWeighted`) — fixes false alarms from lighting drift
+- [ ] Per-device `DetectionConfig` (min contour area, blur kernel, threshold, ROI mask) as a Pydantic model
+- [ ] `vision/tracker.py`: event state machine `IDLE → ACTIVE → COOLDOWN` with hysteresis (motion must be absent for *N* s before the event closes) — fixes one walk-through producing many alerts
+- [ ] Best-frame selection by **largest contour area** (or sharpness score), not "middle of the first 150 frames"
+- [ ] Bounded pre-roll ring buffer (`collections.deque(maxlen=…)`) storing downscaled frames only
+- [ ] Draw annotations on a *copy* so the stored evidence frame stays clean (annotated version optional)
+- [ ] Unit tests with synthetic frames (moving rectangle, lighting change, sensor noise)
+
+### 2.2 Frame sources (pull)
+- [ ] `FrameSource` protocol: `open()`, `read() -> Frame | None`, `close()`, `fps`, `resolution`
+- [ ] `WebcamSource` (device index), `RtspSource` (URL, reconnect with exponential backoff), `VideoFileSource` (looping)
+- [ ] `SyntheticSource` generating moving shapes on a noisy background (no hardware needed)
+- [ ] Source factory from `SourceConfig` (Pydantic discriminated union on `kind`)
+- [ ] Source credentials (e.g. RTSP user/password) held as `SecretStr`, redacted in logs and API responses
+
+### 2.3 Non-blocking camera workers
+- [ ] `vision/worker.py`: `CameraWorker` runs `source → detector → tracker` in a dedicated daemon thread
+- [ ] Frame-rate limiting / frame skipping to cap CPU per camera (configurable target FPS)
+- [ ] JPEG encoding (`cv2.imencode`) inside the worker thread, so the event loop only handles bytes
+- [ ] Thread → asyncio bridge: `loop.call_soon_threadsafe` into a bounded queue (events) and a "latest frame" slot + `asyncio.Event` (frames)
+- [ ] Graceful stop via `threading.Event`; join with timeout on shutdown
+- [ ] `vision/manager.py`: `CameraManager` — start/stop/restart workers, supervise crashes with backoff, emit `device.online/offline`
+- [ ] Wire `CameraManager` into `lifespan` (start configured devices on boot, stop all on shutdown)
+- [ ] Single-owner guard: refuse to start cameras if a second process holds the lock file (protects against `--workers > 1`)
+- [ ] Assert no blocking calls on the loop (`asyncio` debug mode in tests; `ruff` `ASYNC` rules)
+
+### 2.4 Event bus & notifications
+- [ ] `EventBus` port: `publish(topic, message)`, `subscribe(topic) -> AsyncIterator`
+- [ ] `InMemoryEventBus` (asyncio fan-out with per-subscriber bounded queues and drop policy per topic)
+- [ ] Topics: `events.<device_id>`, `frames.<device_id>`, `devices.status`
+- [ ] `Notifier` port + `EmailNotifier` (`aiosmtplib`, STARTTLS, configurable host/port/recipients, JPEG attachment from memory — no temp file)
+- [ ] `NotificationService`: subscribes to closed motion events, applies per-device cooldown/rate limit, retries with backoff, logs failures
+- [ ] Remove the legacy write-PNG → email → `os.remove` flow
+
+### 2.5 Device management (mocked multi-device)
+- [ ] `DeviceRepository` port + in-memory implementation (DB in Phase 3)
+- [ ] Load mock fleet from settings/`devices.yaml` (e.g. 1 webcam + 3 synthetic + 1 looping video)
+- [ ] `GET /api/v1/devices`, `GET /api/v1/devices/{id}` (status, fps, last event)
+- [ ] `POST /api/v1/devices`, `PATCH /api/v1/devices/{id}`, `DELETE /api/v1/devices/{id}` (admin)
+- [ ] `POST /api/v1/devices/{id}/start|stop` and `PUT /api/v1/devices/{id}/detection-config` (hot reload)
+- [ ] `POST /api/v1/devices/{id}/test` — probe the source (open + grab one frame) before saving
+- [ ] `GET /api/v1/devices/{id}/snapshot` → latest JPEG
+
+### 2.6 Real-time delivery
+- [ ] `schemas/ws.py`: message envelope `{type, v, ts, device_id, data}` as a Pydantic discriminated union (`motion.started`, `motion.ended`, `device.status`, `ping`, `error`)
+- [ ] `realtime/ConnectionManager`: per-connection bounded send queue + sender task; disconnect slow consumers
+- [ ] `POST /api/v1/ws-ticket` → short-lived single-use ticket (in-memory TTL store); WS authenticates with it on connect
+- [ ] `WS /api/v1/ws/events` with client-side subscribe/unsubscribe to device topics
+- [ ] Heartbeat ping/pong + idle timeout
+- [ ] `GET /api/v1/devices/{id}/stream` — MJPEG `StreamingResponse` (`multipart/x-mixed-replace`), latest-frame-wins, stops on client disconnect
+- [ ] Optional `WS /api/v1/ws/devices/{id}/feed` binary JPEG frames
+- [ ] Configurable stream quality (resolution/FPS/JPEG quality) separate from detection resolution
+
+### 2.7 Tests & cleanup
+- [ ] Integration test: synthetic source → motion event → WS client receives `motion.ended`
+- [ ] Integration test: MJPEG endpoint yields valid JPEG boundaries
+- [ ] Notification tests with a fake SMTP (`aiosmtpd`) server
+- [ ] Load smoke test: 5 synthetic cameras + 20 WS clients, event-loop lag stays < 50 ms
+- [ ] Move `main.py` and `emailing.py` into `legacy/`; update README
+
+**✅ Phase 2 exit criteria**
+- [ ] Multiple mocked cameras run concurrently; API stays responsive under load
+- [ ] Live MJPEG feed and real-time WS alerts work from a browser
+- [ ] Email alert fires once per motion event (not per flicker)
+
+---
+
+## Phase 3 — Persistence & Optimization
+
+**Goal:** durable storage for devices, events, users and snapshots; harden and optimise the single-node hub.
+
+### 3.1 Database
+- [ ] Add `sqlalchemy[asyncio]`, `asyncpg`, `alembic`, `aiosqlite` (tests)
+- [ ] `infra/db/session.py`: async engine + `async_sessionmaker`; session-per-request dependency
+- [ ] ORM models (typed `Mapped[...]`): `users`, `devices`, `motion_events`, `snapshots`, `notifications`, `audit_log`
+- [ ] Encrypt stored source credentials at rest (Fernet key from settings)
+- [ ] Indexes: `motion_events (device_id, started_at DESC)`; `JSONB` for detection metadata (boxes, areas)
+- [ ] Alembic setup with async env; first migration; `alembic upgrade head` on container start
+- [ ] SQL repositories implementing the Phase 2 ports; swap in via the container
+- [ ] Move users from env bootstrap to DB (+ `create-admin` CLI command)
+- [ ] Add `postgres` service (with volume + healthcheck) to `docker-compose.yml`
+- [ ] Integration tests against real Postgres (Testcontainers or a compose service in CI)
+
+### 3.2 Snapshots & event history
+- [ ] `LocalSnapshotStore` (date-partitioned dirs under `data/snapshots/`), path-traversal-safe
+- [ ] Persist best frame + thumbnail per event; save metadata row
+- [ ] Persist each event to the DB *before* publishing it on the bus (DB is the system of record)
+- [ ] `GET /api/v1/events` (cursor pagination; filter by device, time range)
+- [ ] `GET /api/v1/events/{id}` and `GET /api/v1/events/{id}/snapshot` (authenticated `FileResponse`)
+- [ ] WS replay: client sends `last_event_id` on reconnect and receives missed events from the DB
+- [ ] Retention policy job (delete events/snapshots older than *N* days, configurable per device)
+- [ ] Optional: short MP4 clip per event (pre-roll + event) written by the worker
+
+### 3.3 Reliability (single node)
+- [ ] Notification outbox: pending notifications stored in `notifications`; background loop dispatches and retries, surviving restarts
+- [ ] Supervised background tasks (`asyncio.TaskGroup`) with structured error logging and restart policy
+- [ ] Graceful shutdown audit (drain WS, flush notifications, release cameras, close DB pool)
+- [ ] Startup recovery: mark devices offline, resume configured cameras, re-dispatch pending notifications
+
+### 3.4 Optimization & observability
+- [ ] Profile per-camera CPU; run detection on downscaled frames (e.g. 640 px wide) and scale boxes back
+- [ ] Benchmark `asyncio.to_thread` vs dedicated threads vs processes per camera; document results
+- [ ] Reuse buffers / avoid redundant `frame.copy()`; encode JPEG once per frame and share across subscribers
+- [ ] Prometheus `/metrics`: FPS per camera, processing latency, event-loop lag, WS clients, queue drops, notification failures
+- [ ] Optional detector plug-in: person detection (e.g. ONNX/YOLO) to filter motion events, behind the same `Detector` protocol
+
+**✅ Phase 3 exit criteria**
+- [ ] Events and snapshots survive restarts and are queryable via the API
+- [ ] Pending notifications are delivered after a crash/restart
+- [ ] Metrics show per-camera health
+
+---
+
+## Phase 4 — Frontend MVP *(later)*
+
+**Goal:** a clean, mobile-ready dashboard that consumes the existing APIs only.
+
+- [ ] Choose stack (recommended: **Vite + React + TypeScript + Tailwind**, or HTMX + Jinja if we want zero build step) and record it as AD-19
+- [ ] Generate a typed API client from the OpenAPI schema
+- [ ] Login page (JWT + refresh handling)
+- [ ] Device grid with live MJPEG tiles and online/offline badges
+- [ ] Real-time alert toasts + event feed via WebSocket (auto-reconnect with replay)
+- [ ] Event history with filters, snapshot viewer/lightbox
+- [ ] Device detail: start/stop, source test, detection-config editor (sensitivity, ROI drawing)
+- [ ] Responsive layout + dark mode; installable PWA with web-push notifications
+- [ ] Serve the built assets from FastAPI (`StaticFiles`) or a separate container behind the proxy
+- [ ] Playwright end-to-end tests for login → live view → alert
+
+**✅ Phase 4 exit criteria**
+- [ ] Dashboard usable on a phone; alerts appear within 1 s of motion ending
+
+---
+
+## 🔭 Future — Horizontal Scaling *(deferred, only if needed)*
+
+Not part of the MVP. The ports introduced above (`EventBus`, `SnapshotStore`, repositories) are the seams for this work.
+
+- [ ] `RedisEventBus` (Pub/Sub for frames, Streams + consumer groups for events) as a drop-in for `InMemoryEventBus`
+- [ ] Split roles: standalone camera-worker entrypoint (`worker_main.py`); run modes `all` / `api` / `worker`
+- [ ] Camera ownership leases in Redis (`SET NX PX` + renewal) so each camera runs on exactly one worker
+- [ ] Control channel: API publishes `start/stop/config` commands; owning worker applies them
+- [ ] Redis-backed rate limiting and WS ticket store (required once there is more than one API replica)
+- [ ] `S3SnapshotStore` (`aioboto3`, MinIO locally) with presigned URLs
+- [ ] Multiple API replicas behind a reverse proxy; verify rebalancing on worker loss
+- [ ] Optional push-mode edge devices (device API keys or MQTT) alongside the pull model
+
+---
+
+## Appendix A — Legacy baseline (as of commit `14af13a`)
+
+Behaviour to preserve or deliberately improve:
+
+| Area | Legacy behaviour | Problem | Fixed in |
+|------|------------------|---------|----------|
+| Background model | `first_frame` captured once, never updated | Lighting changes cause permanent false motion | 2.1 |
+| Event trigger | Fires on any 1 → 0 status transition between consecutive frames | One frame without contours ends the event → repeated emails for one intruder | 2.1 |
+| Frame buffer | Up to 150 full-res frames in RAM; extra frames dropped | "Middle frame" is the middle of the first ~5 s, not of the event | 2.1 |
+| Evidence image | Annotated frame saved as ~2 MB PNG, then emailed and deleted | Large files; boxes burnt into evidence; disk round-trip not needed | 2.1, 2.4 |
+| File naming | `intruder_{event_count}.png`, counter resets each run | Overwrites earlier files; snapshots in `images/` were not git-ignored | 1.0 ✅, 3.2 |
+| Email | New thread per event, `smtplib`, Gmail hard-coded, sends to self, bare `except` + `print` | No retry, rate limit, or structured logging | 2.4, 3.3 |
+| Credentials | Read from env at import time | No validation, secrets not typed | 1.2 |
+| UI | `cv2.imshow` + `waitKey` on the main loop | Requires a display; incompatible with a server | 2.3 |
+| Dependencies | `requirements.txt` mixed `black` (dev) with runtime deps | No lockfile; dev/runtime not separated | 1.0 ✅, 1.1 |

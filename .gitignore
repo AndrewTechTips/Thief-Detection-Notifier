@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ── Vision Hub ──────────────────────────────────────────────
+# Captured footage and snapshots must never be committed (privacy)
+images/
+snapshots/
+data/
+
+# JetBrains IDE settings
+.idea/
