@@ -92,6 +92,20 @@ uv run vision-hub serve --reload  # http://localhost:8000/docs
 In Swagger UI, use **Authorize** with the admin username and password to call protected
 endpoints. All routes except health probes and login require a bearer token.
 
+### Cameras
+
+Cameras are defined in a TOML file; [`devices.example.toml`](devices.example.toml) runs two
+simulated cameras out of the box:
+
+```bash
+VISION_HUB_VISION__DEVICES_FILE=devices.example.toml uv run vision-hub serve
+```
+
+Each camera runs in its own thread (capture, motion detection, JPEG encoding), so the async API
+is never blocked. Supported sources: `synthetic`, `webcam`, `rtsp` (reconnects automatically)
+and `video_file`. Keep a real `devices.toml` private: it can contain camera passwords and is
+git-ignored.
+
 ### Running with Docker
 
 ```bash

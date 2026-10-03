@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 2 — IoT Engine & Real-Time
 - **Working branch:** `main`
-- **Next task:** 2.3 Non-blocking camera workers → "`vision/worker.py`: `CameraWorker` runs `source → detector → tracker` in a dedicated daemon thread"
+- **Next task:** 2.4 Event bus & notifications → "`EventBus` port: `publish(topic, message)`, `subscribe(topic) -> AsyncIterator`"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -191,15 +191,15 @@
 - [x] Source credentials (e.g. RTSP user/password) held as `SecretStr`, rejected inside URLs, redacted in logs and errors; FFmpeg/OpenCV stderr logging silenced (it prints stream URLs)
 
 ### 2.3 Non-blocking camera workers
-- [ ] `vision/worker.py`: `CameraWorker` runs `source → detector → tracker` in a dedicated daemon thread
-- [ ] Frame-rate limiting / frame skipping to cap CPU per camera (configurable target FPS)
-- [ ] JPEG encoding (`cv2.imencode`) inside the worker thread, so the event loop only handles bytes
-- [ ] Thread → asyncio bridge: `loop.call_soon_threadsafe` into a bounded queue (events) and a "latest frame" slot + `asyncio.Event` (frames)
-- [ ] Graceful stop via `threading.Event`; join with timeout on shutdown
-- [ ] `vision/manager.py`: `CameraManager` — start/stop/restart workers, supervise crashes with backoff, emit `device.online/offline`
-- [ ] Wire `CameraManager` into `lifespan` (start configured devices on boot, stop all on shutdown)
-- [ ] Single-owner guard: refuse to start cameras if a second process holds the lock file (protects against `--workers > 1`)
-- [ ] Assert no blocking calls on the loop (`asyncio` debug mode in tests; `ruff` `ASYNC` rules)
+- [x] `vision/worker.py`: `CameraWorker` runs `source → detector → tracker` in a dedicated daemon thread (wrapped in `ReconnectingSource`)
+- [x] Frame-rate limiting / frame skipping to cap CPU per camera (configurable target FPS, per-device override); live sources are still drained so latency never builds up
+- [x] JPEG encoding (`cv2.imencode`) inside the worker thread, so the event loop only handles bytes: live frames every processed frame while someone watches, ~1/s otherwise; clean + annotated snapshot per motion event
+- [x] Thread → asyncio bridge (`LoopBridge`): frames are latest-frame-wins with at most one pending loop callback per camera (`LatestFrame` + `asyncio.Event`); events go through `call_soon_threadsafe` one by one and are never dropped (rare, so no bounded queue)
+- [x] Graceful stop via `threading.Event` (also interrupts reconnect backoff); join with timeout via `asyncio.to_thread`; an event open at stop is closed and delivered
+- [x] `vision/manager.py`: `CameraManager` — start/stop/restart workers, track `DeviceStatus`, supervise crashes with backoff (reset once online), forward `CameraEvent`s
+- [x] Wire `CameraManager` into `lifespan` (start enabled fleet devices on boot, stop all on shutdown; invalid fleet fails startup)
+- [x] Single-owner guard: `flock` lock file; a second process fails startup with a clear error (verified live)
+- [x] Assert no blocking calls on the loop: asyncio debug mode test with live cameras finds no callback slower than 50 ms; `ruff` `ASYNC` rules
 
 ### 2.4 Event bus & notifications
 - [ ] `EventBus` port: `publish(topic, message)`, `subscribe(topic) -> AsyncIterator`
@@ -211,7 +211,7 @@
 
 ### 2.5 Device management (mocked multi-device)
 - [ ] `DeviceRepository` port + in-memory implementation (DB in Phase 3)
-- [ ] Load mock fleet from settings/`devices.yaml` (e.g. 1 webcam + 3 synthetic + 1 looping video)
+- [x] Load the fleet from a TOML file (`VISION_HUB_VISION__DEVICES_FILE`, stdlib `tomllib` instead of YAML: no dependency) with per-device detection overrides; `devices.example.toml` validated by a test (done in 2.3)
 - [ ] `GET /api/v1/devices`, `GET /api/v1/devices/{id}` (status, fps, last event)
 - [ ] `POST /api/v1/devices`, `PATCH /api/v1/devices/{id}`, `DELETE /api/v1/devices/{id}` (admin)
 - [ ] `POST /api/v1/devices/{id}/start|stop` and `PUT /api/v1/devices/{id}/detection-config` (hot reload)

@@ -15,6 +15,9 @@ services:
       VISION_HUB_APP__HOST: 0.0.0.0
     volumes:
       - hub-data:/app/data
+      # Camera fleet (may contain passwords, so it is mounted, never baked into the image):
+      #   - ./devices.toml:/app/devices.toml:ro
+      # and set VISION_HUB_VISION__DEVICES_FILE=/app/devices.toml in .env
     restart: unless-stopped
     # Hardening: immutable filesystem (except the data volume), no privilege escalation.
     read_only: true
