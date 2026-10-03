@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 2 — IoT Engine & Real-Time
 - **Working branch:** `main`
-- **Next task:** 2.2 Frame sources → "`FrameSource` protocol: `open()`, `read()`, `close()`, `fps`, `resolution`"
+- **Next task:** 2.3 Non-blocking camera workers → "`vision/worker.py`: `CameraWorker` runs `source → detector → tracker` in a dedicated daemon thread"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -183,11 +183,12 @@
 - [x] Unit tests with synthetic frames (moving objects, lighting drift vs. frozen background, sudden light change, sensor noise, ROI, 1080p scaling)
 
 ### 2.2 Frame sources (pull)
-- [ ] `FrameSource` protocol: `open()`, `read() -> Frame | None`, `close()`, `fps`, `resolution`
-- [ ] `WebcamSource` (device index), `RtspSource` (URL, reconnect with exponential backoff), `VideoFileSource` (looping)
-- [ ] `SyntheticSource` generating moving shapes on a noisy background (no hardware needed)
-- [ ] Source factory from `SourceConfig` (Pydantic discriminated union on `kind`)
-- [ ] Source credentials (e.g. RTSP user/password) held as `SecretStr`, redacted in logs and API responses
+- [x] `FrameSource` protocol: `open()`, `read() -> Frame` (raises `SourceError`), `close()`, `fps`, `resolution`, log-safe `name`
+- [x] `WebcamSource` (device index), `RtspSource` (FFmpeg/TCP, open/read timeouts, fast probe), `VideoFileSource` (looping, paced to file fps); all over an injectable `VideoCapture` factory
+- [x] Reconnect with exponential backoff + jitter as a `ReconnectingSource` wrapper for any source: status callback (`STARTING`/`ONLINE`/`RECONNECTING`/`FAILED`), `ONLINE` only after a real frame, stop interrupts backoff immediately; verified live against MediaMTX (publisher killed and restarted)
+- [x] `SyntheticSource`: deterministic room with a figure walking through on a schedule (no hardware needed)
+- [x] Source factory from `SourceConfig` (Pydantic discriminated union on `kind`, exhaustiveness checked by mypy)
+- [x] Source credentials (e.g. RTSP user/password) held as `SecretStr`, rejected inside URLs, redacted in logs and errors; FFmpeg/OpenCV stderr logging silenced (it prints stream URLs)
 
 ### 2.3 Non-blocking camera workers
 - [ ] `vision/worker.py`: `CameraWorker` runs `source → detector → tracker` in a dedicated daemon thread
