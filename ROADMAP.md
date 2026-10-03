@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 2 — IoT Engine & Real-Time
 - **Working branch:** `main`
-- **Next task:** 2.5 Device management → "`DeviceRepository` port + in-memory implementation"
+- **Next task:** 2.6 Real-time delivery → "`schemas/ws.py`: message envelope `{type, v, ts, device_id, data}`"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -211,13 +211,14 @@
 - [x] Remove the legacy write-PNG → email → `os.remove` flow (deleted together with the legacy script)
 
 ### 2.5 Device management (mocked multi-device)
-- [ ] `DeviceRepository` port + in-memory implementation (DB in Phase 3)
+- [x] `DeviceRepository` port + in-memory implementation seeded from the fleet file; API changes last until restart (DB in Phase 3). `DeviceService` keeps stored definitions and running cameras consistent (mutations serialised)
 - [x] Load the fleet from a TOML file (`VISION_HUB_VISION__DEVICES_FILE`, stdlib `tomllib` instead of YAML: no dependency) with per-device detection overrides; `devices.example.toml` validated by a test (done in 2.3)
-- [ ] `GET /api/v1/devices`, `GET /api/v1/devices/{id}` (status, fps, last event)
-- [ ] `POST /api/v1/devices`, `PATCH /api/v1/devices/{id}`, `DELETE /api/v1/devices/{id}` (admin)
-- [ ] `POST /api/v1/devices/{id}/start|stop` and `PUT /api/v1/devices/{id}/detection-config` (hot reload)
-- [ ] `POST /api/v1/devices/{id}/test` — probe the source (open + grab one frame) before saving
-- [ ] `GET /api/v1/devices/{id}/snapshot` → latest JPEG
+- [x] `GET /api/v1/devices` (cursor-paginated), `GET /api/v1/devices/{id}` (status, stream size, last event) — any authenticated user
+- [x] `POST /api/v1/devices` (201 + `Location`), `PATCH /api/v1/devices/{id}` (partial; capture changes restart the camera), `DELETE /api/v1/devices/{id}` (admin)
+- [x] `POST /api/v1/devices/{id}/start` (202) / `stop` and `PUT /api/v1/devices/{id}/detection-config` (hot reload)
+- [x] `POST /api/v1/devices/test` — probe a source (open + grab one frame) in a worker thread with timeout and concurrency cap; failures reported in the body
+- [x] `GET /api/v1/devices/{id}/snapshot` → latest JPEG (`no-store`; 503 + `Retry-After` until the first frame)
+- [x] RTSP passwords are write-only (`exclude=True` on the model; responses and OpenAPI show `has_password`); `video_file` paths confined to `VISION__MEDIA_DIR` (absolute, `..` and symlink escapes rejected)
 
 ### 2.6 Real-time delivery
 - [ ] `schemas/ws.py`: message envelope `{type, v, ts, device_id, data}` as a Pydantic discriminated union (`motion.started`, `motion.ended`, `device.status`, `ping`, `error`)

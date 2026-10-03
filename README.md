@@ -108,6 +108,11 @@ per-camera cooldown keeps a busy camera from flooding the inbox. Supported sourc
 and `video_file`. Keep a real `devices.toml` private: it can contain camera passwords and is
 git-ignored.
 
+Cameras can also be managed at runtime through the API (`/api/v1/devices`: list, add, update,
+start/stop, hot-reload detection settings, test a source before saving it, fetch the latest
+snapshot). Reading needs any logged-in user; changes need the admin role. Camera passwords are
+write-only: no response ever includes them.
+
 ### Running with Docker
 
 ```bash
