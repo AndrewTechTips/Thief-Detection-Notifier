@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 
@@ -185,7 +185,9 @@ class TestWebSocket:
         return {"Authorization": f"Bearer {token}"}
 
     @pytest.mark.parametrize("ticket", [None, "forged-ticket"])
-    def test_rejects_missing_or_invalid_tickets(self, app: FastAPI, ticket: str | None) -> None:
+    def test_rejects_missing_or_invalid_tickets(
+        self, app: FastAPI, ticket: str | None, log_records: Callable[[], list[dict[str, Any]]]
+    ) -> None:
         with (
             TestClient(app, base_url="http://localhost") as test_client,
             pytest.raises(WebSocketDisconnect) as exc_info,
@@ -194,6 +196,8 @@ class TestWebSocket:
             pass
 
         assert exc_info.value.code == 4401
+        rejected = next(r for r in log_records() if r["event"] == "ws_rejected")
+        assert rejected["reason"] == ("missing ticket" if ticket is None else "invalid ticket")
 
     def test_live_events_and_device_filter(
         self, app: FastAPI, admin_credentials: dict[str, str]
