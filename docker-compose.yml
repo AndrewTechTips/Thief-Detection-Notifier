@@ -1,0 +1,29 @@
+# Local stack. Phase 3 adds a `postgres` service.
+#   docker compose up --build
+#   open http://localhost:8000/docs
+services:
+  api:
+    build: .
+    image: vision-hub:local
+    ports:
+      - "127.0.0.1:8000:8000" # localhost only; put a reverse proxy in front for LAN/remote access
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Must listen on all interfaces inside the container, whatever .env says.
+      VISION_HUB_APP__HOST: 0.0.0.0
+    volumes:
+      - hub-data:/app/data
+    restart: unless-stopped
+    # Hardening: immutable filesystem (except the data volume), no privilege escalation.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  hub-data:
