@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 2 — IoT Engine & Real-Time
 - **Working branch:** `main`
-- **Next task:** 2.6 Real-time delivery → "`schemas/ws.py`: message envelope `{type, v, ts, device_id, data}`"
+- **Next task:** 2.7 Tests & cleanup → "Load smoke test: 5 synthetic cameras + 20 WS clients" (then Phase 2 exit criteria)
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -221,18 +221,17 @@
 - [x] RTSP passwords are write-only (`exclude=True` on the model; responses and OpenAPI show `has_password`); `video_file` paths confined to `VISION__MEDIA_DIR` (absolute, `..` and symlink escapes rejected)
 
 ### 2.6 Real-time delivery
-- [ ] `schemas/ws.py`: message envelope `{type, v, ts, device_id, data}` as a Pydantic discriminated union (`motion.started`, `motion.ended`, `device.status`, `ping`, `error`)
-- [ ] `realtime/ConnectionManager`: per-connection bounded send queue + sender task; disconnect slow consumers
-- [ ] `POST /api/v1/ws-ticket` → short-lived single-use ticket (in-memory TTL store); WS authenticates with it on connect
-- [ ] `WS /api/v1/ws/events` with client-side subscribe/unsubscribe to device topics
-- [ ] Heartbeat ping/pong + idle timeout
-- [ ] `GET /api/v1/devices/{id}/stream` — MJPEG `StreamingResponse` (`multipart/x-mixed-replace`), latest-frame-wins, stops on client disconnect
+- [x] `schemas/ws.py`: message envelope `{type, v, ts, device_id, data}` as a Pydantic discriminated union (`motion.started`, `motion.ended`, `device.status`, `subscription`, `ping`, `error`)
+- [x] `realtime/ConnectionManager`: per-connection bounded bus subscription, single send lock, send timeout; slow consumers closed with 1013; unexpected errors 1011; shutdown 1001
+- [x] `POST /api/v1/auth/tickets` → short-lived single-use ticket (in-memory TTL store); WS validates it before accepting (4401 otherwise); MJPEG accepts ticket or bearer
+- [x] `WS /api/v1/ws/events` with client-side subscribe/unsubscribe to devices (verified live)
+- [x] Heartbeat ping/pong + idle timeout (4408)
+- [x] `GET /api/v1/devices/{id}/stream` — MJPEG `StreamingResponse` (`multipart/x-mixed-replace`), latest-frame-wins, `?fps=` cap, counts as a viewer, ends when the camera stops or the client leaves (verified live)
 - [ ] Optional `WS /api/v1/ws/devices/{id}/feed` binary JPEG frames
-- [ ] Configurable stream quality (resolution/FPS/JPEG quality) separate from detection resolution
+- [x] Configurable stream quality (`VISION__STREAM_MAX_WIDTH`, `STREAM_JPEG_QUALITY`, `REALTIME__STREAM_MAX_FPS`) separate from detection resolution
 
 ### 2.7 Tests & cleanup
-- [ ] Integration test: synthetic source → motion event → WS client receives `motion.ended`
-- [ ] Integration test: MJPEG endpoint yields valid JPEG boundaries
+- [x] Integration tests: WS client receives live device events; MJPEG endpoint yields valid JPEG parts (done in 2.6)
 - [x] Notification tests with a fake SMTP server (asyncio, in `tests/conftest.py`; done in 2.4)
 - [ ] Load smoke test: 5 synthetic cameras + 20 WS clients, event-loop lag stays < 50 ms
 - [ ] Update README with usage, API overview and screenshots
