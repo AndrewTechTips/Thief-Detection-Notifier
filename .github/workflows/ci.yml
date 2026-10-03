@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes the running workflow obsolete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.12.22"
+
+jobs:
+  quality:
+    name: Lint, types & tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Check lockfile is up to date
+        run: uv lock --check
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run --frozen ruff check --output-format=github
+
+      - name: Format
+        run: uv run --frozen ruff format --check
+
+      - name: Type check
+        run: uv run --frozen mypy
+
+      - name: Test
+        run: uv run --frozen pytest --cov-report=term-missing --cov-report=xml
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: quality
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build
+        run: docker build --tag vision-hub:ci .
+
+      - name: Smoke test
+        run: |
+          docker run --detach --name hub --publish 8000:8000 vision-hub:ci
+          for _ in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8000/api/v1/health/live; then
+              echo; echo "Container is healthy"; exit 0
+            fi
+            sleep 1
+          done
+          docker logs hub
+          exit 1
+
+      - name: Runs as non-root
+        run: test "$(docker run --rm --entrypoint id vision-hub:ci -u)" != "0"
