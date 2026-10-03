@@ -37,11 +37,12 @@
 
 - **Multi-camera ingestion:** USB webcams, RTSP cameras (with automatic reconnection), video files and a built-in simulator, each on its own worker thread so the API never blocks
 - **Smart motion detection:** an adaptive background that ignores dusk and passing clouds, a reset instead of an alarm when the lights switch on, debounced events, per-camera regions of interest, and best-frame selection
-- **Email alerts:** the annotated snapshot sent inline and as an attachment, with per-camera cooldowns and retries
+- **Email alerts that are not lost:** the annotated snapshot sent inline and as an attachment, with per-camera cooldowns; pending alerts are stored in the database and retried, even across restarts
 - **Real time:** WebSocket alerts with per-camera subscriptions and replay of events missed while offline, and MJPEG live streams that work in a plain `<img>` tag
 - **Event history:** every event is stored with its clean frame, annotated frame and thumbnail, browsable through the API, with signed image links and per-camera retention
 - **Device API:** add, update, start and stop cameras, hot-reload detection settings, and test a source before saving it
-- **Persistent:** PostgreSQL via async SQLAlchemy and Alembic migrations (applied on startup); camera passwords encrypted at rest with rotatable keys
+- **Persistent:** PostgreSQL via async SQLAlchemy and Alembic migrations (applied on startup); camera passwords encrypted at rest with rotatable keys; an audit trail of every device and user change
+- **Resilient:** supervised background tasks restart after a crash, events cut short by a crash are flagged on the next start, and shutdown is graceful: live streams end, cameras close their events, and readiness fails so traffic drains
 - **Secure by default:** JWT with rotating refresh tokens (reuse detection survives restarts), roles, rate-limited login, single-use stream tickets, write-only camera passwords, security headers, and strict production config checks
 
 <p align="center">
@@ -64,7 +65,7 @@ flowchart LR
         R -->|"store first"| P[("PostgreSQL<br/>+ snapshot files")]
         R -->|"then publish"| B[("Event bus")]
         F --> M["MJPEG streams<br/>& snapshots"]
-        B --> N["Notification service"] --> E["Email (SMTP)"]
+        B --> N["Notification service"] -->|"outbox, retries"| E["Email (SMTP)"]
         B --> W["WebSocket clients"]
         P -. "replay & history" .-> W
         A["REST API"] --> DS["Device service"] --> CM["Camera manager"]
@@ -142,6 +143,7 @@ keeps its data in the `hub-data` and `pg-data` volumes.
 | `GET /api/v1/devices/{id}/stream` | MJPEG live stream | logged in (bearer or ticket) |
 | `GET /api/v1/events` · `/events/{id}` | Event history (filter by camera and time) | logged in |
 | `GET /api/v1/events/{id}/snapshot?kind=` | Event image: `annotated`, `clean` or `thumbnail` | bearer or signed link |
+| `GET /api/v1/audit` | Who changed which device or user, and when | admin |
 | `WS /api/v1/ws/events` | Live motion and status events | ticket |
 | `GET /api/v1/health/live` · `/ready` | Probes for Docker and Kubernetes | public |
 
@@ -197,7 +199,12 @@ mode, wildcard CORS/hosts and unencrypted SMTP.
 - **Event history** is kept for `VISION_HUB_STORAGE__RETENTION_DAYS` (30) days; a camera can
   override it with `retention_days`. Images live under `VISION_HUB_STORAGE__SNAPSHOTS_DIR`.
 - **Email alerts** need `VISION_HUB_SMTP__ENABLED=true` plus a server; Gmail with an App
-  Password works.
+  Password works. Failed deliveries are retried with growing delays
+  (`VISION_HUB_NOTIFICATIONS__*`) and survive restarts; an alert may arrive twice after a crash,
+  but is never silently lost.
+- **Shutdown:** `SIGTERM`/`Ctrl-C` drains gracefully. Requests still open after
+  `VISION_HUB_APP__SHUTDOWN_TIMEOUT_SECONDS` (10) are cancelled; give containers more than that
+  (compose uses `stop_grace_period: 30s`).
 - **Sensitivity** is set per camera: `min_motion_area` (fraction of the frame),
   `pixel_threshold`, regions of interest, and how long a quiet period ends an event.
 

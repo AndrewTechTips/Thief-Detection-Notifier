@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 3 — Persistence & Optimization
 - **Working branch:** `main`
-- **Next task:** 3.3 Reliability → "Notification outbox: `notifications` table + migration"
+- **Next task:** 3.4 Optimization & observability → "Profile per-camera CPU; run detection on downscaled frames"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -42,7 +42,7 @@
 | AD-12 | Auth | **Users:** OAuth2 password flow → short-lived JWT (+ rotating refresh tokens with reuse detection), Argon2id hashing (verified off the event loop). **Rate limiting:** `limits` library behind an injected `RateLimiter`, in memory. **WebSockets:** short-lived single-use ticket (in-memory TTL store), never long-lived tokens in URLs. **Cameras:** no inbound auth (pull model); their source credentials are stored as secrets and never returned by the API | Matches the pull model — only humans call the hub. |
 | AD-13 | Database | **PostgreSQL 17** + **SQLAlchemy 2.1 async** (`asyncpg`) + **Alembic** (migrations on startup); SQLite (`aiosqlite`) only for tests. Secrets encrypted at rest (`MultiFernet`) | Relational device/event/user model; `JSONB` for flexible detection metadata; mature async story. |
 | AD-14 | Snapshot storage | `SnapshotStore` port with a **local filesystem** implementation (`data/snapshots/`). DB stores metadata + relative path only. JPEG (q≈85), not PNG. S3/MinIO deferred to *Future* | Blobs out of the DB; ~10× smaller files than the current 2 MB PNGs; no extra infra. |
-| AD-15 | Notifications | `Notifier` port: **async SMTP (`aiosmtplib`)** first, webhook/Telegram later; dispatched by an in-process background task with retries; DB-backed outbox in Phase 3 | Replaces the fire-and-forget thread + bare `except`. |
+| AD-15 | Notifications | `Notifier` port: **async SMTP (`aiosmtplib`)** first, webhook/Telegram later. **DB-backed outbox**: one row per alert and channel, sent by a dispatcher with exponential retries and a max age; delivery is at-least-once and survives restarts | Replaces the fire-and-forget thread + bare `except`; an intrusion alert must not die with the process. |
 | AD-16 | Quality gates | **ruff** (lint + format, replaces black), **mypy --strict**, **pytest** + `pytest-asyncio`, `httpx2.AsyncClient` + `asgi-lifespan`, **pre-commit**, GitHub Actions | |
 | AD-17 | Observability | **structlog** (JSON in prod), request-ID middleware, `/health/live` + `/health/ready`, Prometheus metrics (Phase 3) | |
 | AD-18 | Packaging / deploy | Multi-stage **Docker** image (`opencv-python-headless`), `docker compose` with **api + postgres** only | Headless OpenCV: no `imshow` on a server. Minimal moving parts. |
@@ -61,7 +61,7 @@
 ├── alembic/                  # migrations (Phase 3)
 ├── src/vision_hub/
 │   ├── main.py               # create_app() factory + lifespan
-│   ├── core/                 # config.py, logging.py, security.py, errors.py, container.py
+│   ├── core/                 # config, logging, security, errors, container, tasks, lifecycle
 │   ├── api/
 │   │   ├── deps.py           # Annotated DI aliases (CurrentUser, DeviceSvc, ...)
 │   │   ├── middleware.py     # request-id, security headers
@@ -271,11 +271,11 @@
 - [ ] Optional: short MP4 clip per event (pre-roll + event) written by the worker — deferred to *Future*
 
 ### 3.3 Reliability (single node)
-- [ ] Notification outbox: `notifications` table + migration; pending notifications stored there; background loop dispatches and retries, surviving restarts
-- [ ] `audit_log` table: who changed which device or user, and when
-- [ ] Supervised background tasks (`asyncio.TaskGroup`) with structured error logging and restart policy
-- [ ] Graceful shutdown audit (drain WS, flush notifications, release cameras, close DB pool)
-- [ ] Startup recovery: mark devices offline, resume configured cameras, re-dispatch pending notifications
+- [x] Notification outbox: `notifications` table + migration; pending notifications stored there; background loop dispatches and retries, surviving restarts (cooldowns restored from the outbox; alerts older than `max_age_hours` dropped; direct send from memory if the database is down)
+- [x] `audit_log` table: who changed which device or user, and when (`GET /api/v1/audit`, admins only; field names, never values; CLI and bootstrap changes included)
+- [x] Supervised background tasks with structured error logging and restart policy (`TaskSupervisor`, not `asyncio.TaskGroup`: one crashing child would cancel its siblings)
+- [x] Graceful shutdown audit (drain WS, flush notifications, release cameras, close DB pool). Found and fixed: an open MJPEG stream blocked shutdown forever (uvicorn waits for connections before the lifespan); `vision-hub serve` now signals shutdown first, readiness turns 503, compose allows 30 s
+- [x] Startup recovery: resume configured cameras, re-dispatch pending notifications, flag events left open by a crash as `interrupted` (device status is never persisted, so every camera starts offline by design)
 
 ### 3.4 Optimization & observability
 - [ ] Profile per-camera CPU; run detection on downscaled frames (e.g. 640 px wide) and scale boxes back
@@ -285,8 +285,8 @@
 - [ ] Optional detector plug-in: person detection (e.g. ONNX/YOLO) to filter motion events, behind the same `Detector` protocol
 
 **✅ Phase 3 exit criteria**
-- [ ] Events and snapshots survive restarts and are queryable via the API
-- [ ] Pending notifications are delivered after a crash/restart
+- [x] Events and snapshots survive restarts and are queryable via the API
+- [x] Pending notifications are delivered after a crash/restart
 - [ ] Metrics show per-camera health
 
 ---

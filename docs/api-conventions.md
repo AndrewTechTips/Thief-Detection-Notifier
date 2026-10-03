@@ -121,10 +121,11 @@ GET /api/v1/events?limit=50&cursor=eyJhZnRlcl9pZCI6NDJ9
   progress is replayed as `motion.started`.
 - **Close codes:** `4401` missing/invalid ticket (before accept), `4408` idle (no client
   message within `REALTIME__IDLE_TIMEOUT_SECONDS`; answer pings), `1013` client too slow to keep
-  up (reconnect), `1001` server shutting down, `1011` internal error.
+  up (reconnect), `1001`/`1012` server shutting down or restarting (reconnect with backoff, then
+  `resume`), `1011` internal error.
 - **MJPEG:** `GET /api/v1/devices/{id}/stream` returns `multipart/x-mixed-replace` with one JPEG
   per part, newest frame first and capped by `?fps=`. It accepts a bearer token or a ticket, and
-  ends when the camera stops.
+  ends when the camera stops or the server shuts down (reconnect with a new ticket).
 
 - **Signed links:** event responses carry snapshot URLs with `expires` and `signature`
   query parameters (HMAC-SHA256, valid for `SECURITY__SIGNED_URL_TTL_SECONDS`, default 1 h).
@@ -139,13 +140,16 @@ GET /api/v1/events?limit=50&cursor=eyJhZnRlcl9pZCI6NDJ9
   across systems; anything else is replaced with a generated UUIDv7.
 - Query strings are never logged, so short-lived tokens in URLs (e.g. WebSocket tickets) stay
   out of log files. Prefer headers for credentials regardless.
+- Changes made by admins are written to the audit trail (`GET /api/v1/audit`) with the same
+  `request_id`, so an entry leads straight to the request's log lines. Services take the acting
+  user explicitly (`actor=principal.username`); entries record field names, never values.
 
 ## Health probes
 
 | Endpoint | Meaning | Codes |
 |----------|---------|-------|
 | `GET /api/v1/health/live` | Process is up. Never checks dependencies. | `200` |
-| `GET /api/v1/health/ready` | All dependencies reachable; safe to route traffic. | `200` / `503` |
+| `GET /api/v1/health/ready` | All dependencies reachable; safe to route traffic. Turns `503` as soon as shutdown begins, so load balancers drain the hub. | `200` / `503` |
 
 - Public (no auth), `Cache-Control: no-store`, and logged at DEBUG unless they fail.
 - They are the one exception to the error format: `503` returns the `Readiness` body (which
