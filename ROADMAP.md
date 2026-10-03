@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 2 — IoT Engine & Real-Time
 - **Working branch:** `main`
-- **Next task:** 2.4 Event bus & notifications → "`EventBus` port: `publish(topic, message)`, `subscribe(topic) -> AsyncIterator`"
+- **Next task:** 2.5 Device management → "`DeviceRepository` port + in-memory implementation"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -202,11 +202,12 @@
 - [x] Assert no blocking calls on the loop: asyncio debug mode test with live cameras finds no callback slower than 50 ms; `ruff` `ASYNC` rules
 
 ### 2.4 Event bus & notifications
-- [ ] `EventBus` port: `publish(topic, message)`, `subscribe(topic) -> AsyncIterator`
-- [ ] `InMemoryEventBus` (asyncio fan-out with per-subscriber bounded queues and drop policy per topic)
-- [ ] Topics: `events.<device_id>`, `frames.<device_id>`, `devices.status`
-- [ ] `Notifier` port + `EmailNotifier` (`aiosmtplib`, STARTTLS, configurable host/port/recipients, JPEG attachment from memory — no temp file)
-- [ ] `NotificationService`: subscribes to closed motion events, applies per-device cooldown/rate limit, retries with backoff, logs failures
+- [x] `EventBus` port: non-blocking `publish(topic, message)`, `subscribe(*glob_patterns) -> Subscription` (async iterator + context manager)
+- [x] `InMemoryEventBus` (asyncio fan-out; per-subscriber queue size and overflow policy: unbounded for internal services, `drop_oldest`/`drop_newest` for live clients, with drop counters)
+- [x] Topics: `motion.started.<id>`, `motion.ended.<id>`, `device.status.<id>`; camera events routed in by the `CameraManager`. Live frames stay on `LatestFrame` (latest-wins + viewer counting); a `frames.<id>` topic only pays off with Redis (Future)
+- [x] `Notifier` port + `EmailNotifier` (`aiosmtplib`, `starttls`/`implicit`/`none` TLS, optional credentials, HTML body with inline snapshot + JPEG attachment from memory — no temp file; never calls `getfqdn()`, which stalled sends by 5 s)
+- [x] `NotificationService`: subscribes before cameras start, per-device cooldown, one task per delivery, retries transient errors with backoff (not permanent ones), drains queued events and in-flight sends on shutdown
+- [x] SMTP tests run against an in-repo asyncio fake SMTP server (`aiosmtpd` does not work on Python 3.14); end-to-end test: synthetic camera → email received
 - [x] Remove the legacy write-PNG → email → `os.remove` flow (deleted together with the legacy script)
 
 ### 2.5 Device management (mocked multi-device)
@@ -231,7 +232,7 @@
 ### 2.7 Tests & cleanup
 - [ ] Integration test: synthetic source → motion event → WS client receives `motion.ended`
 - [ ] Integration test: MJPEG endpoint yields valid JPEG boundaries
-- [ ] Notification tests with a fake SMTP (`aiosmtpd`) server
+- [x] Notification tests with a fake SMTP server (asyncio, in `tests/conftest.py`; done in 2.4)
 - [ ] Load smoke test: 5 synthetic cameras + 20 WS clients, event-loop lag stays < 50 ms
 - [ ] Update README with usage, API overview and screenshots
 

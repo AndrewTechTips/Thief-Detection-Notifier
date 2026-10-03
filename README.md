@@ -102,7 +102,9 @@ VISION_HUB_VISION__DEVICES_FILE=devices.example.toml uv run vision-hub serve
 ```
 
 Each camera runs in its own thread (capture, motion detection, JPEG encoding), so the async API
-is never blocked. Supported sources: `synthetic`, `webcam`, `rtsp` (reconnects automatically)
+is never blocked. When a motion event ends, an email with the annotated snapshot is sent if
+`VISION_HUB_SMTP__ENABLED=true` (see the SMTP section of [`.env.example`](.env.example)); a
+per-camera cooldown keeps a busy camera from flooding the inbox. Supported sources: `synthetic`, `webcam`, `rtsp` (reconnects automatically)
 and `video_file`. Keep a real `devices.toml` private: it can contain camera passwords and is
 git-ignored.
 
