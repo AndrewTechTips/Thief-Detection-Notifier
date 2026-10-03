@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 1 — Backend Foundation & Security
 - **Working branch:** `main`
-- **Next task:** 1.4 Routing & API conventions → "Versioned router mounted at `/api/v1`"
+- **Next task:** 1.5 Security baseline → "`core/security.py`: Argon2 password hashing, JWT encode/decode"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -134,11 +134,11 @@
 - [x] `vision-hub` CLI entrypoint (`--reload`; always a single Uvicorn worker, uvicorn logging routed through structlog)
 
 ### 1.4 Routing & API conventions
-- [ ] Versioned router mounted at `/api/v1`
-- [ ] `GET /api/v1/health/live` (process up) and `GET /api/v1/health/ready` (dependencies up)
-- [ ] Conventions doc in `docs/api-conventions.md`: plural nouns, cursor pagination envelope, UTC ISO-8601 timestamps, UUIDv7 ids, problem+json errors
-- [ ] Shared schemas: `Page[T]` generic, base model config (`from_attributes`, `extra="forbid"` on inputs) — `ProblemDetail` already done in 1.3
-- [ ] OpenAPI metadata (title, version, tags); disable `/docs` in prod via settings
+- [x] Versioned router mounted at `/api/v1`
+- [x] `GET /api/v1/health/live` (process up) and `GET /api/v1/health/ready` (dependencies up): `HealthCheck` protocol registry run concurrently with per-check timeout, 503 without leaking failure details, `Cache-Control: no-store`, DEBUG-level access logs unless failing
+- [x] Conventions doc in `docs/api-conventions.md`: plural nouns, cursor pagination envelope, UTC ISO-8601 timestamps, UUIDv7 ids, problem+json errors
+- [x] Shared schemas: `Page[T]` generic + `PageParamsDep` + opaque cursors, `ApiSchema` (`from_attributes`) / `RequestSchema` (`extra="forbid"`), `UtcDateTime`; `ProblemDetail` done in 1.3
+- [x] OpenAPI metadata (title, version, summary, tags, readable operation IDs, errors documented as problem+json); docs hidden in prod unless `APP__DOCS_ENABLED=true`
 
 ### 1.5 Security baseline
 - [ ] `core/security.py`: Argon2 password hashing (`pwdlib[argon2]`), JWT encode/decode (`pyjwt`)

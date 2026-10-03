@@ -1,0 +1,117 @@
+# API Conventions
+
+Rules every endpoint of the IoT Vision Hub API follows. When adding a route, match these; when a
+rule has to change, change it here first.
+
+## Versioning and paths
+
+- All endpoints live under **`/api/v1`**. A breaking change ships as `/api/v2`; additive changes
+  (new endpoints, new optional fields) do not bump the version.
+- Resources are **plural nouns** in `kebab-case`: `/api/v1/devices`, `/api/v1/events`.
+- A single resource is addressed by ID: `/api/v1/devices/{device_id}`.
+- Actions that are not CRUD use a verb sub-resource with `POST`: `/api/v1/devices/{id}/start`.
+
+## Methods and status codes
+
+| Method | Use | Success |
+|--------|-----|---------|
+| `GET` | Read a resource or a page of resources | `200` |
+| `POST` | Create a resource or trigger an action | `201` + `Location` header (create), `202` (async action), `200` (sync action) |
+| `PATCH` | Partial update | `200` with the updated resource |
+| `PUT` | Replace a sub-document (e.g. `detection-config`) | `200` |
+| `DELETE` | Remove a resource | `204` |
+
+## Payloads
+
+- JSON with **`snake_case`** field names, in both requests and responses.
+- Request bodies extend `RequestSchema`: **unknown fields are rejected** (`422`), so client typos
+  never pass silently. Strings are whitespace-stripped.
+- Response bodies extend `ApiSchema`. Optional fields are present with `null`, not omitted.
+- **IDs** are UUIDv7 strings: globally unique and time-sortable.
+- **Timestamps** are ISO 8601 in **UTC** with a `Z` suffix (`2026-06-01T12:00:00Z`), using the
+  `UtcDateTime` type. Naive datetimes are rejected on input.
+
+## Errors — RFC 9457 Problem Details
+
+Every error (4xx and 5xx) is returned as `application/problem+json`:
+
+```json
+{
+  "type": "urn:vision-hub:problem:not-found",
+  "title": "Resource Not Found",
+  "status": 404,
+  "detail": "Camera cam-7 not found",
+  "instance": "/api/v1/devices/cam-7",
+  "request_id": "01a1015e-6468-706e-8d7b-712a6937de48",
+  "device_id": "cam-7"
+}
+```
+
+- `type` is `urn:vision-hub:problem:<code>` for domain errors, or `about:blank` for plain HTTP
+  errors (unknown route, wrong method). **Clients branch on `type`, never on `title` or `detail`.**
+- Extra members (like `device_id` above) give machine-readable context.
+- Validation failures (`422`) list each problem in `errors` as `{loc, msg, type}`. The submitted
+  value is **never echoed back**, since it may be a password or token.
+- `500` responses never contain exception messages; use `request_id` to find the cause in the logs.
+
+| `type` code | Status | Raised as |
+|-------------|--------|-----------|
+| `bad-request` | 400 | `BadRequestError` |
+| `invalid-cursor` | 400 | `InvalidCursorError` |
+| `unauthenticated` | 401 | `AuthenticationError` (adds `WWW-Authenticate: Bearer`) |
+| `permission-denied` | 403 | `PermissionDeniedError` |
+| `not-found` | 404 | `NotFoundError` |
+| `conflict` | 409 | `ConflictError` |
+| `service-unavailable` | 503 | `ServiceUnavailableError` |
+| `internal-error` | 500 | `AppError` |
+
+New error kinds subclass `AppError` in `core/errors.py` and get a row in this table.
+
+## Pagination
+
+Collections use **cursor (keyset) pagination**, which stays correct while new events are being
+inserted (offset pagination would skip or repeat items).
+
+```
+GET /api/v1/events?limit=50&cursor=eyJhZnRlcl9pZCI6NDJ9
+```
+
+```json
+{ "items": [ ... ], "next_cursor": "eyJhZnRlcl9pZCI6OTJ9" }
+```
+
+- `limit`: 1–200, default 50.
+- `next_cursor` is **opaque**: pass it back unchanged; `null` means the last page.
+- A malformed cursor returns `400` with type `invalid-cursor`.
+- Routes declare `page: PageParamsDep` and return `Page[ItemSchema]`.
+
+## Request tracing
+
+- Every response carries an **`X-Request-ID`** header, also present in every log line and in
+  problem bodies.
+- Clients may send their own `X-Request-ID` (1–128 chars of `A-Z a-z 0-9 . _ : -`) to correlate
+  across systems; anything else is replaced with a generated UUIDv7.
+- Query strings are never logged, so short-lived tokens in URLs (e.g. WebSocket tickets) stay
+  out of log files. Prefer headers for credentials regardless.
+
+## Health probes
+
+| Endpoint | Meaning | Codes |
+|----------|---------|-------|
+| `GET /api/v1/health/live` | Process is up. Never checks dependencies. | `200` |
+| `GET /api/v1/health/ready` | All dependencies reachable; safe to route traffic. | `200` / `503` |
+
+- Public (no auth), `Cache-Control: no-store`, and logged at DEBUG unless they fail.
+- They are the one exception to the error format: `503` returns the `Readiness` body (which
+  checks failed) instead of a problem document. Failure **reasons** are only logged, never returned.
+
+## OpenAPI
+
+- Served at `/openapi.json`, with Swagger UI at `/docs` and ReDoc at `/redoc`, **disabled in
+  production** unless `VISION_HUB_APP__DOCS_ENABLED=true`.
+- Operation IDs are `<tag>_<function_name>` (e.g. `health_ready`) for readable generated clients.
+  Route function names must therefore be unique within a tag.
+- Error responses are documented as `application/problem+json` with the `ProblemDetail` schema.
+  Every operation documents `500`; routes add their specific errors via
+  `responses={404: {"model": ProblemDetail}}`.
+- Every route has a `tags` entry, and every tag is described in `OPENAPI_TAGS` (`main.py`).

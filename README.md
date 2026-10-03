@@ -52,7 +52,8 @@ src/vision_hub/
 └── infra/      # Adapters: event bus, notifiers, storage, database
 ```
 
-Key design decisions are recorded in [`ROADMAP.md`](ROADMAP.md#-architecture-decisions).
+Key design decisions are recorded in [`ROADMAP.md`](ROADMAP.md#-architecture-decisions), and the rules every
+endpoint follows (errors, pagination, timestamps, IDs) in [`docs/api-conventions.md`](docs/api-conventions.md).
 
 ---
 
