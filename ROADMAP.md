@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 4 — Frontend Dashboard (Phase 3 complete)
 - **Working branch:** `main`
-- **Next task:** 4.2 → "`api/client.js`"
+- **Next task:** 4.2 → "Session"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -321,7 +321,7 @@
 
 ### 4.2 Data layer
 - [x] Types generated from the OpenAPI schema (`openapi-typescript` → `src/api/schema.d.ts`), used through JSDoc via `src/api/types.js` aliases; `vision-hub openapi` exports the schema to `frontend/openapi.json`; WebSocket messages published as `WsServerMessage`/`WsClientMessage` components; response fields with defaults marked required; pytest fails when `openapi.json` is stale, CI/pre-commit (`api:check`) when the types are; `npm run api:sync` refreshes both
-- [ ] `api/client.js`: `fetch` wrapper (bearer token, timeouts via `AbortController`, problem+json → `ApiError`, `Retry-After`), single-flight refresh on 401, sign-out when refresh fails
+- [x] `api/client.js`: `fetch` wrapper (bearer token, JSON/form bodies, query building, one timeout covering headers and body, caller cancellation passes through as `AbortError`), problem+json → `ApiError` (`kind` http/network/timeout, `code` from the problem type, `fieldErrors`, `retryAfter`, request id; a bare proxy 502/504 counts as unreachable), `describeError` for human copy; single-flight refresh on 401 (reuses a token refreshed meanwhile, retries once, refreshes first when only the refresh token survived a reload), sign-out hook when the session can't continue, network failures never sign out. 20 Vitest cases; verified live against the hub (concurrent refresh, logout → expiry, 404/422/429 problems, timeout, unreachable)
 - [ ] Session: access token in memory only, refresh token persistence (“Keep me signed in”), proactive refresh before expiry, sign-out synced across tabs
 - [ ] `realtime/socket.js`: ticket → WebSocket; states `connecting/live/reconnecting/offline`; backoff with jitter; `resume` with the last event id; `pong`; close codes (4401 new ticket, 4408, 1013, 1001); pauses while offline and reconnects on `online`/`visibilitychange`; Vitest tests with a fake socket
 
