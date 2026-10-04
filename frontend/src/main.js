@@ -1,6 +1,7 @@
 import "./styles/main.css";
 
 import { ApiError } from "./api/errors.js";
+import { startAlerts } from "./realtime/alerts.js";
 import { realtime } from "./realtime/live.js";
 import { createRouter, safeRedirect } from "./router.js";
 import { session } from "./state/auth.js";
@@ -82,6 +83,7 @@ async function start() {
   await router.start();
   announceHubChanges();
   connectRealtime();
+  startAlerts(realtime, { navigate: router.navigate });
 
   // Signing in or out (here or in another tab) re-runs the guard on the current page.
   let status = session.state.get().status;

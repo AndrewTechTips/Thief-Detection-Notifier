@@ -366,7 +366,8 @@
     gap: 0.625rem;
     width: min(24rem, calc(100vw - 2rem));
     pointer-events: none;
-    @media (max-width: 640px) {
+    /* Phone layout (no sidebar, a bottom tab bar): toasts drop in from the top instead. */
+    @media (max-width: 767px) {
       --toast-enter-y: -16px;
       top: calc(0.75rem + env(safe-area-inset-top));
       right: 0.75rem;
@@ -393,9 +394,23 @@
     -webkit-backdrop-filter: var(--glass-blur);
     pointer-events: auto;
 
-    & > .dot {
+    & .toast-lead > .dot {
       margin-top: 0.375rem;
     }
+  }
+
+  .toast-lead {
+    display: flex;
+  }
+
+  /* A snapshot thumbnail in place of the status light. */
+  .toast-media {
+    width: 4.5rem;
+    aspect-ratio: 4 / 3;
+    border-radius: var(--radius-chip);
+    object-fit: cover;
+    background: var(--color-ink-900);
+    outline: 1px solid rgb(255 255 255 / 0.08);
   }
 
   .toast-title {

@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 4 — Frontend Dashboard (Phase 3 complete)
 - **Working branch:** `main`
-- **Next task:** 4.3 → "Real-time alert toasts + live event feed"
+- **Next task:** 4.3 → "Event history"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -328,7 +328,7 @@
 
 ### 4.3 Views
 - [x] Device grid: live MJPEG tiles read with `fetch` and painted on a canvas (`realtime/mjpeg.js`: Content-Length part parser, latest-frame-wins decoding with `createImageBitmap`, 8 s stall watchdog, backoff, “ended” when the camera stops) instead of `<img>`, so the dashboard knows when frames stop and can cancel instantly; ticket per stream, 8 fps in the grid; streams run only for on-screen tiles in visible tabs (verified: the hub logs the stream closing on scroll-away); status chips (Live/Connecting/Reconnecting/Starting/Failed/Stopped, last frame dimmed while retrying), amber motion ring and chip, “Motion 4 minutes ago”; updates from live events, list reloaded after every reconnect (status changes are not replayed); skeletons, empty and error states
-- [ ] Real-time alert toasts + live event feed (replayed events marked, no duplicates)
+- [x] Real-time alert toasts + live event feed: one toast per camera (“Motion on X” while it lasts, then duration + snapshot thumbnail, “Watch”/“View”), an older event never overwrites newer motion, replays summed up in one “While you were away” toast, an alert left open by a drop is finished by its replayed end, unseen-alert count in the title of hidden tabs; Events page lists recent events by day with live rows (ticking duration, thumbnail on end), replayed ones tagged “Missed”, no duplicates, `?event=` highlight from an alert; shared camera directory (`state/devices.js`); toasts drop in from the top wherever the phone tab bar shows
 - [ ] Event history: device/time filters, cursor pagination (infinite scroll), snapshot lightbox (clean/annotated)
 - [ ] Device detail: start/stop, source test, detection-config editor (sensitivity, ROI drawing); admin-only controls hidden for viewers
 - [ ] Audit log view (admins)

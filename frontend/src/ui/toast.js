@@ -15,7 +15,9 @@ import { EASE_OUT, enter, exit, flip, reducedMotion } from "./motion.js";
  *   duration?: number,
  *   key?: string,
  *   action?: { label: string, run: () => void },
+ *   media?: string | null,
  * }} ToastOptions
+ * media: an image URL shown in place of the status light (e.g. a snapshot thumbnail).
  * @typedef {{ dismiss: () => void }} ToastHandle
  */
 
@@ -74,6 +76,7 @@ class Toast {
   constructor(options) {
     this.options = options;
     this.dot = h("span", { class: "dot", attrs: { "aria-hidden": "true" } });
+    this.media = h("img", { class: "toast-media", attrs: { alt: "", decoding: "async" } });
     this.title = h("p", { class: "toast-title" });
     this.message = h("p", { class: "toast-message" });
     this.actions = h("div", { class: "toast-actions" });
@@ -90,7 +93,7 @@ class Toast {
     this.element = h(
       "div",
       { class: "toast" },
-      this.dot,
+      h("span", { class: "toast-lead" }, this.dot, this.media),
       h("div", { class: "min-w-0" }, this.title, this.message, this.actions),
       close,
       this.bar,
@@ -111,7 +114,10 @@ class Toast {
   }
 
   render() {
-    const { title, message, tone, action } = this.options;
+    const { title, message, tone, action, media } = this.options;
+    this.dot.hidden = Boolean(media);
+    this.media.hidden = !media;
+    if (media && this.media.getAttribute("src") !== media) this.media.src = media;
     if (tone) this.element.dataset.tone = tone;
     else delete this.element.dataset.tone;
     // Alarms interrupt a screen reader; everything else waits for a pause.
