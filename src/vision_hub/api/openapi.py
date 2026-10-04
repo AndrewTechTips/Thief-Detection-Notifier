@@ -1,21 +1,30 @@
 """OpenAPI adjustments so the published schema matches what the API actually returns.
 
 FastAPI documents errors as ``application/json`` with its own ``HTTPValidationError`` shape,
-while this API returns RFC 9457 ``application/problem+json`` bodies. Generated clients (Phase 4)
-depend on the schema being accurate, so it is corrected here.
+while this API returns RFC 9457 ``application/problem+json`` bodies. WebSocket messages have no
+OpenAPI path at all. The dashboard generates its types from this schema, so both are fixed here.
 """
 
+import json
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
+from pydantic import TypeAdapter
+from pydantic.json_schema import JsonSchemaMode
 
 from vision_hub.core.errors import PROBLEM_JSON
 from vision_hub.schemas.problem import ProblemDetail
+from vision_hub.schemas.ws import ServerMessage, client_message_adapter
 
 _REF_TEMPLATE = "#/components/schemas/{model}"
 _PROBLEM_REF = {"$ref": _REF_TEMPLATE.format(model=ProblemDetail.__name__)}
 _FASTAPI_ERROR_SCHEMAS = ("HTTPValidationError", "ValidationError")
+# Component name -> (model, mode): what the server sends is serialised, what it receives validated.
+_WS_MESSAGES: dict[str, tuple[TypeAdapter[Any], JsonSchemaMode]] = {
+    "WsServerMessage": (TypeAdapter(ServerMessage), "serialization"),
+    "WsClientMessage": (client_message_adapter, "validation"),
+}
 
 
 def operation_id(route: APIRoute) -> str:
@@ -24,11 +33,17 @@ def operation_id(route: APIRoute) -> str:
     return f"{route.tags[0]}_{route.name}" if route.tags else route.name
 
 
-def install_problem_details_schema(app: FastAPI) -> None:
+def openapi_document(app: FastAPI) -> str:
+    """The schema as committed for the dashboard (``frontend/openapi.json``): stable formatting,
+    so regenerating it only changes what changed in the API."""
+    return json.dumps(app.openapi(), indent=2, ensure_ascii=False) + "\n"
+
+
+def install_schema_fixes(app: FastAPI) -> None:
     generate = app.openapi
 
     def openapi() -> dict[str, Any]:
-        return apply_problem_details(generate())
+        return apply_websocket_messages(apply_problem_details(generate()))
 
     app.openapi = openapi  # type: ignore[method-assign]
 
@@ -58,4 +73,19 @@ def apply_problem_details(schema: dict[str, Any]) -> dict[str, Any]:
     problem_schema = ProblemDetail.model_json_schema(ref_template=_REF_TEMPLATE)
     components.update(problem_schema.pop("$defs", {}))
     components[ProblemDetail.__name__] = problem_schema
+    return schema
+
+
+def apply_websocket_messages(schema: dict[str, Any]) -> dict[str, Any]:
+    """Publishes the WebSocket protocol (``schemas.ws``) as components: ``WsServerMessage`` and
+    ``WsClientMessage`` are discriminated unions on ``type``. Idempotent."""
+    components = schema.setdefault("components", {}).setdefault("schemas", {})
+    for name, (adapter, mode) in _WS_MESSAGES.items():
+        message_schema = adapter.json_schema(ref_template=_REF_TEMPLATE, mode=mode)
+        for model, definition in message_schema.pop("$defs", {}).items():
+            # Models shared with the REST API (e.g. DeviceStatus) must render identically.
+            if components.setdefault(model, definition) != definition:
+                msg = f"OpenAPI component {model!r} differs between REST and WebSocket schemas"
+                raise RuntimeError(msg)
+        components[name] = message_schema
     return schema

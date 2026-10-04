@@ -1,0 +1,3975 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "IoT Vision Hub",
+    "summary": "Asynchronous camera monitoring: motion events, alerts and live streams.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/health/live": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Liveness probe",
+        "description": "The process is up and serving requests. Never checks dependencies, so a database outage\ndoes not make an orchestrator restart a healthy process.",
+        "operationId": "health_live",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Liveness"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/health/ready": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Readiness probe",
+        "description": "All dependencies are reachable, so the hub can take traffic. Returns 503 otherwise.",
+        "operationId": "health_ready",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/token": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Log in",
+        "description": "OAuth2 password flow (form-encoded `username` and `password`). Rate-limited per client.",
+        "operationId": "auth_login",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_auth_login"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Refresh tokens",
+        "description": "Exchange a refresh token for a new token pair. The old refresh token stops working.",
+        "operationId": "auth_refresh",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Log out",
+        "description": "Revoke the refresh token. The current access token expires on its own within minutes.",
+        "operationId": "auth_logout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Current user",
+        "operationId": "auth_me",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipalOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/tickets": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Issue a stream ticket",
+        "description": "Browsers cannot send an `Authorization` header when opening a WebSocket or an `<img>`\nMJPEG stream; they pass this short-lived, single-use ticket as `?ticket=` instead.",
+        "operationId": "auth_issue_ticket",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/devices": {
+      "get": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "List devices",
+        "operationId": "devices_list_devices",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_DeviceOut_"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Add a device",
+        "description": "Starts the camera right away when `enabled`.",
+        "operationId": "devices_create_device",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/devices/test": {
+      "post": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Test a source",
+        "description": "Open the source and read one frame, without saving anything. A failure is reported in\nthe body (`ok: false`), not as an HTTP error.",
+        "operationId": "devices_check_source",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceTestResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/devices/{device_id}": {
+      "get": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Get a device",
+        "operationId": "devices_get_device",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Update a device",
+        "description": "Only fields present in the body change. Changing the source, detection or frame rate\nrestarts a running camera.",
+        "operationId": "devices_update_device",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Delete a device",
+        "operationId": "devices_delete_device",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/devices/{device_id}/start": {
+      "post": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Start a camera",
+        "description": "Accepted: the camera connects in the background; watch `status` become `online`.",
+        "operationId": "devices_start_device",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/devices/{device_id}/stop": {
+      "post": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Stop a camera",
+        "operationId": "devices_stop_device",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/devices/{device_id}/detection-config": {
+      "put": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Replace detection settings",
+        "description": "Hot reload: a running camera restarts with the new settings (its background model\nre-learns for a moment).",
+        "operationId": "devices_set_detection_config",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DetectionConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/devices/{device_id}/snapshot": {
+      "get": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Latest frame",
+        "description": "At most about a second old (live frames refresh continuously while someone watches).",
+        "operationId": "devices_snapshot",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "JPEG of the latest live frame",
+            "content": {
+              "image/jpeg": {}
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "List events",
+        "description": "Newest first. Snapshot links in the response are signed and expire after\n`VISION_HUB_SECURITY__SIGNED_URL_TTL_SECONDS`.",
+        "operationId": "events_list_events",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 63
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Device Id"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/UtcDateTime"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Started at or after (UTC)",
+              "title": "Since"
+            },
+            "description": "Started at or after (UTC)"
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/UtcDateTime"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Started before (UTC)",
+              "title": "Until"
+            },
+            "description": "Started before (UTC)"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_EventOut_"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events/{event_id}": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Get an event",
+        "operationId": "events_get_event",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/audit": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "List audit entries",
+        "description": "Newest first: who changed which device or user, and when. `request_id` matches the\nserver logs of the request that made the change.",
+        "operationId": "audit_list_audit_entries",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "target_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AuditTarget"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Type"
+            }
+          },
+          {
+            "name": "target_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Id"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AuditEntryOut_"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/devices/{device_id}/stream": {
+      "get": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Live MJPEG stream",
+        "description": "Use directly as `<img src=\".../stream?ticket=...\">`. Ends when the camera stops.",
+        "operationId": "devices_stream",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          },
+          {
+            "name": "fps",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "maximum": 60,
+                  "exclusiveMinimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Frame rate cap",
+              "title": "Fps"
+            },
+            "description": "Frame rate cap"
+          },
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Single-use ticket from POST /api/v1/auth/tickets",
+              "title": "Ticket"
+            },
+            "description": "Single-use ticket from POST /api/v1/auth/tickets"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One JPEG per multipart part",
+            "content": {
+              "multipart/x-mixed-replace; boundary=frame": {}
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events/{event_id}/snapshot": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Event snapshot",
+        "description": "Use the signed `url` from an event, or a bearer token. Snapshots never change, so\nbrowsers may cache them privately.",
+        "operationId": "events_snapshot",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Id"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SnapshotKind",
+              "default": "annotated"
+            }
+          },
+          {
+            "name": "expires",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "From a signed link",
+              "title": "Expires"
+            },
+            "description": "From a signed link"
+          },
+          {
+            "name": "signature",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "From a signed link",
+              "title": "Signature"
+            },
+            "description": "From a signed link"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "JPEG",
+            "content": {
+              "image/jpeg": {}
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuditEntryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "actor": {
+            "type": "string",
+            "title": "Actor"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "target_type": {
+            "$ref": "#/components/schemas/AuditTarget"
+          },
+          "target_id": {
+            "type": "string",
+            "title": "Target Id"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "at",
+          "actor",
+          "action",
+          "target_type",
+          "target_id",
+          "details",
+          "request_id"
+        ],
+        "title": "AuditEntryOut"
+      },
+      "AuditTarget": {
+        "type": "string",
+        "enum": [
+          "device",
+          "user"
+        ],
+        "title": "AuditTarget"
+      },
+      "Body_auth_login": {
+        "properties": {
+          "grant_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^password$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grant Type"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "title": "Password"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope",
+            "default": ""
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "format": "password",
+            "title": "Client Secret"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "Body_auth_login"
+      },
+      "BoundingBox": {
+        "properties": {
+          "x": {
+            "type": "integer",
+            "title": "X"
+          },
+          "y": {
+            "type": "integer",
+            "title": "Y"
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "title": "BoundingBox",
+        "description": "Axis-aligned box in pixel coordinates of the original (full-resolution) frame."
+      },
+      "CheckStatus": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "healthy": {
+            "type": "boolean",
+            "title": "Healthy"
+          },
+          "duration_ms": {
+            "type": "number",
+            "title": "Duration Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "healthy",
+          "duration_ms"
+        ],
+        "title": "CheckStatus"
+      },
+      "DetectionConfig": {
+        "properties": {
+          "min_motion_area": {
+            "type": "number",
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Min Motion Area",
+            "default": 0.01
+          },
+          "pixel_threshold": {
+            "type": "integer",
+            "maximum": 255.0,
+            "minimum": 1.0,
+            "title": "Pixel Threshold",
+            "default": 60
+          },
+          "blur_kernel_size": {
+            "type": "integer",
+            "maximum": 99.0,
+            "minimum": 3.0,
+            "title": "Blur Kernel Size",
+            "default": 21
+          },
+          "roi": {
+            "items": {
+              "$ref": "#/components/schemas/Polygon"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "title": "Roi",
+            "description": "Regions to watch; empty means the whole frame",
+            "default": []
+          },
+          "processing_width": {
+            "type": "integer",
+            "maximum": 1920.0,
+            "minimum": 160.0,
+            "title": "Processing Width",
+            "default": 640
+          },
+          "background_learning_rate": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Background Learning Rate",
+            "default": 0.02
+          },
+          "warmup_frames": {
+            "type": "integer",
+            "maximum": 300.0,
+            "minimum": 0.0,
+            "title": "Warmup Frames",
+            "default": 10
+          },
+          "lighting_change_ratio": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Lighting Change Ratio",
+            "default": 0.6
+          },
+          "min_motion_frames": {
+            "type": "integer",
+            "maximum": 60.0,
+            "minimum": 1.0,
+            "title": "Min Motion Frames",
+            "default": 2
+          },
+          "motion_end_grace_seconds": {
+            "type": "number",
+            "maximum": 60.0,
+            "minimum": 0.0,
+            "title": "Motion End Grace Seconds",
+            "default": 2.0
+          },
+          "max_event_seconds": {
+            "type": "number",
+            "maximum": 3600.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Max Event Seconds",
+            "default": 120.0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DetectionConfig"
+      },
+      "DeviceCreate": {
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/DeviceId"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "target_fps": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 60.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Fps"
+          },
+          "retention_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Days"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceConfig-Input"
+          },
+          "detection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DetectionConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Omit to use the hub-wide defaults"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "source"
+        ],
+        "title": "DeviceCreate"
+      },
+      "DeviceId": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+      },
+      "DeviceOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Started automatically when the hub starts"
+          },
+          "target_fps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Fps",
+            "description": "Analysed frames per second; null = default"
+          },
+          "retention_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Days",
+            "description": "Days events are kept; null = hub default"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceConfig-Output"
+          },
+          "detection": {
+            "$ref": "#/components/schemas/DetectionConfig"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DeviceStatus"
+          },
+          "running": {
+            "type": "boolean",
+            "title": "Running"
+          },
+          "stream": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StreamInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latest live frame, if the camera produced one"
+          },
+          "last_event": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastEvent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "enabled",
+          "target_fps",
+          "retention_days",
+          "source",
+          "detection",
+          "status",
+          "running",
+          "stream",
+          "last_event"
+        ],
+        "title": "DeviceOut"
+      },
+      "DeviceStatus": {
+        "type": "string",
+        "enum": [
+          "stopped",
+          "starting",
+          "online",
+          "reconnecting",
+          "failed"
+        ],
+        "title": "DeviceStatus"
+      },
+      "DeviceUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "target_fps": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 60.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Fps"
+          },
+          "retention_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Days"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceConfig-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DetectionConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DeviceUpdate",
+        "description": "Partial update: only the fields present in the request change."
+      },
+      "EventOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "device_id": {
+            "type": "string",
+            "title": "Device Id"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "complete": {
+            "type": "boolean",
+            "title": "Complete",
+            "description": "True once the event has ended"
+          },
+          "interrupted": {
+            "type": "boolean",
+            "title": "Interrupted",
+            "description": "The hub stopped abruptly before the event ended"
+          },
+          "peak_area_ratio": {
+            "type": "number",
+            "title": "Peak Area Ratio",
+            "description": "Largest moving region, as a fraction of the frame"
+          },
+          "motion_frames": {
+            "type": "integer",
+            "title": "Motion Frames"
+          },
+          "boxes": {
+            "items": {
+              "$ref": "#/components/schemas/BoundingBox"
+            },
+            "type": "array",
+            "title": "Boxes"
+          },
+          "snapshots": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotLink"
+            },
+            "type": "array",
+            "title": "Snapshots"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "device_id",
+          "started_at",
+          "ended_at",
+          "duration_seconds",
+          "complete",
+          "interrupted",
+          "peak_area_ratio",
+          "motion_frames",
+          "boxes",
+          "snapshots"
+        ],
+        "title": "EventOut"
+      },
+      "FieldError": {
+        "description": "One request validation failure. The offending input is deliberately omitted.",
+        "properties": {
+          "loc": {
+            "description": "Path to the invalid field, e.g. ['body', 'port']",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Loc",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Msg",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "FieldError",
+        "type": "object"
+      },
+      "LastEvent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "peak_area_ratio": {
+            "type": "number",
+            "title": "Peak Area Ratio"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "started_at",
+          "ended_at",
+          "peak_area_ratio"
+        ],
+        "title": "LastEvent"
+      },
+      "Liveness": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status",
+            "default": "ok"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "Liveness"
+      },
+      "Page_AuditEntryOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntryOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor",
+            "description": "Pass as `cursor` to fetch the next page; null on the last page"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "Page[AuditEntryOut]"
+      },
+      "Page_DeviceOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor",
+            "description": "Pass as `cursor` to fetch the next page; null on the last page"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "Page[DeviceOut]"
+      },
+      "Page_EventOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EventOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor",
+            "description": "Pass as `cursor` to fetch the next page; null on the last page"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "Page[EventOut]"
+      },
+      "Point": {
+        "prefixItems": [
+          {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0
+          },
+          {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0
+          }
+        ],
+        "type": "array",
+        "maxItems": 2,
+        "minItems": 2
+      },
+      "Polygon": {
+        "items": {
+          "$ref": "#/components/schemas/Point"
+        },
+        "type": "array",
+        "maxItems": 64,
+        "minItems": 3
+      },
+      "PrincipalOut": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "role"
+        ],
+        "title": "PrincipalOut"
+      },
+      "ProblemDetail": {
+        "additionalProperties": true,
+        "properties": {
+          "type": {
+            "default": "about:blank",
+            "description": "URI identifying the problem type",
+            "examples": [
+              "about:blank"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "title": {
+            "description": "Short, human-readable summary of the problem type",
+            "title": "Title",
+            "type": "string"
+          },
+          "status": {
+            "description": "HTTP status code",
+            "maximum": 599,
+            "minimum": 400,
+            "title": "Status",
+            "type": "integer"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Explanation specific to this occurrence",
+            "title": "Detail"
+          },
+          "instance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Request path that produced the problem",
+            "title": "Instance"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Correlates with server logs",
+            "title": "Request Id"
+          },
+          "errors": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldError"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Validation failures",
+            "title": "Errors"
+          }
+        },
+        "required": [
+          "title",
+          "status"
+        ],
+        "title": "ProblemDetail",
+        "type": "object"
+      },
+      "Readiness": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "unavailable"
+            ],
+            "title": "Status"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CheckStatus"
+            },
+            "type": "array",
+            "title": "Checks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "Readiness"
+      },
+      "RefreshRequest": {
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Refresh Token"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshRequest"
+      },
+      "Role": {
+        "type": "string",
+        "enum": [
+          "viewer",
+          "admin"
+        ],
+        "title": "Role",
+        "description": "Ordered from least to most privileged; a higher role includes every lower one."
+      },
+      "RtspSourceConfig-Input": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "rtsp",
+            "title": "Kind",
+            "default": "rtsp"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "examples": [
+              "rtsp://192.168.1.20:554/stream1"
+            ]
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "password",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "open_timeout_seconds": {
+            "type": "number",
+            "maximum": 60.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Open Timeout Seconds",
+            "default": 10.0
+          },
+          "read_timeout_seconds": {
+            "type": "number",
+            "maximum": 60.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Read Timeout Seconds",
+            "default": 10.0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "RtspSourceConfig",
+        "description": "Credentials live in their own fields so they stay secret; ``url`` must not embed them."
+      },
+      "RtspSourceConfig-Output": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "rtsp",
+            "title": "Kind",
+            "default": "rtsp"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "examples": [
+              "rtsp://192.168.1.20:554/stream1"
+            ]
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "open_timeout_seconds": {
+            "type": "number",
+            "maximum": 60.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Open Timeout Seconds",
+            "default": 10.0
+          },
+          "read_timeout_seconds": {
+            "type": "number",
+            "maximum": 60.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Read Timeout Seconds",
+            "default": 10.0
+          },
+          "has_password": {
+            "type": "boolean",
+            "title": "Has Password",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url",
+          "has_password"
+        ],
+        "title": "RtspSourceConfig",
+        "description": "Credentials live in their own fields so they stay secret; ``url`` must not embed them."
+      },
+      "SnapshotKind": {
+        "type": "string",
+        "enum": [
+          "clean",
+          "annotated",
+          "thumbnail"
+        ],
+        "title": "SnapshotKind"
+      },
+      "SnapshotLink": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/SnapshotKind"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Signed, expiring link: usable directly in an <img> tag"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "url",
+          "size_bytes"
+        ],
+        "title": "SnapshotLink"
+      },
+      "SourceConfig-Input": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/WebcamSourceConfig"
+          },
+          {
+            "$ref": "#/components/schemas/RtspSourceConfig-Input"
+          },
+          {
+            "$ref": "#/components/schemas/VideoFileSourceConfig"
+          },
+          {
+            "$ref": "#/components/schemas/SyntheticSourceConfig"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "rtsp": "#/components/schemas/RtspSourceConfig-Input",
+            "synthetic": "#/components/schemas/SyntheticSourceConfig",
+            "video_file": "#/components/schemas/VideoFileSourceConfig",
+            "webcam": "#/components/schemas/WebcamSourceConfig"
+          }
+        }
+      },
+      "SourceConfig-Output": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/WebcamSourceConfig"
+          },
+          {
+            "$ref": "#/components/schemas/RtspSourceConfig-Output"
+          },
+          {
+            "$ref": "#/components/schemas/VideoFileSourceConfig"
+          },
+          {
+            "$ref": "#/components/schemas/SyntheticSourceConfig"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "rtsp": "#/components/schemas/RtspSourceConfig-Output",
+            "synthetic": "#/components/schemas/SyntheticSourceConfig",
+            "video_file": "#/components/schemas/VideoFileSourceConfig",
+            "webcam": "#/components/schemas/WebcamSourceConfig"
+          }
+        }
+      },
+      "SourceTestRequest": {
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/SourceConfig-Input"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "title": "SourceTestRequest"
+      },
+      "SourceTestResult": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "elapsed_ms": {
+            "type": "number",
+            "title": "Elapsed Ms"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "fps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fps"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "elapsed_ms",
+          "width",
+          "height",
+          "fps",
+          "error"
+        ],
+        "title": "SourceTestResult"
+      },
+      "StreamInfo": {
+        "properties": {
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "last_frame_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Frame At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "width",
+          "height",
+          "last_frame_at"
+        ],
+        "title": "StreamInfo"
+      },
+      "SyntheticSourceConfig": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "synthetic",
+            "title": "Kind",
+            "default": "synthetic"
+          },
+          "width": {
+            "type": "integer",
+            "maximum": 3840.0,
+            "minimum": 64.0,
+            "title": "Width",
+            "default": 640
+          },
+          "height": {
+            "type": "integer",
+            "maximum": 2160.0,
+            "minimum": 48.0,
+            "title": "Height",
+            "default": 480
+          },
+          "fps": {
+            "type": "number",
+            "maximum": 60.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Fps",
+            "default": 10.0
+          },
+          "visit_every_seconds": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Visit Every Seconds",
+            "description": "Time between visits",
+            "default": 20.0
+          },
+          "visit_seconds": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Visit Seconds",
+            "description": "How long each visit lasts",
+            "default": 5.0
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed",
+            "description": "Fixes the sensor noise, for tests"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SyntheticSourceConfig",
+        "description": "Generated scene with a figure that walks through periodically; no hardware needed."
+      },
+      "TicketOut": {
+        "properties": {
+          "ticket": {
+            "type": "string",
+            "title": "Ticket",
+            "description": "Single use; pass as ?ticket= to a WebSocket or stream URL"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "description": "Seconds until the ticket expires"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ticket",
+          "expires_in"
+        ],
+        "title": "TicketOut"
+      },
+      "TokenResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "const": "bearer",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "description": "Access token lifetime in seconds"
+          },
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token"
+          },
+          "refresh_expires_in": {
+            "type": "integer",
+            "title": "Refresh Expires In",
+            "description": "Refresh token lifetime in seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "token_type",
+          "expires_in",
+          "refresh_token",
+          "refresh_expires_in"
+        ],
+        "title": "TokenResponse",
+        "description": "OAuth2 token response (RFC 6749 §5.1), plus the refresh token's lifetime."
+      },
+      "UtcDateTime": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "VideoFileSourceConfig": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "video_file",
+            "title": "Kind",
+            "default": "video_file"
+          },
+          "path": {
+            "type": "string",
+            "format": "path",
+            "title": "Path"
+          },
+          "loop": {
+            "type": "boolean",
+            "title": "Loop",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "VideoFileSourceConfig"
+      },
+      "WebcamSourceConfig": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "webcam",
+            "title": "Kind",
+            "default": "webcam"
+          },
+          "index": {
+            "type": "integer",
+            "maximum": 63.0,
+            "minimum": 0.0,
+            "title": "Index",
+            "description": "OS capture device index",
+            "default": 0
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 7680.0,
+                "minimum": 16.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width",
+            "description": "Requested width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 4320.0,
+                "minimum": 16.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height",
+            "description": "Requested height"
+          },
+          "fps": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 120.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fps",
+            "description": "Requested frame rate"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WebcamSourceConfig"
+      },
+      "DeviceStatusData": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/DeviceStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "DeviceStatusData",
+        "type": "object"
+      },
+      "DeviceStatusMessage": {
+        "properties": {
+          "v": {
+            "const": 1,
+            "default": 1,
+            "title": "V",
+            "type": "integer"
+          },
+          "ts": {
+            "$ref": "#/components/schemas/UtcDateTime"
+          },
+          "type": {
+            "const": "device.status",
+            "default": "device.status",
+            "title": "Type",
+            "type": "string"
+          },
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DeviceStatusData"
+          }
+        },
+        "required": [
+          "v",
+          "ts",
+          "type",
+          "device_id",
+          "data"
+        ],
+        "title": "DeviceStatusMessage",
+        "type": "object"
+      },
+      "ErrorData": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorData",
+        "type": "object"
+      },
+      "ErrorMessage": {
+        "properties": {
+          "v": {
+            "const": 1,
+            "default": 1,
+            "title": "V",
+            "type": "integer"
+          },
+          "ts": {
+            "$ref": "#/components/schemas/UtcDateTime"
+          },
+          "type": {
+            "const": "error",
+            "default": "error",
+            "title": "Type",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ErrorData"
+          }
+        },
+        "required": [
+          "v",
+          "ts",
+          "type",
+          "data"
+        ],
+        "title": "ErrorMessage",
+        "type": "object"
+      },
+      "MotionEndedData": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "peak_area_ratio": {
+            "title": "Peak Area Ratio",
+            "type": "number"
+          },
+          "motion_frames": {
+            "title": "Motion Frames",
+            "type": "integer"
+          },
+          "boxes": {
+            "items": {
+              "$ref": "#/components/schemas/BoundingBox"
+            },
+            "title": "Boxes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "event_id",
+          "started_at",
+          "ended_at",
+          "peak_area_ratio",
+          "motion_frames",
+          "boxes"
+        ],
+        "title": "MotionEndedData",
+        "type": "object"
+      },
+      "MotionEndedMessage": {
+        "properties": {
+          "v": {
+            "const": 1,
+            "default": 1,
+            "title": "V",
+            "type": "integer"
+          },
+          "ts": {
+            "$ref": "#/components/schemas/UtcDateTime"
+          },
+          "type": {
+            "const": "motion.ended",
+            "default": "motion.ended",
+            "title": "Type",
+            "type": "string"
+          },
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "replay": {
+            "default": false,
+            "title": "Replay",
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MotionEndedData"
+          }
+        },
+        "required": [
+          "v",
+          "ts",
+          "type",
+          "device_id",
+          "replay",
+          "data"
+        ],
+        "title": "MotionEndedMessage",
+        "type": "object"
+      },
+      "MotionStartedData": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "started_at"
+        ],
+        "title": "MotionStartedData",
+        "type": "object"
+      },
+      "MotionStartedMessage": {
+        "properties": {
+          "v": {
+            "const": 1,
+            "default": 1,
+            "title": "V",
+            "type": "integer"
+          },
+          "ts": {
+            "$ref": "#/components/schemas/UtcDateTime"
+          },
+          "type": {
+            "const": "motion.started",
+            "default": "motion.started",
+            "title": "Type",
+            "type": "string"
+          },
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "replay": {
+            "default": false,
+            "title": "Replay",
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MotionStartedData"
+          }
+        },
+        "required": [
+          "v",
+          "ts",
+          "type",
+          "device_id",
+          "replay",
+          "data"
+        ],
+        "title": "MotionStartedMessage",
+        "type": "object"
+      },
+      "PingMessage": {
+        "properties": {
+          "v": {
+            "const": 1,
+            "default": 1,
+            "title": "V",
+            "type": "integer"
+          },
+          "ts": {
+            "$ref": "#/components/schemas/UtcDateTime"
+          },
+          "type": {
+            "const": "ping",
+            "default": "ping",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "v",
+          "ts",
+          "type"
+        ],
+        "title": "PingMessage",
+        "type": "object"
+      },
+      "ReplayDoneData": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "truncated": {
+            "description": "More events were missed than replayed; use the API",
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "count",
+          "truncated"
+        ],
+        "title": "ReplayDoneData",
+        "type": "object"
+      },
+      "ReplayDoneMessage": {
+        "properties": {
+          "v": {
+            "const": 1,
+            "default": 1,
+            "title": "V",
+            "type": "integer"
+          },
+          "ts": {
+            "$ref": "#/components/schemas/UtcDateTime"
+          },
+          "type": {
+            "const": "replay.done",
+            "default": "replay.done",
+            "title": "Type",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReplayDoneData"
+          }
+        },
+        "required": [
+          "v",
+          "ts",
+          "type",
+          "data"
+        ],
+        "title": "ReplayDoneMessage",
+        "type": "object"
+      },
+      "SubscriptionData": {
+        "properties": {
+          "devices": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Subscribed devices; null means all",
+            "title": "Devices"
+          },
+          "excluded": {
+            "description": "Devices excluded while subscribed to all",
+            "items": {
+              "type": "string"
+            },
+            "title": "Excluded",
+            "type": "array"
+          }
+        },
+        "required": [
+          "devices",
+          "excluded"
+        ],
+        "title": "SubscriptionData",
+        "type": "object"
+      },
+      "SubscriptionMessage": {
+        "properties": {
+          "v": {
+            "const": 1,
+            "default": 1,
+            "title": "V",
+            "type": "integer"
+          },
+          "ts": {
+            "$ref": "#/components/schemas/UtcDateTime"
+          },
+          "type": {
+            "const": "subscription",
+            "default": "subscription",
+            "title": "Type",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SubscriptionData"
+          }
+        },
+        "required": [
+          "v",
+          "ts",
+          "type",
+          "data"
+        ],
+        "title": "SubscriptionMessage",
+        "type": "object"
+      },
+      "WsServerMessage": {
+        "discriminator": {
+          "mapping": {
+            "device.status": "#/components/schemas/DeviceStatusMessage",
+            "error": "#/components/schemas/ErrorMessage",
+            "motion.ended": "#/components/schemas/MotionEndedMessage",
+            "motion.started": "#/components/schemas/MotionStartedMessage",
+            "ping": "#/components/schemas/PingMessage",
+            "replay.done": "#/components/schemas/ReplayDoneMessage",
+            "subscription": "#/components/schemas/SubscriptionMessage"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/MotionStartedMessage"
+          },
+          {
+            "$ref": "#/components/schemas/MotionEndedMessage"
+          },
+          {
+            "$ref": "#/components/schemas/DeviceStatusMessage"
+          },
+          {
+            "$ref": "#/components/schemas/SubscriptionMessage"
+          },
+          {
+            "$ref": "#/components/schemas/ReplayDoneMessage"
+          },
+          {
+            "$ref": "#/components/schemas/PingMessage"
+          },
+          {
+            "$ref": "#/components/schemas/ErrorMessage"
+          }
+        ]
+      },
+      "PongMessage": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "pong",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "PongMessage",
+        "type": "object"
+      },
+      "ResumeMessage": {
+        "additionalProperties": false,
+        "description": "After reconnecting: replay events newer than the last one the client saw.",
+        "properties": {
+          "type": {
+            "const": "resume",
+            "title": "Type",
+            "type": "string"
+          },
+          "after": {
+            "format": "uuid",
+            "title": "After",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "after"
+        ],
+        "title": "ResumeMessage",
+        "type": "object"
+      },
+      "SubscribeMessage": {
+        "additionalProperties": false,
+        "description": "Replace the subscription. ``devices: null`` (or omitted) means every device.",
+        "properties": {
+          "type": {
+            "const": "subscribe",
+            "title": "Type",
+            "type": "string"
+          },
+          "devices": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 256,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Devices"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "SubscribeMessage",
+        "type": "object"
+      },
+      "UnsubscribeMessage": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "unsubscribe",
+            "title": "Type",
+            "type": "string"
+          },
+          "devices": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 256,
+            "minItems": 1,
+            "title": "Devices",
+            "type": "array"
+          }
+        },
+        "required": [
+          "type",
+          "devices"
+        ],
+        "title": "UnsubscribeMessage",
+        "type": "object"
+      },
+      "WsClientMessage": {
+        "discriminator": {
+          "mapping": {
+            "pong": "#/components/schemas/PongMessage",
+            "resume": "#/components/schemas/ResumeMessage",
+            "subscribe": "#/components/schemas/SubscribeMessage",
+            "unsubscribe": "#/components/schemas/UnsubscribeMessage"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/SubscribeMessage"
+          },
+          {
+            "$ref": "#/components/schemas/UnsubscribeMessage"
+          },
+          {
+            "$ref": "#/components/schemas/PongMessage"
+          },
+          {
+            "$ref": "#/components/schemas/ResumeMessage"
+          }
+        ]
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "/api/v1/auth/token"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "health",
+      "description": "Liveness and readiness probes for orchestrators and load balancers."
+    },
+    {
+      "name": "auth",
+      "description": "Log in with the OAuth2 password flow, rotate refresh tokens, log out."
+    },
+    {
+      "name": "devices",
+      "description": "Cameras: configuration, start/stop, source tests and live snapshots."
+    },
+    {
+      "name": "events",
+      "description": "Recorded motion events with their snapshots."
+    },
+    {
+      "name": "audit",
+      "description": "Who changed which device or user, and when (admins only)."
+    }
+  ]
+}

@@ -18,7 +18,7 @@ from vision_hub.api.middleware import (
     SecurityHeadersMiddleware,
     TrustedHostMiddleware,
 )
-from vision_hub.api.openapi import install_problem_details_schema, operation_id
+from vision_hub.api.openapi import install_schema_fixes, operation_id
 from vision_hub.api.v1.router import PROBE_PATHS, api_router
 from vision_hub.core.config import Settings, get_settings
 from vision_hub.core.container import LifespanState, build_container
@@ -83,7 +83,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.lifecycle = lifecycle
-    install_problem_details_schema(app)
+    install_schema_fixes(app)
     register_exception_handlers(app)
     app.include_router(api_router)
     if settings.metrics.enabled:

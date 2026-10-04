@@ -1,4 +1,6 @@
+import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import httpx2
@@ -6,6 +8,7 @@ import pytest
 from asgi_lifespan import LifespanManager
 from fastapi import FastAPI
 
+from vision_hub.api.openapi import openapi_document
 from vision_hub.core.config import Settings
 from vision_hub.core.errors import PROBLEM_JSON, NotFoundError
 from vision_hub.main import create_app
@@ -102,3 +105,40 @@ class TestSchema:
 
     def test_post_processing_is_idempotent(self, app: FastAPI) -> None:
         assert app.openapi() == app.openapi()
+
+    def test_websocket_messages_are_published_as_unions(self, app: FastAPI) -> None:
+        components = app.openapi()["components"]["schemas"]
+
+        server = components["WsServerMessage"]
+        assert server["discriminator"]["propertyName"] == "type"
+        assert set(server["discriminator"]["mapping"]) == {
+            "motion.started",
+            "motion.ended",
+            "device.status",
+            "subscription",
+            "replay.done",
+            "ping",
+            "error",
+        }
+        client = components["WsClientMessage"]
+        client_types = {"subscribe", "unsubscribe", "pong", "resume"}
+        assert set(client["discriminator"]["mapping"]) == client_types
+        # Every reference resolves to a published component.
+        refs = {
+            ref.rsplit("/", 1)[1]
+            for message in (server, client)
+            for ref in message["discriminator"]["mapping"].values()
+        }
+        assert refs <= components.keys()
+
+
+# The dashboard generates its TypeScript types from this file (frontend/src/api/schema.d.ts).
+DASHBOARD_SCHEMA = Path(__file__).parents[2] / "frontend" / "openapi.json"
+
+
+def test_dashboard_schema_is_current(settings: Settings) -> None:
+    current = openapi_document(create_app(settings))
+
+    assert json.loads(DASHBOARD_SCHEMA.read_text(encoding="utf-8")) == json.loads(current), (
+        "frontend/openapi.json is out of date: run `npm --prefix frontend run api:sync`"
+    )

@@ -15,9 +15,14 @@ type UtcDateTime = Annotated[AwareDatetime, AfterValidator(_to_utc)]
 
 
 class ApiSchema(BaseModel):
-    """Base for response bodies. ``from_attributes`` lets routes return domain objects directly."""
+    """Base for response bodies. ``from_attributes`` lets routes return domain objects directly.
 
-    model_config = ConfigDict(from_attributes=True)
+    Fields with defaults are always present in a response, so the output schema marks them
+    required; generated clients then don't treat them as optional."""
+
+    model_config = ConfigDict(
+        from_attributes=True, json_schema_serialization_defaults_required=True
+    )
 
 
 class RequestSchema(ApiSchema):

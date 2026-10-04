@@ -166,3 +166,10 @@ GET /api/v1/events?limit=50&cursor=eyJhZnRlcl9pZCI6NDJ9
   Every operation documents `500`; routes add their specific errors via
   `responses={404: {"model": ProblemDetail}}`.
 - Every route has a `tags` entry, and every tag is described in `OPENAPI_TAGS` (`main.py`).
+- WebSocket messages have no OpenAPI path, so their models are published as components:
+  `WsServerMessage` and `WsClientMessage`, discriminated unions on `type`.
+- Response schemas mark fields with defaults as required (they are always sent), so generated
+  clients do not treat them as optional.
+- The dashboard generates its types from a committed copy (`frontend/openapi.json`, written by
+  `vision-hub openapi`). After changing the API, run `npm --prefix frontend run api:sync`; the
+  test suite fails while the copy is stale, and CI fails while the generated types are.

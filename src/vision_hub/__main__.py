@@ -1,4 +1,4 @@
-"""Command-line entrypoint: ``vision-hub [serve|hash-password|create-user]``."""
+"""Command-line entrypoint: ``vision-hub [serve|hash-password|create-user|openapi]``."""
 
 import argparse
 import asyncio
@@ -6,10 +6,12 @@ import getpass
 import socket
 import sys
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any
 
 import uvicorn
 
+from vision_hub.api.openapi import openapi_document
 from vision_hub.core.config import env_name, get_settings
 from vision_hub.core.security import PasswordHasher
 from vision_hub.domain.audit import AuditAction, AuditTarget
@@ -47,8 +49,16 @@ def main(argv: Sequence[str] | None = None) -> None:
     create_user.add_argument("--role", choices=[role.value for role in Role], default="viewer")
     create_user.set_defaults(command="create-user")
 
+    openapi = commands.add_parser(
+        "openapi", help="print the OpenAPI schema (the dashboard generates its types from it)"
+    )
+    openapi.add_argument("-o", "--output", type=Path, help="write to this file instead")
+    openapi.set_defaults(command="openapi")
+
     args = parser.parse_args(argv)
-    if args.command == "hash-password":
+    if args.command == "openapi":
+        _write_openapi(args.output)
+    elif args.command == "hash-password":
         sys.stdout.write(PasswordHasher().hash(_prompt_new_password()) + "\n")
     elif args.command == "create-user":
         _create_user(args.username, Role(args.role))
@@ -90,6 +100,14 @@ def _serve(*, reload: bool) -> None:
     GracefulServer(
         uvicorn.Config(app, **options), on_shutdown=app.state.lifecycle.begin_shutdown
     ).run()
+
+
+def _write_openapi(output: Path | None) -> None:
+    document = openapi_document(create_app())
+    if output is None:
+        sys.stdout.write(document)
+    else:
+        output.write_text(document, encoding="utf-8")
 
 
 def _prompt_new_password() -> str:

@@ -1,4 +1,6 @@
 import getpass
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -126,3 +128,20 @@ class TestHashPassword:
 
         with pytest.raises(SystemExit, match="do not match"):
             cli.main(["hash-password"])
+
+
+class TestOpenApi:
+    def test_prints_the_schema(self, capsys: pytest.CaptureFixture[str]) -> None:
+        cli.main(["openapi"])
+
+        schema = json.loads(capsys.readouterr().out)
+        assert schema["openapi"].startswith("3.")
+        assert "WsServerMessage" in schema["components"]["schemas"]
+
+    def test_writes_the_schema_to_a_file(self, tmp_path: Path) -> None:
+        output = tmp_path / "openapi.json"
+
+        cli.main(["openapi", "--output", str(output)])
+
+        assert output.read_text(encoding="utf-8").endswith("}\n")
+        assert json.loads(output.read_text(encoding="utf-8"))["paths"]
