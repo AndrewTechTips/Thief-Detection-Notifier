@@ -87,3 +87,144 @@
     text-align: right;
   }
 }
+
+/* Filters and paging. */
+@layer components {
+  .event-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    & .segmented {
+      overflow-x: auto;
+      max-width: 100%;
+      scrollbar-width: none;
+    }
+  }
+
+  .event-more {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 3.5rem;
+    color: var(--color-haze);
+    font-size: 0.875rem;
+  }
+
+  /* The whole row opens the snapshot. */
+  .event-open {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+    cursor: pointer;
+    &:focus-visible {
+      outline: 2px solid var(--color-iris);
+      outline-offset: -2px;
+    }
+    &:disabled {
+      cursor: default;
+    }
+  }
+  @media (hover: hover) {
+    .event-row:has(.event-open:not(:disabled):hover) {
+      background: rgb(255 255 255 / 0.035);
+    }
+  }
+}
+
+/* Snapshot viewer. The backdrop dims without blur: cheap on phones (AD-20). */
+@layer components {
+  .lightbox {
+    width: min(64rem, calc(100vw - 1.5rem));
+    max-width: none;
+    max-height: none;
+    margin: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--color-moon);
+    overflow: visible;
+    &[open] {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    &::backdrop {
+      background: rgb(3 5 10 / 0.84);
+    }
+  }
+
+  .lightbox-frame {
+    position: relative;
+    display: grid;
+    place-items: center;
+    min-height: 14rem;
+    overflow: hidden;
+    border-radius: var(--radius-card);
+    background: var(--color-ink-900);
+    touch-action: pan-y;
+    &[data-loading]::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.05), transparent);
+      animation: var(--animate-shimmer);
+    }
+  }
+
+  .lightbox-image {
+    display: block;
+    max-width: 100%;
+    max-height: calc(100dvh - 11rem);
+    object-fit: contain;
+  }
+
+  .lightbox-status {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 2rem;
+    color: var(--color-haze);
+    text-align: center;
+    &:empty {
+      display: none;
+    }
+  }
+
+  .lightbox-nav {
+    position: absolute;
+    top: 50%;
+    z-index: 1;
+    translate: 0 -50%;
+    background: rgb(10 16 32 / 0.85);
+    &:disabled {
+      visibility: hidden;
+    }
+  }
+  .lightbox-nav-back {
+    left: 0.75rem;
+  }
+  .lightbox-nav-forward {
+    right: 0.75rem;
+  }
+
+  .lightbox-bar {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1.25rem;
+    padding: 0.875rem 3.5rem 0.875rem 1rem;
+  }
+
+  /* Pinned to the corner, so it never wraps onto a line of its own on phones. */
+  .lightbox-close {
+    position: absolute;
+    top: 0.625rem;
+    right: 0.625rem;
+  }
+}

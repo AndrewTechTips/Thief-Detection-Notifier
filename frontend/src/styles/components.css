@@ -229,6 +229,76 @@
     }
   }
 
+  /* Native select, styled like .input with a chevron. */
+  .select {
+    appearance: none;
+    height: 2.5rem;
+    padding: 0 2.25rem 0 0.875rem;
+    border-radius: var(--radius-control);
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2393a0b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
+        right 0.75rem center / 1rem no-repeat,
+      rgb(5 8 15 / 0.55);
+    border: 1px solid rgb(255 255 255 / 0.1);
+    color: var(--color-moon);
+    font-size: 1rem;
+    cursor: pointer;
+    &:hover {
+      border-color: rgb(255 255 255 / 0.16);
+    }
+    &:focus-visible {
+      outline: none;
+      border-color: var(--color-iris);
+      box-shadow: 0 0 0 3px rgb(138 180 255 / 0.2);
+    }
+    @media (min-width: 768px) {
+      font-size: 0.875rem;
+    }
+  }
+
+  /* Segmented control: a row of radio buttons that reads as one control. */
+  .segmented {
+    display: inline-flex;
+    padding: 0.1875rem;
+    gap: 0.125rem;
+    border-radius: var(--radius-control);
+    background: rgb(5 8 15 / 0.55);
+    border: 1px solid rgb(255 255 255 / 0.1);
+    & label {
+      position: relative;
+      display: grid;
+      place-items: center;
+      height: 2rem;
+      padding: 0 0.75rem;
+      border-radius: 0.5625rem;
+      color: var(--color-haze);
+      font-size: 0.8125rem;
+      font-weight: 550;
+      white-space: nowrap;
+      cursor: pointer;
+      transition:
+        background-color var(--duration-fast),
+        color var(--duration-fast);
+      &:hover {
+        color: var(--color-moon);
+      }
+      &:has(input:checked) {
+        background: rgb(255 255 255 / 0.1);
+        color: var(--color-moon);
+        box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+      }
+      &:has(input:focus-visible) {
+        outline: 2px solid var(--color-iris);
+        outline-offset: 1px;
+      }
+    }
+    & input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+  }
+
   /* An input with a button inside its right edge (e.g. show password). */
   .input-group {
     position: relative;

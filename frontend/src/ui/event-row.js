@@ -12,9 +12,17 @@ import { formatClock, formatDuration, timeAgo } from "./time.js";
  * @typedef {MotionEvent & { missed?: boolean }} ListedEvent
  */
 
-/** @param {ListedEvent} initial */
-export function eventRow(initial) {
+/**
+ * @param {ListedEvent} initial
+ * @param {{ onOpen?: (id: string) => void }} [options] opening shows the snapshot
+ */
+export function eventRow(initial, { onOpen } = {}) {
   let event = initial;
+  const open = h("button", {
+    class: "event-open",
+    attrs: { type: "button" },
+    on: { click: () => onOpen?.(event.id) },
+  });
   const thumb = h("div", { class: "event-thumb" });
   const name = h("p", { class: "truncate font-medium" });
   const facts = h("p", { class: "event-facts" });
@@ -24,6 +32,7 @@ export function eventRow(initial) {
   const element = h(
     "li",
     { class: "event-row" },
+    onOpen ? open : null,
     thumb,
     h("div", { class: "min-w-0 flex-1" }, name, facts, tags),
     h("div", { class: "event-when" }, clock, ago),
@@ -37,6 +46,14 @@ export function eventRow(initial) {
         ? "interrupted"
         : "live";
     name.textContent = camera;
+    // Snapshots exist once the motion has ended.
+    open.disabled = !event.complete && !event.interrupted;
+    open.setAttribute(
+      "aria-label",
+      open.disabled
+        ? `${camera}, motion in progress`
+        : `Open snapshot: ${camera}, ${formatClock(event.started_at)}`,
+    );
     clock.textContent = formatClock(event.started_at, { seconds: true });
     clock.dateTime = event.started_at;
 
@@ -112,6 +129,11 @@ export function eventRow(initial) {
       render();
     },
     tick,
+    /** Puts keyboard focus on the row, e.g. after closing its snapshot. */
+    focus() {
+      element.scrollIntoView({ block: "nearest" });
+      open.focus({ preventScroll: true });
+    },
   };
 }
 
