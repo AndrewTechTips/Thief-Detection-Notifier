@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 4 — Frontend Dashboard (Phase 3 complete)
 - **Working branch:** `main`
-- **Next task:** 4.2 → "Types generated from the OpenAPI schema"
+- **Next task:** 4.2 → "`api/client.js`"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -46,7 +46,7 @@
 | AD-16 | Quality gates | **ruff** (lint + format, replaces black), **mypy --strict**, **pytest** + `pytest-asyncio`, `httpx2.AsyncClient` + `asgi-lifespan`, **pre-commit**, GitHub Actions | |
 | AD-17 | Observability | **structlog** (JSON in prod), request-ID middleware, `/health/live` + `/health/ready`, Prometheus `/metrics` (`prometheus-client`, per-app registry, scrape token) | Counters and histograms, rates derived in PromQL; route templates as labels keep cardinality bounded. |
 | AD-18 | Packaging / deploy | Multi-stage **Docker** image (`opencv-python-headless`), `docker compose` with **api + postgres** only | Headless OpenCV: no `imshow` on a server. Minimal moving parts. |
-| AD-19 | Frontend | **Vite** + **vanilla JS** (ES modules, no framework) + **Tailwind CSS v4** (`@tailwindcss/vite`, tokens in `@theme`). Native `fetch` and `WebSocket`. Types from OpenAPI (`openapi-typescript`) used through JSDoc and checked with `tsc --checkJs`; ESLint + Prettier; Vitest for logic. Dev: Vite proxies `/api` (HTTP + WS) to the hub, so the browser sees one origin. Prod: FastAPI serves the built files. Routing: History API with lazy views, so the server needs an SPA fallback (4.4) | Small, fast bundle with no runtime dependencies; the API is the contract. Same-origin in dev and prod: no CORS, tickets and MJPEG `<img>` work unchanged. |
+| AD-19 | Frontend | **Vite** + **vanilla JS** (ES modules, no framework) + **Tailwind CSS v4** (`@tailwindcss/vite`, tokens in `@theme`). Native `fetch` and `WebSocket`. Types from OpenAPI (`openapi-typescript`; WebSocket messages included) used through JSDoc and checked with `tsc --checkJs` (TypeScript 5.9: the generator needs the JS compiler API, which the native TS 7 lacks); ESLint + Prettier; Vitest for logic. Dev: Vite proxies `/api` (HTTP + WS) to the hub, so the browser sees one origin. Prod: FastAPI serves the built files. Routing: History API with lazy views, so the server needs an SPA fallback (4.4) | Small, fast bundle with no runtime dependencies; the API is the contract. Same-origin in dev and prod: no CORS, tickets and MJPEG `<img>` work unchanged. |
 | AD-20 | UI performance | Animate **only `transform` and `opacity`** (short colour transitions only on small controls and status lights); content never waits on an animation (hidden or throttled tabs may never finish one); blurred glass only on a few large static surfaces, cheap unblurred cards for repeated items; `backdrop-filter` on static chrome only, **never above live video** (an MJPEG frame under a blur forces a re-blur every frame); `prefers-reduced-motion` respected; streams pause when off-screen or the tab is hidden | Glass effects stay smooth on phones; idle tabs cost no bandwidth or CPU on the hub. |
 
 ---
@@ -320,7 +320,7 @@
 - [x] App shell: History API router (lazy view chunks, view cleanup, scroll restore on Back/Forward, focus moves to the page heading, reload prompt when a chunk fails), responsive layout (glass sidebar from 768 px; opaque top bar + bottom tab bar on phones with safe-area insets; sliding active indicator), skip link, connection pill and hub-lost/recovered toasts from a shared hub monitor (`state/hub.js`), boot screen only when the hub is slow or down, not-found view; Vitest set up (router, store, backoff) and in CI
 
 ### 4.2 Data layer
-- [ ] Types generated from the OpenAPI schema (`openapi-typescript` → `src/api/schema.d.ts`), used through JSDoc; CI fails when the file is stale
+- [x] Types generated from the OpenAPI schema (`openapi-typescript` → `src/api/schema.d.ts`), used through JSDoc via `src/api/types.js` aliases; `vision-hub openapi` exports the schema to `frontend/openapi.json`; WebSocket messages published as `WsServerMessage`/`WsClientMessage` components; response fields with defaults marked required; pytest fails when `openapi.json` is stale, CI/pre-commit (`api:check`) when the types are; `npm run api:sync` refreshes both
 - [ ] `api/client.js`: `fetch` wrapper (bearer token, timeouts via `AbortController`, problem+json → `ApiError`, `Retry-After`), single-flight refresh on 401, sign-out when refresh fails
 - [ ] Session: access token in memory only, refresh token persistence (“Keep me signed in”), proactive refresh before expiry, sign-out synced across tabs
 - [ ] `realtime/socket.js`: ticket → WebSocket; states `connecting/live/reconnecting/offline`; backoff with jitter; `resume` with the last event id; `pong`; close codes (4401 new ticket, 4408, 1013, 1001); pauses while offline and reconnects on `online`/`visibilitychange`; Vitest tests with a fake socket

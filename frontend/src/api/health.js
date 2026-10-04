@@ -2,7 +2,8 @@
 
 /** @typedef {"checking" | "online" | "degraded" | "offline"} HubState */
 /** @typedef {{ state: HubState, title: string, detail: string, command?: string }} HubReport */
-/** @typedef {{ name: string, healthy: boolean, duration_ms: number }} CheckStatus */
+/** @typedef {import("./types.js").CheckStatus} CheckStatus */
+/** @typedef {import("./types.js").Readiness} Readiness */
 
 const READY_URL = "/api/v1/health/ready";
 const TIMEOUT_MS = 4000;
@@ -33,7 +34,7 @@ export async function checkHub() {
   /** @type {CheckStatus[]} */
   let checks;
   try {
-    checks = (await response.json()).checks ?? [];
+    checks = /** @type {Readiness} */ (await response.json()).checks ?? [];
   } catch {
     return OFFLINE;
   }

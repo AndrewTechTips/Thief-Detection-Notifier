@@ -37,7 +37,7 @@ repos:
         files: ^(pyproject\.toml|uv\.lock)$
         pass_filenames: false
       - id: dashboard
-        name: dashboard lint, format, types
+        name: dashboard lint, format, types, tests
         entry: npm --prefix frontend run check
         language: system
         files: ^frontend/

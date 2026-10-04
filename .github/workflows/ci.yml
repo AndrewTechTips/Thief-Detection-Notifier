@@ -96,6 +96,10 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      # openapi.json itself is checked against the backend by the Python test suite.
+      - name: API types match openapi.json
+        run: npm run api:check
+
       - name: Test
         run: npm test
 
