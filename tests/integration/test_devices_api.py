@@ -14,6 +14,7 @@ from vision_hub.core.config import AppConfig, Environment, SecurityConfig, Setti
 from vision_hub.core.errors import PROBLEM_JSON
 from vision_hub.core.security import TokenService, TokenType
 from vision_hub.domain.auth import Principal, Role
+from vision_hub.vision.probe import ProbeResult
 
 DEVICES = "/api/v1/devices"
 FLEET = """
@@ -87,6 +88,7 @@ class TestAccess:
             ("DELETE", f"{DEVICES}/porch", None),
             ("POST", f"{DEVICES}/porch/stop", None),
             ("POST", f"{DEVICES}/test", {"source": {"kind": "synthetic"}}),
+            ("POST", f"{DEVICES}/gate/test", None),
         ],
     )
     async def test_viewers_cannot_change_anything(
@@ -285,6 +287,60 @@ class TestSourceTest:
 
         assert response.status_code == 400
         assert response.json()["detail"] == "Video files must be inside the media directory."
+
+
+class TestSavedSourceTest:
+    async def test_probes_the_stored_source(
+        self, client: httpx2.AsyncClient, admin: dict[str, str]
+    ) -> None:
+        response = await client.post(f"{DEVICES}/gate/test", headers=admin)
+
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+        assert response.json()["width"] > 0
+
+    async def test_uses_stored_credentials(
+        self, client: httpx2.AsyncClient, admin: dict[str, str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        probed: list[Any] = []
+
+        def fake_probe(source: Any) -> Any:
+            probed.append(source)
+            return ProbeResult(ok=False, elapsed_ms=1.0, error="connection refused")
+
+        monkeypatch.setattr("vision_hub.services.devices.probe_source", fake_probe)
+        await client.post(
+            DEVICES,
+            json={
+                "id": "door",
+                "name": "Door",
+                "enabled": False,
+                "source": {
+                    "kind": "rtsp",
+                    "url": "rtsp://192.0.2.10/stream",
+                    "username": "viewer",
+                    "password": "s3cret",
+                },
+            },
+            headers=admin,
+        )
+
+        response = await client.post(f"{DEVICES}/door/test", headers=admin)
+
+        assert response.json() == {
+            "ok": False,
+            "elapsed_ms": 1.0,
+            "width": None,
+            "height": None,
+            "fps": None,
+            "error": "connection refused",
+        }
+        assert probed[0].password.get_secret_value() == "s3cret"
+
+    async def test_unknown_device_is_404(
+        self, client: httpx2.AsyncClient, admin: dict[str, str]
+    ) -> None:
+        assert (await client.post(f"{DEVICES}/nope/test", headers=admin)).status_code == 404
 
 
 def test_openapi_responses_never_expose_passwords(app: FastAPI) -> None:

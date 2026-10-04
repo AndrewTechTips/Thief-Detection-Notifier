@@ -73,6 +73,19 @@ async def check_source(body: SourceTestRequest, devices: DeviceServiceDep) -> So
     return SourceTestResult.model_validate(await devices.test_source(body.source))
 
 
+@router.post(
+    "/{device_id}/test",
+    summary="Test a camera's source",
+    dependencies=[AdminOnly],
+    responses=_problems(404),
+)
+async def check_device_source(device_id: str, devices: DeviceServiceDep) -> SourceTestResult:
+    """Open the saved source, with its stored credentials, and read one frame. Like
+    `POST /devices/test`, a failure is reported in the body. A running camera is already
+    connected: some sources (USB webcams) cannot be opened twice, so test stopped cameras."""
+    return SourceTestResult.model_validate(await devices.test_device(device_id))
+
+
 @router.get("/{device_id}", summary="Get a device", responses=_problems(404))
 async def get_device(device_id: str, devices: DeviceServiceDep) -> DeviceOut:
     return DeviceOut.from_view(await devices.get(device_id))

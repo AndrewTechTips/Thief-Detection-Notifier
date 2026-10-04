@@ -197,6 +197,11 @@ class DeviceService:
                     error=f"no frame within {self._probe_timeout:g} s",
                 )
 
+    async def test_device(self, device_id: str) -> ProbeResult:
+        """Probe a saved camera's source, stored credentials included (they never leave the hub,
+        so clients cannot send them back to ``test_source``)."""
+        return await self.test_source((await self._require(device_id)).source)
+
     async def _apply(self, before: DeviceSpec, after: DeviceSpec) -> None:
         running = self._cameras.is_running(after.id)
         capture_changed = (before.source, before.detection, before.target_fps) != (
