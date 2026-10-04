@@ -4,7 +4,7 @@ from typing import Any
 import httpx2
 import pytest
 from fastapi import FastAPI
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from pydantic import SecretStr
 
 from vision_hub.api.deps import AdminPrincipal
@@ -220,9 +220,13 @@ class TestRefreshAndLogout:
 
 
 def test_every_non_public_route_requires_authentication(app: FastAPI) -> None:
-    """Guards the secure-by-default rule as new routers are added."""
+    """Guards the secure-by-default rule as new routers are added.
 
-    def dependency_calls(route: APIRoute) -> set[object]:
+    Routes are read through ``iter_route_contexts``: ``app.routes`` only lists included
+    routers, and each context carries the full path and the router-level dependencies.
+    """
+
+    def dependency_calls(route: RouteContext) -> set[object]:
         pending = [route.dependant]
         seen: set[object] = set()
         while pending:
@@ -231,15 +235,18 @@ def test_every_non_public_route_requires_authentication(app: FastAPI) -> None:
             pending.extend(dependant.dependencies)
         return seen
 
+    api_routes = [
+        route
+        for route in iter_route_contexts(app.routes)
+        if isinstance(route.original_route, APIRoute) and str(route.path).startswith("/api/v1")
+    ]
     unprotected = [
         route.path
-        for route in app.routes
-        if isinstance(route, APIRoute)
-        and route.path.startswith("/api/v1")
-        and route.path not in PUBLIC_PATHS
-        and not set(AUTH_DEPENDENCIES) & dependency_calls(route)
+        for route in api_routes
+        if route.path not in PUBLIC_PATHS and not set(AUTH_DEPENDENCIES) & dependency_calls(route)
     ]
 
+    assert len(api_routes) > 20  # the check must actually see the routes
     assert unprotected == []
 
 
