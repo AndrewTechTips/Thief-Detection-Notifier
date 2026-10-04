@@ -5,6 +5,7 @@ import { startAlerts } from "./realtime/alerts.js";
 import { realtime } from "./realtime/live.js";
 import { createRouter, safeRedirect } from "./router.js";
 import { session } from "./state/auth.js";
+import { loadDevices } from "./state/devices.js";
 import { checkHubNow, hub, startHubMonitor } from "./state/hub.js";
 import { $, h } from "./ui/dom.js";
 import { enter, exit } from "./ui/motion.js";
@@ -98,11 +99,18 @@ async function start() {
  * socket triggers a health check, and a hub that is back skips the socket's backoff. */
 function connectRealtime() {
   session.state.subscribe(({ status }) => {
-    if (status === "signed-in") realtime.start();
-    else realtime.stop();
+    if (status === "signed-in") {
+      realtime.start();
+      // Alerts and lists name cameras from this directory, whichever page opens first.
+      loadDevices().catch(() => {});
+    } else {
+      realtime.stop();
+    }
   });
   let previous = realtime.state.get().status;
   realtime.state.subscribe(({ status }) => {
+    // Cameras may have been added or renamed while the connection was down.
+    if (status === "live" && previous === "reconnecting") loadDevices().catch(() => {});
     if (previous === "live" && status === "reconnecting") checkHubNow();
     // Live again proves the hub is back: confirm now rather than at the next scheduled check.
     if (status === "live" && previous !== "live" && hub.get().state !== "online") checkHubNow();

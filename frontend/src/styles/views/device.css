@@ -1,0 +1,163 @@
+/* Camera page and the watch-area editor. */
+@layer components {
+  .device-layout {
+    display: grid;
+    gap: 1rem;
+    align-items: start;
+    @media (min-width: 1100px) {
+      grid-template-columns: minmax(0, 1.65fr) minmax(19rem, 1fr);
+    }
+  }
+
+  .device-stage {
+    position: relative;
+    isolation: isolate;
+    /* The live picture stays visible while settings scroll by on wide screens. */
+    @media (min-width: 1100px) {
+      position: sticky;
+      top: 2rem;
+    }
+  }
+
+  .device-stage-bar {
+    display: grid;
+    gap: 0.875rem;
+    padding: 0.875rem 1rem 1rem;
+  }
+
+  .device-section-title {
+    margin-bottom: 0.875rem;
+    font-weight: 600;
+  }
+
+  .device-facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.5rem 1.25rem;
+    font-size: 0.875rem;
+    & dt {
+      color: var(--color-haze);
+    }
+    & dd {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .device-recent-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .device-recent-item {
+    position: relative;
+    display: grid;
+    place-items: center;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    border-radius: var(--radius-chip);
+    background: var(--color-ink-900);
+    outline: 1px solid rgb(255 255 255 / 0.06);
+    & img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform var(--duration-base) var(--ease-out-soft);
+    }
+    &:hover img {
+      transform: scale(1.04);
+    }
+    &:focus-visible {
+      outline: 2px solid var(--color-iris);
+    }
+  }
+
+  .device-recent-caption {
+    position: absolute;
+    inset: auto 0 0;
+    padding: 0.875rem 0.375rem 0.25rem;
+    background: linear-gradient(transparent, rgb(5 8 15 / 0.85));
+    font-size: 0.6875rem;
+    color: var(--color-moon);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Watch areas: outside is dimmed, areas are outlined, corners are draggable in edit mode. */
+  .roi-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  .roi-outside {
+    fill: rgb(5 8 15 / 0.55);
+  }
+  .roi-area {
+    fill: rgb(138 180 255 / 0.1);
+    stroke: var(--color-iris);
+    stroke-width: 1.5;
+    &.is-selected {
+      fill: rgb(255 181 71 / 0.16);
+      stroke: var(--color-sodium);
+    }
+  }
+  .roi-draft {
+    fill: rgb(138 180 255 / 0.08);
+    stroke: var(--color-iris);
+    stroke-width: 1.5;
+    stroke-dasharray: 6 4;
+  }
+
+  .camera-view[data-editing] {
+    cursor: crosshair;
+    touch-action: none;
+    & .roi-area {
+      pointer-events: visiblePainted;
+      cursor: pointer;
+    }
+  }
+
+  .roi-handles {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .roi-handle {
+    position: absolute;
+    width: 0.875rem;
+    height: 0.875rem;
+    translate: -50% -50%;
+    border-radius: 9999px;
+    background: var(--color-iris);
+    border: 2px solid var(--color-ink-950);
+    pointer-events: auto;
+    cursor: grab;
+    /* A larger invisible hit area for fingers. */
+    &::before {
+      content: "";
+      position: absolute;
+      inset: -0.75rem;
+      border-radius: inherit;
+    }
+    &.is-draft {
+      cursor: default;
+    }
+    &.is-first {
+      width: 1.125rem;
+      height: 1.125rem;
+      background: var(--color-sodium);
+      cursor: pointer;
+    }
+  }
+
+  .roi-toolbar {
+    display: grid;
+    gap: 0.625rem;
+    padding-top: 0.875rem;
+    border-top: 1px solid rgb(255 255 255 / 0.06);
+  }
+}

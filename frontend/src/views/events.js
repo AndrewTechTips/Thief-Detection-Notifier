@@ -6,7 +6,7 @@
 import { describeError } from "../api/errors.js";
 import { getEvent, listEvents } from "../api/events.js";
 import { realtime } from "../realtime/live.js";
-import { devices, loadDevices } from "../state/devices.js";
+import { devices, directoryLoaded, loadDevices } from "../state/devices.js";
 import { h } from "../ui/dom.js";
 import { eventRow } from "../ui/event-row.js";
 import { icon } from "../ui/icons.js";
@@ -140,7 +140,8 @@ export default {
             limit: PAGE_SIZE,
             signal: controller.signal,
           }),
-          devices.get().size ? null : loadDevices().catch(() => {}),
+          // Usually loaded at sign-in already; this covers a first visit straight to Events.
+          directoryLoaded() ? null : loadDevices().catch(() => {}),
         ]);
         if (mine !== generation) return;
         for (const event of page.items) upsert(event);

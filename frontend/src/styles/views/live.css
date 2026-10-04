@@ -20,25 +20,25 @@
         transform: translateY(-2px);
       }
     }
+  }
 
-    /* Motion: a streetlight-amber ring that fades in around the tile. */
-    &::after {
-      content: "";
-      position: absolute;
-      inset: -1px;
-      z-index: 2;
-      border-radius: inherit;
-      border: 1.5px solid var(--color-sodium);
-      box-shadow:
-        0 0 0 4px rgb(255 181 71 / 0.14),
-        0 0 36px -6px rgb(255 181 71 / 0.5);
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 320ms var(--ease-out-soft);
-    }
-    &[data-motion]::after {
-      opacity: 1;
-    }
+  /* Motion: a streetlight-amber ring that fades in around whatever holds a live view. */
+  .live-host::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    z-index: 2;
+    border-radius: inherit;
+    border: 1.5px solid var(--color-sodium);
+    box-shadow:
+      0 0 0 4px rgb(255 181 71 / 0.14),
+      0 0 36px -6px rgb(255 181 71 / 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 320ms var(--ease-out-soft);
+  }
+  .live-host[data-motion]::after {
+    opacity: 1;
   }
 
   .camera-view {
@@ -59,14 +59,14 @@
   }
 
   /* Before the first frame: a shimmer. A stalled stream keeps its last frame, dimmed. */
-  .camera-tile[data-state="loading"] .camera-view::before {
+  .live-host[data-state="loading"] .camera-view::before {
     content: "";
     position: absolute;
     inset: 0;
     background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.05), transparent);
     animation: var(--animate-shimmer);
   }
-  .camera-tile:is(
+  .live-host:is(
       [data-state="retrying"],
       [data-state="reconnecting"],
       [data-state="failed"],
@@ -125,7 +125,7 @@
       opacity var(--duration-base) var(--ease-out-soft),
       transform var(--duration-base) var(--ease-out-soft);
   }
-  .camera-tile[data-motion] .camera-motion {
+  .live-host[data-motion] .camera-motion {
     opacity: 1;
     transform: none;
   }

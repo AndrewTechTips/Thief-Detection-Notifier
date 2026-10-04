@@ -11,10 +11,18 @@ export const devices = new Store(new Map());
 
 /** @type {Promise<void> | null} */
 let loading = null;
+/** The whole list has been loaded at least once (not just single cameras remembered). */
+let complete = false;
 
-/** @param {Device[]} list */
+/** Replaces the directory with a full list of cameras.
+ * @param {Device[]} list */
 export function rememberDevices(list) {
+  complete = true;
   devices.set(new Map(list.map((device) => [device.id, device])));
+}
+
+export function directoryLoaded() {
+  return complete;
 }
 
 /** Loads the directory once (concurrent callers share the request). */
@@ -35,4 +43,12 @@ export function deviceName(id) {
   const device = devices.get().get(id);
   if (!device && !loading) loadDevices().catch(() => {});
   return device?.name ?? id;
+}
+
+/** Adds or replaces one camera (e.g. after loading or changing it).
+ * @param {Device} device */
+export function rememberDevice(device) {
+  const next = new Map(devices.get());
+  next.set(device.id, device);
+  devices.set(next);
 }
