@@ -228,3 +228,41 @@
     right: 0.625rem;
   }
 }
+
+/* Activity log rows share the event list's card and day headings. */
+@layer components {
+  .activity-row {
+    display: flex;
+    align-items: start;
+    gap: 0.875rem;
+    padding: 0.875rem 1rem;
+  }
+
+  .activity-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 9999px;
+    background: rgb(138 180 255 / 0.1);
+    color: var(--color-iris);
+    & svg {
+      width: 1.125rem;
+      height: 1.125rem;
+    }
+  }
+
+  .activity-target {
+    font-weight: 500;
+    color: var(--color-moon);
+  }
+  a.activity-target {
+    text-decoration: underline;
+    text-decoration-color: rgb(138 180 255 / 0.4);
+    text-underline-offset: 3px;
+    &:hover {
+      text-decoration-color: var(--color-iris);
+    }
+  }
+}

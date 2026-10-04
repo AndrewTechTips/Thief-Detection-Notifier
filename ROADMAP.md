@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 4 — Frontend Dashboard (Phase 3 complete)
 - **Working branch:** `main`
-- **Next task:** 4.3 → "Audit log view"
+- **Next task:** 4.4 → "Serve the built assets from FastAPI"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -331,7 +331,7 @@
 - [x] Real-time alert toasts + live event feed: one toast per camera (“Motion on X” while it lasts, then duration + snapshot thumbnail, “Watch”/“View”), an older event never overwrites newer motion, replays summed up in one “While you were away” toast, an alert left open by a drop is finished by its replayed end, unseen-alert count in the title of hidden tabs; Events page lists recent events by day with live rows (ticking duration, thumbnail on end), replayed ones tagged “Missed”, no duplicates, `?event=` highlight from an alert; shared camera directory (`state/devices.js`); toasts drop in from the top wherever the phone tab bar shows
 - [x] Event history: camera select + time range (all/today/24 h/7 days) kept in the address bar, live events outside the filters stay out, infinite scroll on the cursor (verified past 480 events, newest first, no duplicates), filtered empty state with “Show all events”; snapshot viewer in a native modal `<dialog>` (motion boxes on/off remembered, previous/next by buttons, arrow keys or swipe, neighbours preloaded, download named camera + local time, expired signed links refreshed once, focus returns to the last event viewed); an alert’s “View” opens its snapshot directly
 - [x] Device detail: full-frame-rate live view (shared `ui/live-view.js`, also used by grid tiles), details, latest motion; admins: start/stop, connection test of the saved source (new `POST /devices/{id}/test`, stored credentials included; for stopped cameras), detection settings in plain words (log-scale sensitivity, small-change filter, confirm frames, end delay; save/discard, hot reload), watch areas drawn over the live picture (tap corners, close on the first, drag corners, select/delete, presets; outside dimmed), viewers see read-only; live status wins over a slower action response (start/save race found live); camera directory loaded at sign-in
-- [ ] Audit log view (admins)
+- [x] Audit log view (admins): entries as sentences (“You stopped Demo garage”, “The hub created the account admin”, field names in words, never values), cameras linked, Everything/Cameras/Accounts filter in the address bar, infinite scroll, “Admins only” for a 403; sentence rules unit-tested
 
 ### 4.4 Delivery & quality
 - [ ] Serve the built assets from FastAPI (`StaticFiles`, SPA fallback, page CSP, immutable caching for hashed files); Node build stage in the Dockerfile
