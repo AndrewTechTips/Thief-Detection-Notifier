@@ -1,8 +1,12 @@
 /* Boot screen: a camera lens whose iris shows the hub's state. */
 @layer components {
+  /* Hidden for the first moments, so a fast hub goes straight to the dashboard. */
+  .boot-screen[data-pending] {
+    visibility: hidden;
+  }
+
   .boot {
     --state: var(--color-iris);
-    animation: rise 600ms var(--ease-out-soft) both;
     &[data-state="online"] {
       --state: var(--color-signal);
     }
@@ -25,7 +29,15 @@
       inset 0 0 0 14px rgb(5 8 15 / 0.9),
       inset 0 0 0 15px rgb(138 180 255 / 0.18),
       0 12px 40px -12px rgb(0 0 0 / 0.8);
-    animation: focus-in 900ms var(--ease-out-soft) 120ms both;
+  }
+
+  .boot-screen:not([data-pending]) {
+    & .boot {
+      animation: rise 600ms var(--ease-out-soft) both;
+    }
+    & .lens {
+      animation: focus-in 900ms var(--ease-out-soft) 120ms both;
+    }
   }
 
   .lens-iris,

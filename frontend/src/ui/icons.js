@@ -10,6 +10,11 @@ const PATHS = {
   eyeOff:
     '<path d="M9.9 5.7A9.8 9.8 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.6 3.4M6.6 6.6C3.9 8.3 2.5 12 2.5 12S6 18.5 12 18.5a9.3 9.3 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2M4 4l16 16"/>',
   refresh: '<path d="M20 12a8 8 0 1 1-2.34-5.66L20 8.5"/><path d="M20 4v4.5h-4.5"/>',
+  live: '<rect x="3" y="4.5" width="8" height="6.5" rx="1.75"/><rect x="13" y="4.5" width="8" height="6.5" rx="1.75"/><rect x="3" y="13" width="8" height="6.5" rx="1.75"/><rect x="13" y="13" width="8" height="6.5" rx="1.75"/>',
+  events:
+    '<path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 2h-15L6 16.5Z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+  activity: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  back: '<path d="M14.5 6 8.5 12l6 6"/>',
   camera:
     '<rect x="2.5" y="6.5" width="13" height="11" rx="2.5"/><path d="m15.5 10.5 6-3.5v10l-6-3.5"/>',
 };
@@ -20,5 +25,12 @@ const PATHS = {
 export function icon(name) {
   return svg(
     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${PATHS[name]}</svg>`,
+  );
+}
+
+/** The Vision Hub mark: a lens whose iris takes the current text colour. */
+export function logo() {
+  return svg(
+    `<svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle cx="16" cy="16" r="14" fill="#0a1020" stroke="#8ab4ff" stroke-width="2.5"/><circle cx="16" cy="16" r="8" fill="none" stroke="#8ab4ff" stroke-opacity=".45" stroke-width="2"/><circle cx="16" cy="16" r="3.5" fill="currentColor"/></svg>`,
   );
 }

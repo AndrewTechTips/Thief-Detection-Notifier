@@ -49,6 +49,12 @@ export function toast(options) {
   return item;
 }
 
+/** Closes the toast shown with `key`, if any.
+ * @param {string} key */
+export function dismissToast(key) {
+  byKey.get(key)?.dismiss();
+}
+
 function getRegion() {
   if (!region) {
     region = h("div", {

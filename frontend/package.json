@@ -14,7 +14,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc -p jsconfig.json",
-    "check": "npm run lint && npm run format:check && npm run typecheck"
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -25,7 +26,8 @@
     "prettier": "^3.9.9",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite": "^8.3.2"
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
   },
   "dependencies": {
     "@fontsource-variable/onest": "^5.3.1"

@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 4 — Frontend Dashboard (Phase 3 complete)
 - **Working branch:** `main`
-- **Next task:** 4.1 → "App shell"
+- **Next task:** 4.2 → "Types generated from the OpenAPI schema"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -46,7 +46,7 @@
 | AD-16 | Quality gates | **ruff** (lint + format, replaces black), **mypy --strict**, **pytest** + `pytest-asyncio`, `httpx2.AsyncClient` + `asgi-lifespan`, **pre-commit**, GitHub Actions | |
 | AD-17 | Observability | **structlog** (JSON in prod), request-ID middleware, `/health/live` + `/health/ready`, Prometheus `/metrics` (`prometheus-client`, per-app registry, scrape token) | Counters and histograms, rates derived in PromQL; route templates as labels keep cardinality bounded. |
 | AD-18 | Packaging / deploy | Multi-stage **Docker** image (`opencv-python-headless`), `docker compose` with **api + postgres** only | Headless OpenCV: no `imshow` on a server. Minimal moving parts. |
-| AD-19 | Frontend | **Vite** + **vanilla JS** (ES modules, no framework) + **Tailwind CSS v4** (`@tailwindcss/vite`, tokens in `@theme`). Native `fetch` and `WebSocket`. Types from OpenAPI (`openapi-typescript`) used through JSDoc and checked with `tsc --checkJs`; ESLint + Prettier; Vitest for logic. Dev: Vite proxies `/api` (HTTP + WS) to the hub, so the browser sees one origin. Prod: FastAPI serves the built files | Small, fast bundle with no runtime dependencies; the API is the contract. Same-origin in dev and prod: no CORS, tickets and MJPEG `<img>` work unchanged. |
+| AD-19 | Frontend | **Vite** + **vanilla JS** (ES modules, no framework) + **Tailwind CSS v4** (`@tailwindcss/vite`, tokens in `@theme`). Native `fetch` and `WebSocket`. Types from OpenAPI (`openapi-typescript`) used through JSDoc and checked with `tsc --checkJs`; ESLint + Prettier; Vitest for logic. Dev: Vite proxies `/api` (HTTP + WS) to the hub, so the browser sees one origin. Prod: FastAPI serves the built files. Routing: History API with lazy views, so the server needs an SPA fallback (4.4) | Small, fast bundle with no runtime dependencies; the API is the contract. Same-origin in dev and prod: no CORS, tickets and MJPEG `<img>` work unchanged. |
 | AD-20 | UI performance | Animate **only `transform` and `opacity`** (short colour transitions only on small controls and status lights); content never waits on an animation (hidden or throttled tabs may never finish one); blurred glass only on a few large static surfaces, cheap unblurred cards for repeated items; `backdrop-filter` on static chrome only, **never above live video** (an MJPEG frame under a blur forces a re-blur every frame); `prefers-reduced-motion` respected; streams pause when off-screen or the tab is hidden | Glass effects stay smooth on phones; idle tabs cost no bandwidth or CPU on the hub. |
 
 ---
@@ -317,7 +317,7 @@
 - [x] Choose the stack and record it as AD-19 (Vite + vanilla JS + Tailwind CSS v4); UI performance rules as AD-20
 - [x] Scaffold `frontend/`: Vite 8 + Tailwind v4, ES modules, ESLint + Prettier + `tsc --checkJs`; dev proxy for `/api` (HTTP + WebSocket + MJPEG, verified live: login, ticket → WS motion event, 5 fps stream); boot screen with hub status (online / not ready / unreachable) from `/health/ready`, backoff with jitter, paused in hidden tabs; self-hosted Onest font; CI `Dashboard` job (lint, format, types, build), pre-commit hook, Dependabot for npm
 - [x] Design system: `@theme static` tokens (night-sky surfaces, text, four meaning colours, radius by element size, shadows, motion), surfaces (`panel` glass / `card` / `panel-solid` over video), buttons (variants, sizes, icon, busy), fields (invalid, password toggle, switch), badge, status dot, spinner, skeleton (transform shimmer), toasts (`ui/toast.js`: FLIP stacking, keyed de-duplication, pausable timer, swipe to dismiss, alert role for alarms); `ui/dom.js` safe DOM builder, `ui/motion.js` (enter/exit with timeout, FLIP); contrast ≥ 4.5:1 for text. Dev-only gallery at `/design.html`
-- [ ] App shell: router, responsive layout (sidebar on desktop, bottom tab bar on phones, safe-area insets), connection indicator, not-found view
+- [x] App shell: History API router (lazy view chunks, view cleanup, scroll restore on Back/Forward, focus moves to the page heading, reload prompt when a chunk fails), responsive layout (glass sidebar from 768 px; opaque top bar + bottom tab bar on phones with safe-area insets; sliding active indicator), skip link, connection pill and hub-lost/recovered toasts from a shared hub monitor (`state/hub.js`), boot screen only when the hub is slow or down, not-found view; Vitest set up (router, store, backoff) and in CI
 
 ### 4.2 Data layer
 - [ ] Types generated from the OpenAPI schema (`openapi-typescript` → `src/api/schema.d.ts`), used through JSDoc; CI fails when the file is stale
