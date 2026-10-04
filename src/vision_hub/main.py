@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from vision_hub import __version__
+from vision_hub.api.dashboard import install_dashboard
 from vision_hub.api.metrics import METRICS_PATH
 from vision_hub.api.metrics import router as metrics_router
 from vision_hub.api.middleware import (
@@ -88,6 +89,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(api_router)
     if settings.metrics.enabled:
         app.include_router(metrics_router)
+    if settings.app.dashboard_dir is not None:
+        # Last: it serves every GET path no other route claimed.
+        install_dashboard(app, settings.app.dashboard_dir)
     _add_middleware(app, settings, metrics)
     return app
 

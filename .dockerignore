@@ -1,4 +1,4 @@
-# Only pyproject.toml, uv.lock, README.md and src/ are needed to build the image.
+# The image needs pyproject.toml, uv.lock, README.md, src/ and the frontend sources.
 
 # Secrets and local state: never send them to the build context
 .env
@@ -27,8 +27,11 @@ htmlcov/
 .vscode/
 .pre-commit-config.yaml
 
-# Not part of the runtime image (the dashboard joins the image in Phase 4.4)
-frontend/
+# The dashboard is built in its own stage from sources only
+frontend/node_modules/
+frontend/dist/
+
+# Not part of the runtime image
 tests/
 docs/
 Dockerfile

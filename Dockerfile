@@ -1,5 +1,20 @@
 # syntax=docker/dockerfile:1
 
+# ── Dashboard: build the static frontend (served by the hub at /) ────────────
+FROM node:22-alpine AS dashboard
+
+WORKDIR /dashboard
+
+# Dependencies first: this layer is reused until package-lock.json changes.
+RUN --mount=type=cache,target=/root/.npm \
+    --mount=type=bind,source=frontend/package.json,target=package.json \
+    --mount=type=bind,source=frontend/package-lock.json,target=package-lock.json \
+    npm ci --no-audit --no-fund
+
+COPY frontend/ ./
+RUN npm run build
+
+
 # ── Build: resolve dependencies into a self-contained virtualenv ─────────────
 FROM python:3.14-slim-trixie AS builder
 
@@ -24,7 +39,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
 
 
-# ── Runtime: no compilers, no uv, no source tree; just the virtualenv ────────
+# ── Runtime: no compilers, no uv, no source tree; the virtualenv and the dashboard
 FROM python:3.14-slim-trixie AS runtime
 
 RUN groupadd --system --gid 10001 hub \
@@ -33,13 +48,15 @@ RUN groupadd --system --gid 10001 hub \
     && chown hub:hub /app/data
 
 COPY --from=builder /app/.venv /app/.venv
+COPY --from=dashboard /dashboard/dist /app/dashboard
 
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     VISION_HUB_APP__HOST=0.0.0.0 \
     VISION_HUB_APP__PORT=8000 \
-    VISION_HUB_STORAGE__SNAPSHOTS_DIR=/app/data/snapshots
+    VISION_HUB_STORAGE__SNAPSHOTS_DIR=/app/data/snapshots \
+    VISION_HUB_APP__DASHBOARD_DIR=/app/dashboard
 
 WORKDIR /app
 USER hub

@@ -124,7 +124,7 @@ Open **http://localhost:8000/docs**, click **Authorize** and log in as `admin`. 
 cameras are running, and a figure walks past each of them every 20–30 seconds. Devices from the
 file are added to the database on first start; after that, the database is the source of truth.
 
-**Dashboard** (work in progress, needs Node.js 22.12+): with the hub running, start the dev server
+**Dashboard:** the Docker image builds it and the hub serves it at **http://localhost:8000** (set `VISION_HUB_APP__DASHBOARD_DIR` to a build to serve one outside Docker). To work on it (Node.js 22.12+), start the dev server with the hub running
 and open **http://localhost:5173**. It proxies `/api` (HTTP and WebSockets) to the hub, so no CORS
 setup is needed; set `VISION_HUB_URL` if the hub is not on `http://127.0.0.1:8000`.
 The component gallery is at **http://localhost:5173/design.html** (dev server only).

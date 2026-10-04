@@ -13,5 +13,5 @@ export default defineConfig([
       "prefer-const": "error",
     },
   },
-  { files: ["*.config.js"], languageOptions: { globals: globals.node } },
+  { files: ["*.config.js", "scripts/**"], languageOptions: { globals: globals.node } },
 ]);

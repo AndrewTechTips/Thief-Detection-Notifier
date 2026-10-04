@@ -178,8 +178,10 @@ export function roiEditor({ surface, areas: initial, onChange }) {
   function handle(x, y, role) {
     const element = h("span", {
       class: `roi-handle${role.draft ? " is-draft" : ""}${role.first ? " is-first" : ""}`,
-      attrs: { style: `left:${x * 100}%;top:${y * 100}%` },
     });
+    // Through the CSSOM, not a style attribute: the page CSP forbids inline styles.
+    element.style.left = `${x * 100}%`;
+    element.style.top = `${y * 100}%`;
     element.addEventListener("pointerdown", (event) => {
       event.stopPropagation();
       event.preventDefault();

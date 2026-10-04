@@ -124,6 +124,15 @@ jobs:
           curl --fail --silent --show-error http://localhost:8000/api/v1/health/ready | tee ready.json
           grep -q '"name":"database","healthy":true' ready.json
 
+      - name: Serves the dashboard (app shell with its CSP, compressed hashed assets)
+        run: |
+          curl --fail --silent --show-error --dump-header page.txt http://localhost:8000/events | grep -q '<title>Vision Hub</title>'
+          grep -qi "^content-security-policy: default-src 'self'" page.txt
+          asset=$(curl --fail --silent http://localhost:8000/ | grep -oE '/assets/index-[^"]+\.js' | head -1)
+          curl --fail --silent --show-error --dump-header asset.txt --output /dev/null -H 'Accept-Encoding: br' "http://localhost:8000$asset"
+          grep -qi '^content-encoding: br' asset.txt
+          grep -qi '^cache-control: public, max-age=31536000, immutable' asset.txt
+
       - name: Runs as non-root
         run: test "$(docker compose exec -T api id -u)" != "0"
 

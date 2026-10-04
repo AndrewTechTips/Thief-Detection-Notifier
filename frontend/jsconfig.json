@@ -14,5 +14,5 @@
     "skipLibCheck": true,
     "maxNodeModuleJsDepth": 0
   },
-  "include": ["src", "*.config.js"]
+  "include": ["src", "scripts", "*.config.js"]
 }

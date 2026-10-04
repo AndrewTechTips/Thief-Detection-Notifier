@@ -67,6 +67,8 @@ class AppConfig(_Group):
     health_check_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
     # How long shutdown waits for open requests before cancelling them.
     shutdown_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
+    # Built dashboard (frontend/dist) to serve at /; None serves the API only.
+    dashboard_dir: Path | None = None
 
     @field_validator("log_level", mode="before")
     @classmethod

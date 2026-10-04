@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 4 — Frontend Dashboard (Phase 3 complete)
 - **Working branch:** `main`
-- **Next task:** 4.4 → "Serve the built assets from FastAPI"
+- **Next task:** 4.4 → "Installable PWA"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -334,7 +334,7 @@
 - [x] Audit log view (admins): entries as sentences (“You stopped Demo garage”, “The hub created the account admin”, field names in words, never values), cameras linked, Everything/Cameras/Accounts filter in the address bar, infinite scroll, “Admins only” for a 403; sentence rules unit-tested
 
 ### 4.4 Delivery & quality
-- [ ] Serve the built assets from FastAPI (`StaticFiles`, SPA fallback, page CSP, immutable caching for hashed files); Node build stage in the Dockerfile
+- [x] Serve the built assets from FastAPI (`api/dashboard.py`, `APP__DASHBOARD_DIR`): SPA fallback for page paths only (missing files, `/api`, docs and `..` escapes are 404 problem+json), strict page CSP (`script-src`/`style-src 'self'`, no inline; style attributes moved to the CSSOM), `immutable` year-long caching for hashed `assets/`, `no-cache` elsewhere; Brotli/gzip copies written at build time (`scripts/compress.mjs`, 132.7 → 40.7 kB) and served by `Accept-Encoding`, so nothing is compressed per request and MJPEG streams are untouched; Node build stage in the Dockerfile; CI smoke check. Verified in the browser from the hub (no CSP violations) and in the compose stack
 - [ ] Installable PWA (manifest, icons, app-shell service worker that never caches API responses)
 - [ ] Playwright end-to-end tests: login → live view → alert (desktop and mobile viewport)
 - [ ] Performance & accessibility pass: Lighthouse (mobile), animation frame timing in a performance trace, keyboard navigation, contrast

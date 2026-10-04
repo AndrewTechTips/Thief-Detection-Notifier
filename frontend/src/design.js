@@ -42,10 +42,7 @@ $(document, "[data-swatches]").append(
           h(
             "li",
             { class: "flex items-center gap-3" },
-            h("span", {
-              class: "size-9 flex-none rounded-[var(--radius-control)] border border-white/10",
-              attrs: { style: `background: var(--color-${name})` },
-            }),
+            swatch(name),
             h(
               "span",
               { class: "min-w-0" },
@@ -110,4 +107,14 @@ const demos = {
 
 for (const button of document.querySelectorAll("[data-toast]")) {
   button.addEventListener("click", () => demos[button.getAttribute("data-toast") ?? ""]?.());
+}
+
+/** A colour sample. Styled through the CSSOM: the page CSP forbids style attributes.
+ * @param {string} name */
+function swatch(name) {
+  const element = h("span", {
+    class: "size-9 flex-none rounded-[var(--radius-control)] border border-white/10",
+  });
+  element.style.background = `var(--color-${name})`;
+  return element;
 }
