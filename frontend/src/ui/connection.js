@@ -14,7 +14,19 @@ const LOOK = {
   offline: { tone: "alarm", label: "Offline" },
 };
 
-export function connectionPill() {
+/** Labels when the pill stands alone and must name what it describes (e.g. "Hub online"). */
+const NAMED = {
+  checking: "Connecting to",
+  online: "online",
+  degraded: "not ready",
+  offline: "offline",
+};
+
+/**
+ * @param {{ subject?: string }} [options] `subject` names the thing ("Hub online"); without it
+ *   the short labels are used where the context makes them clear (the sidebar's "Hub" row).
+ */
+export function connectionPill({ subject } = {}) {
   const light = h("span", { class: "dot", attrs: { "aria-hidden": "true" } });
   const label = h("span");
   const element = h("span", { class: "badge", attrs: { role: "status" } }, light, label);
@@ -29,7 +41,11 @@ export function connectionPill() {
     shown = status.state;
     element.dataset.tone = look.tone;
     light.toggleAttribute("data-pulse", Boolean(look.pulse));
-    label.textContent = look.label;
+    label.textContent = !subject
+      ? look.label
+      : status.state === "checking"
+        ? `${NAMED.checking} ${subject.toLowerCase()}`
+        : `${subject} ${NAMED[status.state]}`;
     element.setAttribute("aria-label", `Hub: ${status.title}`);
     if (changed) enter(label, [{ opacity: 0, transform: "translateY(4px)" }, { opacity: 1 }]);
   });

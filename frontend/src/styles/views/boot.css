@@ -1,11 +1,11 @@
-/* Boot screen: a camera lens whose iris shows the hub's state. */
+/* A camera lens whose iris shows a state: the boot screen (hub reachability) and sign-in. */
 @layer components {
   /* Hidden for the first moments, so a fast hub goes straight to the dashboard. */
   .boot-screen[data-pending] {
     visibility: hidden;
   }
 
-  .boot {
+  .lens-host {
     --state: var(--color-iris);
     &[data-state="online"] {
       --state: var(--color-signal);
@@ -13,7 +13,8 @@
     &[data-state="degraded"] {
       --state: var(--color-sodium);
     }
-    &[data-state="offline"] {
+    &[data-state="offline"],
+    &[data-state="error"] {
       --state: var(--color-alarm);
     }
   }
@@ -66,7 +67,7 @@
     transition: background-color 400ms var(--ease-out-soft);
   }
 
-  .boot[data-state="checking"] .lens-glow {
+  .lens-host[data-state="checking"] .lens-glow {
     animation: breathe 1.6s ease-in-out infinite;
   }
 

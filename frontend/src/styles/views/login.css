@@ -1,0 +1,39 @@
+/* Sign-in page. The lens comes from boot.css (.lens-host). */
+@layer components {
+  .login-screen {
+    display: flex;
+    min-height: 100dvh;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: max(1.5rem, env(safe-area-inset-top)) 1rem max(1.5rem, env(safe-area-inset-bottom));
+  }
+
+  .login-panel {
+    animation: rise 520ms var(--ease-out-soft) both;
+    & .lens {
+      animation: focus-in 800ms var(--ease-out-soft) 80ms both;
+    }
+  }
+
+  /* Why you are here: session expired or signed out. */
+  .login-notice {
+    margin-top: 1rem;
+    padding: 0.625rem 0.875rem;
+    border-radius: var(--radius-control);
+    background: rgb(138 180 255 / 0.1);
+    border: 1px solid rgb(138 180 255 / 0.2);
+    color: var(--color-moon);
+    font-size: 0.875rem;
+    text-align: center;
+  }
+
+  .login-error {
+    padding: 0.625rem 0.875rem;
+    border-radius: var(--radius-control);
+    background: rgb(255 92 122 / 0.1);
+    border: 1px solid rgb(255 92 122 / 0.28);
+    color: #ffc2cd;
+    font-size: 0.875rem;
+  }
+}

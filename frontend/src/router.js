@@ -7,7 +7,13 @@
  *   title: string | ((params: Params) => string),
  *   mount: (outlet: HTMLElement, params: Params) => void | (() => void),
  * }} View
- * @typedef {{ path: string, load: () => Promise<{ default: View }> }} Route
+ * @typedef {{
+ *   path: string,
+ *   load: () => Promise<{ default: View }>,
+ *   public?: boolean,
+ *   layout?: "shell" | "bare",
+ * }} Route
+ * public: reachable while signed out. layout "bare": full screen, without the app shell.
  * @typedef {{ route: Route | null, params: Params }} Match
  */
 
@@ -55,6 +61,25 @@ export function match(routes, pathname) {
 }
 
 /**
+ * A post-sign-in destination taken from the address bar, made safe: only paths on this origin,
+ * never another site ("//evil.example", "/\\evil.example" and the like resolve elsewhere).
+ * @param {string | null} value
+ * @param {string} origin
+ * @param {string[]} [avoid] paths that make no sense as a destination (e.g. the sign-in page)
+ */
+export function safeRedirect(value, origin, avoid = []) {
+  if (!value?.startsWith("/")) return "/";
+  let url;
+  try {
+    url = new URL(value, origin);
+  } catch {
+    return "/";
+  }
+  if (url.origin !== origin || avoid.includes(url.pathname)) return "/";
+  return url.pathname + url.search + url.hash;
+}
+
+/**
  * Whether a click on a link should be handled by the router rather than the browser.
  * @param {MouseEvent} event
  * @param {HTMLAnchorElement} link
@@ -72,12 +97,13 @@ export function isInternalClick(event, link) {
  * @param {{
  *   routes: Route[],
  *   notFound: () => Promise<{ default: View }>,
- *   outlet: () => HTMLElement,
+ *   outlet: (route: Route | null) => HTMLElement,
+ *   guard?: (route: Route | null, url: URL) => string | null,
  *   onChange?: (pathname: string) => void,
  *   enter?: (outlet: HTMLElement) => void,
  * }} options
  */
-export function createRouter({ routes, notFound, outlet, onChange, enter }) {
+export function createRouter({ routes, notFound, outlet, guard, onChange, enter }) {
   /** @type {void | (() => void)} */
   let cleanup;
   let token = 0;
@@ -85,7 +111,13 @@ export function createRouter({ routes, notFound, outlet, onChange, enter }) {
 
   async function render() {
     const current = ++token;
-    const { route, params } = match(routes, location.pathname);
+    let { route, params } = match(routes, location.pathname);
+    // A guard may send this page elsewhere (e.g. to sign-in); the address bar follows.
+    const redirect = guard?.(route, new URL(location.href));
+    if (redirect) {
+      history.replaceState({ scrollY: 0 }, "", redirect);
+      ({ route, params } = match(routes, location.pathname));
+    }
     /** @type {View} */
     let view;
     try {
@@ -96,7 +128,7 @@ export function createRouter({ routes, notFound, outlet, onChange, enter }) {
     if (current !== token) return; // a newer navigation won the race
 
     cleanup?.();
-    const target = outlet();
+    const target = outlet(route);
     target.replaceChildren();
     cleanup = view.mount(target, params);
     const title = typeof view.title === "function" ? view.title(params) : view.title;
@@ -153,7 +185,12 @@ export function createRouter({ routes, notFound, outlet, onChange, enter }) {
     return render();
   }
 
-  return { start, navigate };
+  /** Re-checks the current page, e.g. after signing in or out. */
+  function refresh() {
+    return render();
+  }
+
+  return { start, navigate, refresh };
 }
 
 /** @type {View} */

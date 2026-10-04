@@ -156,6 +156,11 @@
     font-size: 0.8125rem;
   }
 
+  .btn-lg {
+    height: 2.875rem;
+    font-size: 0.9375rem;
+  }
+
   .btn-icon {
     width: 2.5rem;
     padding: 0;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { compile, match } from "./router.js";
+import { compile, match, safeRedirect } from "./router.js";
 
 const view = { default: { title: "", mount() {} } };
 const routes = [
@@ -40,5 +40,30 @@ describe("match", () => {
   it("matches the root only exactly", () => {
     expect(match(routes, "/").route?.path).toBe("/");
     expect(match(routes, "/eventsx").route).toBeNull();
+  });
+});
+
+describe("safeRedirect", () => {
+  const origin = "http://hub.test";
+
+  it("keeps paths on this site, with their query and hash", () => {
+    expect(safeRedirect("/events?device=porch#latest", origin)).toBe("/events?device=porch#latest");
+  });
+
+  it.each([
+    null,
+    "",
+    "events",
+    "https://evil.example/",
+    "//evil.example/path",
+    "/\\evil.example",
+    "/\t/evil.example",
+    "javascript:alert(1)",
+  ])("sends %j home", (value) => {
+    expect(safeRedirect(value, origin)).toBe("/");
+  });
+
+  it("never returns to a page it should avoid", () => {
+    expect(safeRedirect("/login?next=/x", origin, ["/login"])).toBe("/");
   });
 });

@@ -1,10 +1,10 @@
 import "./styles/main.css";
 
 import { ApiError } from "./api/errors.js";
-import { createRouter } from "./router.js";
+import { createRouter, safeRedirect } from "./router.js";
 import { session } from "./state/auth.js";
 import { checkHubNow, hub, startHubMonitor } from "./state/hub.js";
-import { $ } from "./ui/dom.js";
+import { $, h } from "./ui/dom.js";
 import { enter, exit } from "./ui/motion.js";
 import { dismissToast, toast } from "./ui/toast.js";
 import { mountBoot } from "./views/boot.js";
@@ -15,8 +15,11 @@ const BOOT_DELAY_MS = 400;
 /** Time to read "Hub online" before the boot screen gives way to the dashboard. */
 const BOOT_LINGER_MS = 700;
 
+const LOGIN = "/login";
+
 /** @type {import("./router.js").Route[]} */
 const routes = [
+  { path: LOGIN, load: () => import("./views/login.js"), public: true, layout: "bare" },
   { path: "/", load: () => import("./views/live.js") },
   { path: "/events", load: () => import("./views/events.js") },
   { path: "/activity", load: () => import("./views/activity.js") },
@@ -50,22 +53,59 @@ async function start() {
   stopBoot();
   await restoreSession();
 
-  const shell = createShell();
-  app.replaceChildren(shell.element);
+  /** @type {ReturnType<typeof createShell> | null} */
+  let shell = null;
+  const bare = h("div", { class: "bare-layout" });
   const router = createRouter({
     routes,
     notFound: () => import("./views/not-found.js"),
-    outlet: () => shell.outlet,
-    onChange: shell.setActive,
+    guard: guardRoute,
+    outlet(route) {
+      if (route?.layout === "bare") {
+        if (!bare.isConnected) app.replaceChildren(bare);
+        return bare;
+      }
+      shell ??= createShell();
+      if (!shell.element.isConnected) {
+        app.replaceChildren(shell.element);
+        enter(shell.element, [{ opacity: 0 }, { opacity: 1 }], { duration: 400 });
+      }
+      return shell.outlet;
+    },
+    onChange: (pathname) => shell?.setActive(pathname),
     enter: (outlet) =>
       enter(outlet, [{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1 }], {
         duration: 280,
       }),
   });
   await router.start();
-  enter(shell.element, [{ opacity: 0 }, { opacity: 1 }], { duration: 400 });
   announceHubChanges();
-  announceSessionEnd();
+
+  // Signing in or out (here or in another tab) re-runs the guard on the current page.
+  let status = session.state.get().status;
+  session.state.subscribe((next) => {
+    if (next.status === status) return;
+    status = next.status;
+    router.refresh();
+  });
+}
+
+/**
+ * Signed out: every page except sign-in sends you there, remembering where you were going.
+ * Signed in: the sign-in page sends you on.
+ * @param {import("./router.js").Route | null} route
+ * @param {URL} url
+ */
+function guardRoute(route, url) {
+  const signedIn = session.state.get().status === "signed-in";
+  if (route?.public) {
+    return signedIn && url.pathname === LOGIN
+      ? safeRedirect(url.searchParams.get("next"), location.origin, [LOGIN])
+      : null;
+  }
+  if (signedIn) return null;
+  const here = url.pathname + url.search;
+  return here === "/" ? LOGIN : `${LOGIN}?next=${encodeURIComponent(here)}`;
 }
 
 /** Resumes a stored session. If the hub drops out meanwhile, tries again once it is back; if
@@ -99,21 +139,6 @@ function nextOnline() {
       }
     });
     checkHubNow();
-  });
-}
-
-/** Until the sign-in page exists (roadmap 4.3), say when a session ends. */
-function announceSessionEnd() {
-  let signedIn = session.state.get().status === "signed-in";
-  session.state.subscribe(({ status, reason }) => {
-    if (status === "signed-in") signedIn = true;
-    if (status !== "signed-out" || !signedIn) return;
-    signedIn = false;
-    toast(
-      reason === "expired"
-        ? { tone: "sodium", title: "Session expired", message: "Sign in again to continue." }
-        : { tone: "iris", title: "Signed out" },
-    );
   });
 }
 
