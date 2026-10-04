@@ -14,5 +14,5 @@
     "skipLibCheck": true,
     "maxNodeModuleJsDepth": 0
   },
-  "include": ["src", "scripts", "*.config.js"]
+  "include": ["src", "scripts", "e2e", "*.config.js"]
 }

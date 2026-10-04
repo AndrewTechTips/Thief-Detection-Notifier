@@ -3,3 +3,6 @@ package-lock.json
 # Generated: npm run api:sync
 openapi.json
 src/api/schema.d.ts
+.e2e-data/
+test-results/
+playwright-report/

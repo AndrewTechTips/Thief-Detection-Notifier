@@ -129,6 +129,7 @@ and open **http://localhost:5173**. It proxies `/api` (HTTP and WebSockets) to t
 setup is needed; set `VISION_HUB_URL` if the hub is not on `http://127.0.0.1:8000`.
 The component gallery is at **http://localhost:5173/design.html** (dev server only).
 After changing the API, run `npm run api:sync` there to refresh the generated TypeScript types.
+End-to-end tests (Playwright, desktop and phone) start their own throwaway hub: `npm run build && npm run e2e`.
 
 ```bash
 cd frontend && npm ci && npm run dev

@@ -19,10 +19,12 @@
     "api:schema": "cd .. && uv run --frozen vision-hub openapi --output frontend/openapi.json",
     "api:types": "openapi-typescript openapi.json --output src/api/schema.d.ts",
     "api:sync": "npm run api:schema && npm run api:types",
-    "api:check": "openapi-typescript openapi.json --output src/api/schema.d.ts --check"
+    "api:check": "openapi-typescript openapi.json --output src/api/schema.d.ts --check",
+    "e2e": "playwright test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.20.5",
     "eslint": "^10.12.0",
