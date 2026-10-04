@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -12,12 +12,12 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Vision Hub</title>
   </head>
-  <body class="min-h-dvh bg-ink-950 font-sans text-moon antialiased">
+  <body class="min-h-dvh">
     <div class="ambient" aria-hidden="true"></div>
 
     <main class="grid min-h-dvh place-items-center px-4 py-[max(1.5rem,env(safe-area-inset-top))]">
       <section
-        class="glass boot w-full max-w-sm rounded-3xl px-6 pt-10 pb-7 text-center sm:px-8"
+        class="panel boot w-full max-w-sm px-6 pt-10 pb-7 text-center sm:px-8"
         data-boot
         data-state="checking"
         aria-labelledby="boot-title"
@@ -34,13 +34,15 @@
           <p class="font-medium" data-slot="title">Connecting to your hub</p>
           <p class="mt-1 text-sm text-pretty text-haze">
             <span data-slot="detail">This takes a second.</span>
-            <code class="kbd-command" data-slot="command" hidden></code>
+            <code class="code-chip" data-slot="command" hidden></code>
           </p>
         </div>
 
         <div class="mt-4 flex h-9 items-center justify-center gap-3" data-slot="retry" hidden>
           <span class="text-sm text-haze tabular-nums" data-slot="countdown"></span>
-          <button type="button" class="btn-ghost" data-action="retry">Retry now</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="retry">
+            Retry now
+          </button>
         </div>
       </section>
     </main>

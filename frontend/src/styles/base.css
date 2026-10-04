@@ -1,0 +1,53 @@
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-tap-highlight-color: transparent;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--color-ink-950);
+    color: var(--color-moon);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: rgb(138 180 255 / 0.32);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-iris);
+    outline-offset: 3px;
+  }
+
+  /* Static light behind the glass: a moonlit sky and a streetlight. Painted once, never
+     animated. */
+  .ambient {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(48rem 36rem at 88% -8%, rgb(138 180 255 / 0.26), transparent 62%),
+      radial-gradient(36rem 28rem at 4% 104%, rgb(255 181 71 / 0.16), transparent 64%),
+      radial-gradient(26rem 20rem at 52% 46%, rgb(110 120 255 / 0.1), transparent 70%);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 0.14) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

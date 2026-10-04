@@ -127,6 +127,7 @@ file are added to the database on first start; after that, the database is the s
 **Dashboard** (work in progress, needs Node.js 22.12+): with the hub running, start the dev server
 and open **http://localhost:5173**. It proxies `/api` (HTTP and WebSockets) to the hub, so no CORS
 setup is needed; set `VISION_HUB_URL` if the hub is not on `http://127.0.0.1:8000`.
+The component gallery is at **http://localhost:5173/design.html** (dev server only).
 
 ```bash
 cd frontend && npm ci && npm run dev

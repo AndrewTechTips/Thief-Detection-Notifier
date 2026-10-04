@@ -1,0 +1,92 @@
+/* Design tokens. Every colour has one job; components pick a job, never a hex value.
+   `static`: emit every token as a CSS variable, used or not, so scripts and inline styles can
+   read them. */
+@theme static {
+  --font-sans: "Onest Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+
+  /* Night sky surfaces, darkest first */
+  --color-ink-950: #05080f; /* page */
+  --color-ink-900: #0a1020; /* wells: inputs, video letterbox */
+  --color-ink-800: #121a2e; /* opaque panels (over video, no blur) */
+  --color-ink-700: #1c2742; /* raised controls */
+  --color-ink-600: #2b3757; /* strong borders */
+
+  /* Text, brightest first. dusk is for placeholders and disabled text only. */
+  --color-moon: #e8eef9;
+  --color-haze: #93a0b8;
+  --color-dusk: #6f7b95;
+
+  /* Meaning */
+  --color-iris: #8ab4ff; /* actions, focus, selection */
+  --color-signal: #5ee6c0; /* online, healthy */
+  --color-sodium: #ffb547; /* motion, attention (a streetlight at night) */
+  --color-alarm: #ff5c7a; /* offline, errors, destructive */
+
+  /* Radius grows with the element: chips < controls < cards < panels */
+  --radius-chip: 0.375rem;
+  --radius-control: 0.75rem;
+  --radius-card: 1.125rem;
+  --radius-panel: 1.5rem;
+
+  --shadow-panel: inset 0 1px 0 rgb(255 255 255 / 0.07), 0 30px 80px -32px rgb(0 0 0 / 0.75);
+  --shadow-float: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 18px 48px -12px rgb(0 0 0 / 0.7);
+
+  /* Motion. Enter with ease-out, leave faster with ease-in. */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-soft: cubic-bezier(0.55, 0, 1, 0.45);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-enter: 360ms;
+  --duration-exit: 180ms;
+
+  --animate-shimmer: shimmer 1.6s var(--ease-in-soft) infinite;
+  --animate-ping-soft: ping-soft 1.8s var(--ease-out-soft) infinite;
+  --animate-spin: spin 0.7s linear infinite;
+}
+
+:root {
+  /* Glass: translucent fill + blur. Only for static chrome, never above live video (AD-20). */
+  --glass-fill: rgb(255 255 255 / 0.045);
+  --glass-fill-strong: rgb(20 28 48 / 0.72);
+  --glass-border: rgb(255 255 255 / 0.09);
+  --glass-blur: blur(22px) saturate(140%);
+  /* Phones repaint large blurred areas on every scroll; a smaller radius keeps 60 fps. */
+  @media (max-width: 640px) {
+    --glass-blur: blur(14px) saturate(130%);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes ping-soft {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  80%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}

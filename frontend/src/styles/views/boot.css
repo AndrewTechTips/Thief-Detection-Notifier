@@ -1,0 +1,80 @@
+/* Boot screen: a camera lens whose iris shows the hub's state. */
+@layer components {
+  .boot {
+    --state: var(--color-iris);
+    animation: rise 600ms var(--ease-out-soft) both;
+    &[data-state="online"] {
+      --state: var(--color-signal);
+    }
+    &[data-state="degraded"] {
+      --state: var(--color-sodium);
+    }
+    &[data-state="offline"] {
+      --state: var(--color-alarm);
+    }
+  }
+
+  .lens {
+    position: relative;
+    width: 6rem;
+    height: 6rem;
+    border-radius: 9999px;
+    background: radial-gradient(circle, var(--color-ink-900) 55%, var(--color-ink-800));
+    box-shadow:
+      inset 0 0 0 1.5px rgb(138 180 255 / 0.35),
+      inset 0 0 0 14px rgb(5 8 15 / 0.9),
+      inset 0 0 0 15px rgb(138 180 255 / 0.18),
+      0 12px 40px -12px rgb(0 0 0 / 0.8);
+    animation: focus-in 900ms var(--ease-out-soft) 120ms both;
+  }
+
+  .lens-iris,
+  .lens-glow,
+  .lens-ripple {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    border-radius: 9999px;
+  }
+
+  .lens-iris {
+    width: 1.375rem;
+    height: 1.375rem;
+    background: var(--state);
+    transition: background-color 400ms var(--ease-out-soft);
+  }
+
+  .lens-glow {
+    width: 3rem;
+    height: 3rem;
+    background: var(--state);
+    filter: blur(14px);
+    opacity: 0.55;
+    will-change: opacity;
+    transition: background-color 400ms var(--ease-out-soft);
+  }
+
+  .boot[data-state="checking"] .lens-glow {
+    animation: breathe 1.6s ease-in-out infinite;
+  }
+
+  .lens-ripple {
+    width: 100%;
+    height: 100%;
+    border: 1.5px solid var(--state);
+    opacity: 0;
+  }
+}
+
+@keyframes focus-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.15;
+  }
+}

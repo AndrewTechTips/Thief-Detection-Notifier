@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 4 — Frontend Dashboard (Phase 3 complete)
 - **Working branch:** `main`
-- **Next task:** 4.1 → "Design system"
+- **Next task:** 4.1 → "App shell"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -47,7 +47,7 @@
 | AD-17 | Observability | **structlog** (JSON in prod), request-ID middleware, `/health/live` + `/health/ready`, Prometheus `/metrics` (`prometheus-client`, per-app registry, scrape token) | Counters and histograms, rates derived in PromQL; route templates as labels keep cardinality bounded. |
 | AD-18 | Packaging / deploy | Multi-stage **Docker** image (`opencv-python-headless`), `docker compose` with **api + postgres** only | Headless OpenCV: no `imshow` on a server. Minimal moving parts. |
 | AD-19 | Frontend | **Vite** + **vanilla JS** (ES modules, no framework) + **Tailwind CSS v4** (`@tailwindcss/vite`, tokens in `@theme`). Native `fetch` and `WebSocket`. Types from OpenAPI (`openapi-typescript`) used through JSDoc and checked with `tsc --checkJs`; ESLint + Prettier; Vitest for logic. Dev: Vite proxies `/api` (HTTP + WS) to the hub, so the browser sees one origin. Prod: FastAPI serves the built files | Small, fast bundle with no runtime dependencies; the API is the contract. Same-origin in dev and prod: no CORS, tickets and MJPEG `<img>` work unchanged. |
-| AD-20 | UI performance | Animate **only `transform` and `opacity`** (colour transitions only on small status elements); `backdrop-filter` on static chrome only, **never above live video** (an MJPEG frame under a blur forces a re-blur every frame); `prefers-reduced-motion` respected; streams pause when off-screen or the tab is hidden | Glass effects stay smooth on phones; idle tabs cost no bandwidth or CPU on the hub. |
+| AD-20 | UI performance | Animate **only `transform` and `opacity`** (short colour transitions only on small controls and status lights); content never waits on an animation (hidden or throttled tabs may never finish one); blurred glass only on a few large static surfaces, cheap unblurred cards for repeated items; `backdrop-filter` on static chrome only, **never above live video** (an MJPEG frame under a blur forces a re-blur every frame); `prefers-reduced-motion` respected; streams pause when off-screen or the tab is hidden | Glass effects stay smooth on phones; idle tabs cost no bandwidth or CPU on the hub. |
 
 ---
 
@@ -316,7 +316,7 @@
 ### 4.1 Foundation
 - [x] Choose the stack and record it as AD-19 (Vite + vanilla JS + Tailwind CSS v4); UI performance rules as AD-20
 - [x] Scaffold `frontend/`: Vite 8 + Tailwind v4, ES modules, ESLint + Prettier + `tsc --checkJs`; dev proxy for `/api` (HTTP + WebSocket + MJPEG, verified live: login, ticket → WS motion event, 5 fps stream); boot screen with hub status (online / not ready / unreachable) from `/health/ready`, backoff with jitter, paused in hidden tabs; self-hosted Onest font; CI `Dashboard` job (lint, format, types, build), pre-commit hook, Dependabot for npm
-- [ ] Design system: `@theme` tokens (palette, glass surfaces, radii, shadows, motion durations/easings), base components (panel, button, input, badge, status dot, toast, skeleton), reduced motion, AD-20 rules
+- [x] Design system: `@theme static` tokens (night-sky surfaces, text, four meaning colours, radius by element size, shadows, motion), surfaces (`panel` glass / `card` / `panel-solid` over video), buttons (variants, sizes, icon, busy), fields (invalid, password toggle, switch), badge, status dot, spinner, skeleton (transform shimmer), toasts (`ui/toast.js`: FLIP stacking, keyed de-duplication, pausable timer, swipe to dismiss, alert role for alarms); `ui/dom.js` safe DOM builder, `ui/motion.js` (enter/exit with timeout, FLIP); contrast ≥ 4.5:1 for text. Dev-only gallery at `/design.html`
 - [ ] App shell: router, responsive layout (sidebar on desktop, bottom tab bar on phones, safe-area insets), connection indicator, not-found view
 
 ### 4.2 Data layer
