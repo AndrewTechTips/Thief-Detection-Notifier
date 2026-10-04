@@ -20,6 +20,12 @@ const NAVIGATION_TIMEOUT_MS = 3000;
 const BYPASS = ["api", "docs", "redoc", "openapi.json", "metrics"];
 
 const worker = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self));
+/**
+ * The hub's responses say `Vary: Origin` (CORS) and `Vary: Accept-Encoding`. Neither changes
+ * these files, but honouring Vary would make a script requested with `crossorigin` (it sends an
+ * Origin header) miss the copy the worker cached without one: offline, nothing would load.
+ */
+const MATCH = { ignoreVary: true };
 
 worker.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll([SHELL, ...PRECACHE])));
@@ -72,13 +78,13 @@ async function page(/** @type {Request} */ request) {
     }
     return response;
   } catch {
-    const cached = await caches.match(SHELL);
+    const cached = await caches.match(SHELL, MATCH);
     return cached ?? Response.error();
   }
 }
 
 async function cacheFirst(/** @type {Request} */ request) {
-  const cached = await caches.match(request);
+  const cached = await caches.match(request, MATCH);
   if (cached) return cached;
   const response = await fetch(request);
   if (response.ok) (await caches.open(CACHE)).put(request, response.clone());
@@ -87,7 +93,7 @@ async function cacheFirst(/** @type {Request} */ request) {
 
 async function staleWhileRevalidate(/** @type {Request} */ request) {
   const cache = await caches.open(CACHE);
-  const cached = await cache.match(request);
+  const cached = await cache.match(request, MATCH);
   const network = fetch(request)
     .then((response) => {
       if (response.ok) cache.put(request, response.clone());
