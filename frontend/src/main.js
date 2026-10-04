@@ -1,6 +1,7 @@
 import "./styles/main.css";
 
 import { ApiError } from "./api/errors.js";
+import { registerServiceWorker } from "./app-install.js";
 import { startAlerts } from "./realtime/alerts.js";
 import { realtime } from "./realtime/live.js";
 import { createRouter, safeRedirect } from "./router.js";
@@ -33,6 +34,7 @@ const app = $(document, "#app");
 const bootScreen = $(app, "[data-boot-screen]");
 
 startHubMonitor();
+registerServiceWorker();
 const stopBoot = mountBoot($(bootScreen, "[data-boot]"));
 const reveal = window.setTimeout(() => bootScreen.removeAttribute("data-pending"), BOOT_DELAY_MS);
 

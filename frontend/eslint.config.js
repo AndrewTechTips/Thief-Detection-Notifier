@@ -14,4 +14,5 @@ export default defineConfig([
     },
   },
   { files: ["*.config.js", "scripts/**"], languageOptions: { globals: globals.node } },
+  { files: ["sw/**"], languageOptions: { globals: globals.serviceworker } },
 ]);

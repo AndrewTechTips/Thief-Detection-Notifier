@@ -3,6 +3,7 @@
 import { session } from "../state/auth.js";
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
+import { installButton } from "./install-button.js";
 import { enter, exit } from "./motion.js";
 
 /** @typedef {import("../api/types.js").Principal} Principal */
@@ -83,7 +84,12 @@ export function accountMenu() {
     "div",
     { class: "account-menu panel-solid", attrs: { id, hidden: true } },
     h("div", { class: "px-1 pb-3" }, name, role),
-    signOutButton,
+    h(
+      "div",
+      { class: "grid gap-2" },
+      installButton("btn btn-ghost btn-sm w-full").element,
+      signOutButton,
+    ),
   );
   const element = h("div", { class: "relative" }, trigger, menu);
 

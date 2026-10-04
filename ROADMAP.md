@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 4 — Frontend Dashboard (Phase 3 complete)
 - **Working branch:** `main`
-- **Next task:** 4.4 → "Installable PWA"
+- **Next task:** 4.4 → "Playwright end-to-end tests"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -335,7 +335,7 @@
 
 ### 4.4 Delivery & quality
 - [x] Serve the built assets from FastAPI (`api/dashboard.py`, `APP__DASHBOARD_DIR`): SPA fallback for page paths only (missing files, `/api`, docs and `..` escapes are 404 problem+json), strict page CSP (`script-src`/`style-src 'self'`, no inline; style attributes moved to the CSSOM), `immutable` year-long caching for hashed `assets/`, `no-cache` elsewhere; Brotli/gzip copies written at build time (`scripts/compress.mjs`, 132.7 → 40.7 kB) and served by `Accept-Encoding`, so nothing is compressed per request and MJPEG streams are untouched; Node build stage in the Dockerfile; CI smoke check. Verified in the browser from the hub (no CSP violations) and in the compose stack
-- [ ] Installable PWA (manifest, icons, app-shell service worker that never caches API responses)
+- [x] Installable PWA: manifest (standalone, shortcuts), lens icons rendered by `scripts/make-icons.py` (any, maskable, Apple); service worker generated per build by a Vite plugin (exact hashed precache list, version from its hash, build fails if a placeholder survives): hashed assets cache-first, pages network-first with a 3 s fallback to the cached shell (the app opens when the hub is down and says so), `/api`, docs and metrics never intercepted (verified: no API response cached after streams and 29 snapshots); production builds only; “Update ready, Reload” prompt (verified with a real new build); “Install app” button when the browser offers it. The hub sends the page CSP with `sw.js`: a worker obeys its script's CSP, and the API's blocked every fetch (found live)
 - [ ] Playwright end-to-end tests: login → live view → alert (desktop and mobile viewport)
 - [ ] Performance & accessibility pass: Lighthouse (mobile), animation frame timing in a performance trace, keyboard navigation, contrast
 - [ ] Optional: web-push notifications (needs VAPID keys and a new backend dependency; ask first)

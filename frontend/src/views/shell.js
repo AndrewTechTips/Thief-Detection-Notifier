@@ -6,6 +6,7 @@ import { accountMenu, accountRow } from "../ui/account.js";
 import { connectionPill } from "../ui/connection.js";
 import { h } from "../ui/dom.js";
 import { icon, logo } from "../ui/icons.js";
+import { installButton } from "../ui/install-button.js";
 
 /**
  * @typedef {import("../ui/icons.js").IconName} IconName
@@ -90,6 +91,7 @@ export function createShell() {
       h(
         "div",
         { class: "sidebar-footer" },
+        installButton("btn btn-ghost btn-sm justify-start").element,
         account.element,
         h(
           "div",
