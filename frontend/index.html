@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#05080f" />
+    <meta
+      name="description"
+      content="Live cameras, motion alerts and event history for your Vision Hub."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Vision Hub</title>
+  </head>
+  <body class="min-h-dvh bg-ink-950 font-sans text-moon antialiased">
+    <div class="ambient" aria-hidden="true"></div>
+
+    <main class="grid min-h-dvh place-items-center px-4 py-[max(1.5rem,env(safe-area-inset-top))]">
+      <section
+        class="glass boot w-full max-w-sm rounded-3xl px-6 pt-10 pb-7 text-center sm:px-8"
+        data-boot
+        data-state="checking"
+        aria-labelledby="boot-title"
+      >
+        <div class="lens mx-auto" aria-hidden="true">
+          <span class="lens-glow"></span>
+          <span class="lens-iris"></span>
+          <span class="lens-ripple"></span>
+        </div>
+
+        <h1 id="boot-title" class="mt-7 text-2xl font-semibold tracking-tight">Vision Hub</h1>
+
+        <div class="mt-5 min-h-[4.75rem]" role="status" aria-live="polite" data-slot="report">
+          <p class="font-medium" data-slot="title">Connecting to your hub</p>
+          <p class="mt-1 text-sm text-pretty text-haze">
+            <span data-slot="detail">This takes a second.</span>
+            <code class="kbd-command" data-slot="command" hidden></code>
+          </p>
+        </div>
+
+        <div class="mt-4 flex h-9 items-center justify-center gap-3" data-slot="retry" hidden>
+          <span class="text-sm text-haze tabular-nums" data-slot="countdown"></span>
+          <button type="button" class="btn-ghost" data-action="retry">Retry now</button>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

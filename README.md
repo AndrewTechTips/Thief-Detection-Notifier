@@ -124,6 +124,14 @@ Open **http://localhost:8000/docs**, click **Authorize** and log in as `admin`. 
 cameras are running, and a figure walks past each of them every 20–30 seconds. Devices from the
 file are added to the database on first start; after that, the database is the source of truth.
 
+**Dashboard** (work in progress, needs Node.js 22.12+): with the hub running, start the dev server
+and open **http://localhost:5173**. It proxies `/api` (HTTP and WebSockets) to the hub, so no CORS
+setup is needed; set `VISION_HUB_URL` if the hub is not on `http://127.0.0.1:8000`.
+
+```bash
+cd frontend && npm ci && npm run dev
+```
+
 The image runs as a non-root user on a read-only filesystem, has a built-in health check, and
 keeps its data in the `hub-data` and `pg-data` volumes.
 

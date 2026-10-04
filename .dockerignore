@@ -27,7 +27,8 @@ htmlcov/
 .vscode/
 .pre-commit-config.yaml
 
-# Not part of the runtime image
+# Not part of the runtime image (the dashboard joins the image in Phase 4.4)
+frontend/
 tests/
 docs/
 Dockerfile
