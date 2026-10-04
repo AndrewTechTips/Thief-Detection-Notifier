@@ -1,26 +1,103 @@
-// Connection indicator: a status pill that follows the hub monitor.
+// Connection indicator. While live events run (signed in), it shows their connection; otherwise,
+// and whenever the hub itself is unwell, it shows the hub monitor's verdict.
 
+import { realtime } from "../realtime/live.js";
 import { hub } from "../state/hub.js";
 import { h } from "./dom.js";
 import { enter } from "./motion.js";
 
 /** @typedef {import("../state/hub.js").HubStatus} HubStatus */
+/** @typedef {import("../realtime/socket.js").RealtimeState} RealtimeState */
+/**
+ * @typedef {{
+ *   key: string,
+ *   tone: string,
+ *   label: string,
+ *   named: (subject: string) => string,
+ *   pulse?: boolean,
+ *   title: string,
+ * }} Look
+ */
 
-/** @type {Record<HubStatus["state"], { tone: string, label: string, pulse?: boolean }>} */
-const LOOK = {
-  checking: { tone: "iris", label: "Connecting" },
-  online: { tone: "signal", label: "Live", pulse: true },
-  degraded: { tone: "sodium", label: "Not ready" },
-  offline: { tone: "alarm", label: "Offline" },
-};
+/**
+ * @param {HubStatus} status
+ * @returns {Look}
+ */
+function hubLook(status) {
+  const title = `${status.title}. ${status.detail}${status.command ? ` ${status.command}` : ""}`;
+  switch (status.state) {
+    case "checking":
+      return {
+        key: "hub:checking",
+        tone: "iris",
+        label: "Connecting",
+        named: (subject) => `Connecting to ${subject.toLowerCase()}`,
+        title,
+      };
+    case "online":
+      return {
+        key: "hub:online",
+        tone: "signal",
+        label: "Live",
+        named: (subject) => `${subject} online`,
+        pulse: true,
+        title,
+      };
+    case "degraded":
+      return {
+        key: "hub:degraded",
+        tone: "sodium",
+        label: "Not ready",
+        named: (subject) => `${subject} not ready`,
+        title,
+      };
+    case "offline":
+      return {
+        key: "hub:offline",
+        tone: "alarm",
+        label: "Offline",
+        named: (subject) => `${subject} offline`,
+        title,
+      };
+  }
+}
 
-/** Labels when the pill stands alone and must name what it describes (e.g. "Hub online"). */
-const NAMED = {
-  checking: "Connecting to",
-  online: "online",
-  degraded: "not ready",
-  offline: "offline",
-};
+/**
+ * @param {HubStatus} status
+ * @param {RealtimeState} live
+ * @returns {Look}
+ */
+function look(status, live) {
+  if (status.state !== "online" || live.status === "stopped") return hubLook(status);
+  switch (live.status) {
+    case "live":
+      return {
+        key: "live",
+        tone: "signal",
+        label: "Live",
+        named: () => "Live",
+        pulse: true,
+        title: "Live events connected.",
+      };
+    case "connecting":
+    case "reconnecting":
+      return {
+        key: "reconnecting",
+        tone: "iris",
+        label: live.status === "connecting" ? "Connecting" : "Reconnecting",
+        named: () => "Reconnecting",
+        title: "Live events dropped. Reconnecting.",
+      };
+    case "offline":
+      return {
+        key: "offline",
+        tone: "alarm",
+        label: "Offline",
+        named: () => "Offline",
+        title: "This device is offline. Live events resume when it's back.",
+      };
+  }
+}
 
 /**
  * @param {{ subject?: string }} [options] `subject` names the thing ("Hub online"); without it
@@ -33,22 +110,19 @@ export function connectionPill({ subject } = {}) {
   /** @type {string | undefined} */
   let shown;
 
-  const unsubscribe = hub.subscribe((status) => {
-    const look = LOOK[status.state];
-    element.title = `${status.title}. ${status.detail}${status.command ? ` ${status.command}` : ""}`;
-    if (shown === status.state) return;
+  function render() {
+    const current = look(hub.get(), realtime.state.get());
+    element.title = current.title;
+    if (shown === current.key) return;
     const changed = shown !== undefined;
-    shown = status.state;
-    element.dataset.tone = look.tone;
-    light.toggleAttribute("data-pulse", Boolean(look.pulse));
-    label.textContent = !subject
-      ? look.label
-      : status.state === "checking"
-        ? `${NAMED.checking} ${subject.toLowerCase()}`
-        : `${subject} ${NAMED[status.state]}`;
-    element.setAttribute("aria-label", `Hub: ${status.title}`);
+    shown = current.key;
+    element.dataset.tone = current.tone;
+    light.toggleAttribute("data-pulse", Boolean(current.pulse));
+    label.textContent = subject ? current.named(subject) : current.label;
+    element.setAttribute("aria-label", current.title);
     if (changed) enter(label, [{ opacity: 0, transform: "translateY(4px)" }, { opacity: 1 }]);
-  });
+  }
 
-  return { element, destroy: unsubscribe };
+  const stops = [hub.subscribe(render), realtime.state.subscribe(render)];
+  return { element, destroy: () => stops.forEach((stop) => stop()) };
 }

@@ -1,6 +1,7 @@
 import "./styles/main.css";
 
 import { ApiError } from "./api/errors.js";
+import { realtime } from "./realtime/live.js";
 import { createRouter, safeRedirect } from "./router.js";
 import { session } from "./state/auth.js";
 import { checkHubNow, hub, startHubMonitor } from "./state/hub.js";
@@ -80,6 +81,7 @@ async function start() {
   });
   await router.start();
   announceHubChanges();
+  connectRealtime();
 
   // Signing in or out (here or in another tab) re-runs the guard on the current page.
   let status = session.state.get().status;
@@ -87,6 +89,28 @@ async function start() {
     if (next.status === status) return;
     status = next.status;
     router.refresh();
+  });
+}
+
+/** Live events run while signed in. The hub monitor and the socket help each other: a dropped
+ * socket triggers a health check, and a hub that is back skips the socket's backoff. */
+function connectRealtime() {
+  session.state.subscribe(({ status }) => {
+    if (status === "signed-in") realtime.start();
+    else realtime.stop();
+  });
+  let previous = realtime.state.get().status;
+  realtime.state.subscribe(({ status }) => {
+    if (previous === "live" && status === "reconnecting") checkHubNow();
+    // Live again proves the hub is back: confirm now rather than at the next scheduled check.
+    if (status === "live" && previous !== "live" && hub.get().state !== "online") checkHubNow();
+    previous = status;
+  });
+  let hubState = hub.get().state;
+  hub.subscribe(({ state }) => {
+    // Only when the hub comes back: other updates (a check starting) must not skip the backoff.
+    if (state === "online" && hubState !== "online") realtime.retryNow();
+    hubState = state;
   });
 }
 
