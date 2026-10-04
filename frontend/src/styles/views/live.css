@@ -1,0 +1,173 @@
+/* Live grid. Labels over video are opaque (no blur above moving images, AD-20); the motion glow
+   and the dimming of a stalled stream change opacity only. */
+@layer components {
+  .camera-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr));
+  }
+
+  .camera-tile {
+    overflow: visible;
+    isolation: isolate;
+    transition: transform var(--duration-base) var(--ease-out-soft);
+    &:has(.camera-link:focus-visible) {
+      outline: 2px solid var(--color-iris);
+      outline-offset: 3px;
+    }
+    @media (hover: hover) {
+      &:hover {
+        transform: translateY(-2px);
+      }
+    }
+
+    /* Motion: a streetlight-amber ring that fades in around the tile. */
+    &::after {
+      content: "";
+      position: absolute;
+      inset: -1px;
+      z-index: 2;
+      border-radius: inherit;
+      border: 1.5px solid var(--color-sodium);
+      box-shadow:
+        0 0 0 4px rgb(255 181 71 / 0.14),
+        0 0 36px -6px rgb(255 181 71 / 0.5);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 320ms var(--ease-out-soft);
+    }
+    &[data-motion]::after {
+      opacity: 1;
+    }
+  }
+
+  .camera-view {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius-card) var(--radius-card) 0 0;
+    background: var(--color-ink-900);
+  }
+
+  .camera-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    transition: opacity var(--duration-enter) var(--ease-out-soft);
+  }
+
+  /* Before the first frame: a shimmer. A stalled stream keeps its last frame, dimmed. */
+  .camera-tile[data-state="loading"] .camera-view::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.05), transparent);
+    animation: var(--animate-shimmer);
+  }
+  .camera-tile:is(
+      [data-state="retrying"],
+      [data-state="reconnecting"],
+      [data-state="failed"],
+      [data-state="stopped"]
+    )
+    .camera-canvas {
+    opacity: 0.35;
+  }
+
+  .camera-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 1.5rem;
+    color: var(--color-haze);
+    font-size: 0.875rem;
+    text-align: center;
+    text-wrap: balance;
+    & svg {
+      width: 1.75rem;
+      height: 1.75rem;
+      opacity: 0.7;
+    }
+  }
+
+  .camera-chip {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4375rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 550;
+    color: var(--color-moon);
+    & .dot {
+      width: 0.4375rem;
+      height: 0.4375rem;
+    }
+  }
+
+  .camera-motion {
+    left: auto;
+    right: 0.75rem;
+    color: var(--color-sodium);
+    opacity: 0;
+    transform: translateY(-4px);
+    transition:
+      opacity var(--duration-base) var(--ease-out-soft),
+      transform var(--duration-base) var(--ease-out-soft);
+  }
+  .camera-tile[data-motion] .camera-motion {
+    opacity: 1;
+    transform: none;
+  }
+
+  .camera-meta {
+    padding: 0.875rem 1rem 1rem;
+  }
+
+  /* The name links to the camera; its hit area covers the whole tile. */
+  .camera-link {
+    outline: none;
+    &::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      border-radius: inherit;
+    }
+  }
+
+  .camera-empty {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 3.5rem 1.5rem;
+    text-align: center;
+  }
+
+  .camera-empty-icon {
+    display: grid;
+    place-items: center;
+    width: 3rem;
+    height: 3rem;
+    margin-bottom: 0.75rem;
+    border-radius: 9999px;
+    background: rgb(138 180 255 / 0.1);
+    color: var(--color-iris);
+    & svg {
+      width: 1.5rem;
+      height: 1.5rem;
+    }
+  }
+}

@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 4 — Frontend Dashboard (Phase 3 complete)
 - **Working branch:** `main`
-- **Next task:** 4.3 → "Device grid"
+- **Next task:** 4.3 → "Real-time alert toasts + live event feed"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -327,7 +327,7 @@
 - [x] `realtime/socket.js` (+ `realtime/live.js`): fresh ticket per connection (covers 4401, which browsers only see as 1006); states `connecting/live/reconnecting/offline/stopped`; backoff 1 s → 30 s with ±20 % jitter, reset after a healthy connection; `pong` to every ping plus a 50 s silence watchdog (half-open sockets after sleep); `resume` from just before the oldest event still in progress (replay is id-ordered, so an event that ended during a drop comes back as ended), duplicates filtered; device subscription kept across reconnects; offline pause, immediate retry on `online`/visible tab/hub back, never two attempts at once; runs while signed in; connection pill shows live-event status. 15 Vitest cases; verified live from Node (70 s past the idle timeout on pongs, offline gap mid-event replayed, hub restart) and in the browser (offline/online, hub restart with toasts and backoff timeline)
 
 ### 4.3 Views
-- [ ] Device grid: live MJPEG tiles (ticket per stream, paused off-screen and in hidden tabs, retry when a stream ends), status badges, motion highlight
+- [x] Device grid: live MJPEG tiles read with `fetch` and painted on a canvas (`realtime/mjpeg.js`: Content-Length part parser, latest-frame-wins decoding with `createImageBitmap`, 8 s stall watchdog, backoff, “ended” when the camera stops) instead of `<img>`, so the dashboard knows when frames stop and can cancel instantly; ticket per stream, 8 fps in the grid; streams run only for on-screen tiles in visible tabs (verified: the hub logs the stream closing on scroll-away); status chips (Live/Connecting/Reconnecting/Starting/Failed/Stopped, last frame dimmed while retrying), amber motion ring and chip, “Motion 4 minutes ago”; updates from live events, list reloaded after every reconnect (status changes are not replayed); skeletons, empty and error states
 - [ ] Real-time alert toasts + live event feed (replayed events marked, no duplicates)
 - [ ] Event history: device/time filters, cursor pagination (infinite scroll), snapshot lightbox (clean/annotated)
 - [ ] Device detail: start/stop, source test, detection-config editor (sensitivity, ROI drawing); admin-only controls hidden for viewers
