@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 4 — Frontend Dashboard (Phase 3 complete)
 - **Working branch:** `main`
-- **Next task:** 4.2 → "Session"
+- **Next task:** 4.2 → "Login view"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -322,11 +322,11 @@
 ### 4.2 Data layer
 - [x] Types generated from the OpenAPI schema (`openapi-typescript` → `src/api/schema.d.ts`), used through JSDoc via `src/api/types.js` aliases; `vision-hub openapi` exports the schema to `frontend/openapi.json`; WebSocket messages published as `WsServerMessage`/`WsClientMessage` components; response fields with defaults marked required; pytest fails when `openapi.json` is stale, CI/pre-commit (`api:check`) when the types are; `npm run api:sync` refreshes both
 - [x] `api/client.js`: `fetch` wrapper (bearer token, JSON/form bodies, query building, one timeout covering headers and body, caller cancellation passes through as `AbortError`), problem+json → `ApiError` (`kind` http/network/timeout, `code` from the problem type, `fieldErrors`, `retryAfter`, request id; a bare proxy 502/504 counts as unreachable), `describeError` for human copy; single-flight refresh on 401 (reuses a token refreshed meanwhile, retries once, refreshes first when only the refresh token survived a reload), sign-out hook when the session can't continue, network failures never sign out. 20 Vitest cases; verified live against the hub (concurrent refresh, logout → expiry, 404/422/429 problems, timeout, unreachable)
-- [ ] Session: access token in memory only, refresh token persistence (“Keep me signed in”), proactive refresh before expiry, sign-out synced across tabs
+- [x] Session (`state/session.js`, wired in `state/auth.js`): access token in memory only; refresh token in localStorage with “Keep me signed in”, else sessionStorage (memory if storage is blocked); refreshes under a cross-tab Web Lock that re-reads the stored token, results shared over BroadcastChannel so tabs never reuse a rotated token (verified live: simultaneous refresh in two tabs, no reuse); proactive refresh a minute before expiry in visible tabs; sign-out (real menu) signs out every tab and revokes on the hub; sign-in reaches tabs waiting at sign-in; expiry ends only the affected tab; startup restore retries after outages and honours `Retry-After`; account row (sidebar) and account menu (phone), admin-only nav hidden for viewers. 15 Vitest cases (lock bypass mutation caught)
+- [ ] Login view (moved up from 4.3: the session needs it): route guard (signed-out → `/login?next=…`), rate-limit and error states, password visibility toggle, autofill friendly, “Keep me signed in”, expired/signed-out notice
 - [ ] `realtime/socket.js`: ticket → WebSocket; states `connecting/live/reconnecting/offline`; backoff with jitter; `resume` with the last event id; `pong`; close codes (4401 new ticket, 4408, 1013, 1001); pauses while offline and reconnects on `online`/`visibilitychange`; Vitest tests with a fake socket
 
 ### 4.3 Views
-- [ ] Login (rate-limit and error states, password visibility toggle, autofill friendly)
 - [ ] Device grid: live MJPEG tiles (ticket per stream, paused off-screen and in hidden tabs, retry when a stream ends), status badges, motion highlight
 - [ ] Real-time alert toasts + live event feed (replayed events marked, no duplicates)
 - [ ] Event history: device/time filters, cursor pagination (infinite scroll), snapshot lightbox (clean/annotated)

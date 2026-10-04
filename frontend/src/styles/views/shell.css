@@ -235,3 +235,54 @@
     }
   }
 }
+
+/* Account: sidebar row and the phone top-bar menu. */
+@layer components {
+  .sidebar-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .account-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid rgb(255 255 255 / 0.06);
+  }
+
+  .avatar {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 9999px;
+    background: rgb(138 180 255 / 0.16);
+    color: var(--color-iris);
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .avatar-button {
+    display: grid;
+    place-items: center;
+    border-radius: 9999px;
+    @media (pointer: coarse) {
+      /* 44 px touch target around the 32 px avatar */
+      padding: 0.375rem;
+      margin: -0.375rem;
+    }
+  }
+
+  .account-menu {
+    position: absolute;
+    top: calc(100% + 0.625rem);
+    right: 0;
+    z-index: 40;
+    width: 14rem;
+    padding: 0.875rem;
+    transform-origin: top right;
+  }
+}

@@ -1,6 +1,8 @@
 import "./styles/main.css";
 
+import { ApiError } from "./api/errors.js";
 import { createRouter } from "./router.js";
+import { session } from "./state/auth.js";
 import { checkHubNow, hub, startHubMonitor } from "./state/hub.js";
 import { $ } from "./ui/dom.js";
 import { enter, exit } from "./ui/motion.js";
@@ -46,6 +48,7 @@ async function start() {
     });
   }
   stopBoot();
+  await restoreSession();
 
   const shell = createShell();
   app.replaceChildren(shell.element);
@@ -62,6 +65,56 @@ async function start() {
   await router.start();
   enter(shell.element, [{ opacity: 0 }, { opacity: 1 }], { duration: 400 });
   announceHubChanges();
+  announceSessionEnd();
+}
+
+/** Resumes a stored session. If the hub drops out meanwhile, tries again once it is back; if
+ * it answers with an error (rate limit, server error), waits as told and tries again. */
+async function restoreSession() {
+  for (;;) {
+    try {
+      await session.restore();
+      return;
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      if (error.kind === "http") {
+        const seconds = error.retryAfter ?? 5;
+        await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+      } else {
+        await nextOnline();
+      }
+    }
+  }
+}
+
+/** Resolves the next time the hub monitor reports the hub online after being away. */
+function nextOnline() {
+  return new Promise((resolve) => {
+    let away = false;
+    const stop = hub.subscribe(({ state }) => {
+      if (state !== "online") away = true;
+      else if (away) {
+        queueMicrotask(stop);
+        resolve(undefined);
+      }
+    });
+    checkHubNow();
+  });
+}
+
+/** Until the sign-in page exists (roadmap 4.3), say when a session ends. */
+function announceSessionEnd() {
+  let signedIn = session.state.get().status === "signed-in";
+  session.state.subscribe(({ status, reason }) => {
+    if (status === "signed-in") signedIn = true;
+    if (status !== "signed-out" || !signedIn) return;
+    signedIn = false;
+    toast(
+      reason === "expired"
+        ? { tone: "sodium", title: "Session expired", message: "Sign in again to continue." }
+        : { tone: "iris", title: "Signed out" },
+    );
+  });
 }
 
 /** After startup, losing the hub is a toast, not a full-screen takeover. */
