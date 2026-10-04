@@ -16,9 +16,9 @@
 
 ## 📍 Current Status
 
-- **Active phase:** Phase 4 — Frontend MVP (Phase 3 complete)
+- **Active phase:** Phase 4 — Frontend Dashboard (Phase 3 complete)
 - **Working branch:** `main`
-- **Next task:** 4 → "Choose stack ... and record it as AD-19"
+- **Next task:** 4.1 → "Scaffold `frontend/`"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -46,6 +46,8 @@
 | AD-16 | Quality gates | **ruff** (lint + format, replaces black), **mypy --strict**, **pytest** + `pytest-asyncio`, `httpx2.AsyncClient` + `asgi-lifespan`, **pre-commit**, GitHub Actions | |
 | AD-17 | Observability | **structlog** (JSON in prod), request-ID middleware, `/health/live` + `/health/ready`, Prometheus `/metrics` (`prometheus-client`, per-app registry, scrape token) | Counters and histograms, rates derived in PromQL; route templates as labels keep cardinality bounded. |
 | AD-18 | Packaging / deploy | Multi-stage **Docker** image (`opencv-python-headless`), `docker compose` with **api + postgres** only | Headless OpenCV: no `imshow` on a server. Minimal moving parts. |
+| AD-19 | Frontend | **Vite** + **vanilla JS** (ES modules, no framework) + **Tailwind CSS v4** (`@tailwindcss/vite`, tokens in `@theme`). Native `fetch` and `WebSocket`. Types from OpenAPI (`openapi-typescript`) used through JSDoc and checked with `tsc --checkJs`; ESLint + Prettier; Vitest for logic. Dev: Vite proxies `/api` (HTTP + WS) to the hub, so the browser sees one origin. Prod: FastAPI serves the built files | Small, fast bundle with no runtime dependencies; the API is the contract. Same-origin in dev and prod: no CORS, tickets and MJPEG `<img>` work unchanged. |
+| AD-20 | UI performance | Animate **only `transform` and `opacity`** (plus short `filter` fades); `backdrop-filter` on static chrome only, **never above live video** (an MJPEG frame under a blur forces a re-blur every frame); `prefers-reduced-motion` respected; streams pause when off-screen or the tab is hidden | Glass effects stay smooth on phones; idle tabs cost no bandwidth or CPU on the hub. |
 
 ---
 
@@ -88,7 +90,18 @@
 │   ├── unit/
 │   ├── integration/
 │   └── fixtures/             # short test videos, synthetic frame generators
-└── frontend/                 # Phase 4
+└── frontend/                 # Phase 4 (AD-19)
+    ├── index.html
+    ├── vite.config.js        # Tailwind plugin, /api proxy (HTTP + WS) to the hub
+    ├── public/               # icons, manifest
+    └── src/
+        ├── main.js           # boot: session restore, router, realtime
+        ├── styles/           # main.css: Tailwind + @theme tokens, components layer
+        ├── api/              # client.js (fetch + refresh), schema.d.ts (generated), endpoints
+        ├── realtime/         # socket.js: ticket → WS, reconnect + resume
+        ├── state/            # tiny observable stores (session, devices, events)
+        ├── ui/               # DOM helpers and components (toast, badge, dialog, tile)
+        └── views/            # login, dashboard, events, device, audit
 ```
 
 ---
@@ -291,23 +304,46 @@
 
 ---
 
-## Phase 4 — Frontend MVP *(later)*
+## Phase 4 — Frontend Dashboard
 
-**Goal:** a clean, mobile-ready dashboard that consumes the existing APIs only.
+**Goal:** a premium, mobile-ready dashboard (dark glass UI, smooth state animations) that consumes the existing APIs only. Stack and performance rules: AD-19, AD-20.
 
-- [ ] Choose stack (recommended: **Vite + React + TypeScript + Tailwind**, or HTMX + Jinja if we want zero build step) and record it as AD-19
-- [ ] Generate a typed API client from the OpenAPI schema
-- [ ] Login page (JWT + refresh handling)
-- [ ] Device grid with live MJPEG tiles and online/offline badges
-- [ ] Real-time alert toasts + event feed via WebSocket (auto-reconnect with replay)
-- [ ] Event history with filters, snapshot viewer/lightbox
-- [ ] Device detail: start/stop, source test, detection-config editor (sensitivity, ROI drawing)
-- [ ] Responsive layout + dark mode; installable PWA with web-push notifications
-- [ ] Serve the built assets from FastAPI (`StaticFiles`) or a separate container behind the proxy
-- [ ] Playwright end-to-end tests for login → live view → alert
+**Working rules for this phase**
+- Every task is verified live in a browser against a running hub (desktop and phone viewport) before it is ticked.
+- UI copy is short and plain: say what happened and what to do (“Camera offline. Retrying…”), no filler.
+- No runtime dependencies unless a task justifies one; dev tooling only.
+
+### 4.1 Foundation
+- [x] Choose the stack and record it as AD-19 (Vite + vanilla JS + Tailwind CSS v4); UI performance rules as AD-20
+- [ ] Scaffold `frontend/`: Vite + Tailwind v4, ES modules, ESLint + Prettier + `tsc --checkJs`; dev proxy for `/api` (HTTP + WebSocket) to the hub; boot screen that checks the hub is reachable; CI job (lint, format, types, build)
+- [ ] Design system: `@theme` tokens (palette, glass surfaces, radii, shadows, motion durations/easings), base components (panel, button, input, badge, status dot, toast, skeleton), reduced motion, AD-20 rules
+- [ ] App shell: router, responsive layout (sidebar on desktop, bottom tab bar on phones, safe-area insets), connection indicator, not-found view
+
+### 4.2 Data layer
+- [ ] Types generated from the OpenAPI schema (`openapi-typescript` → `src/api/schema.d.ts`), used through JSDoc; CI fails when the file is stale
+- [ ] `api/client.js`: `fetch` wrapper (bearer token, timeouts via `AbortController`, problem+json → `ApiError`, `Retry-After`), single-flight refresh on 401, sign-out when refresh fails
+- [ ] Session: access token in memory only, refresh token persistence (“Keep me signed in”), proactive refresh before expiry, sign-out synced across tabs
+- [ ] `realtime/socket.js`: ticket → WebSocket; states `connecting/live/reconnecting/offline`; backoff with jitter; `resume` with the last event id; `pong`; close codes (4401 new ticket, 4408, 1013, 1001); pauses while offline and reconnects on `online`/`visibilitychange`; Vitest tests with a fake socket
+
+### 4.3 Views
+- [ ] Login (rate-limit and error states, password visibility toggle, autofill friendly)
+- [ ] Device grid: live MJPEG tiles (ticket per stream, paused off-screen and in hidden tabs, retry when a stream ends), status badges, motion highlight
+- [ ] Real-time alert toasts + live event feed (replayed events marked, no duplicates)
+- [ ] Event history: device/time filters, cursor pagination (infinite scroll), snapshot lightbox (clean/annotated)
+- [ ] Device detail: start/stop, source test, detection-config editor (sensitivity, ROI drawing); admin-only controls hidden for viewers
+- [ ] Audit log view (admins)
+
+### 4.4 Delivery & quality
+- [ ] Serve the built assets from FastAPI (`StaticFiles`, SPA fallback, page CSP, immutable caching for hashed files); Node build stage in the Dockerfile
+- [ ] Installable PWA (manifest, icons, app-shell service worker that never caches API responses)
+- [ ] Playwright end-to-end tests: login → live view → alert (desktop and mobile viewport)
+- [ ] Performance & accessibility pass: Lighthouse (mobile), animation frame timing in a performance trace, keyboard navigation, contrast
+- [ ] Optional: web-push notifications (needs VAPID keys and a new backend dependency; ask first)
 
 **✅ Phase 4 exit criteria**
 - [ ] Dashboard usable on a phone; alerts appear within 1 s of motion ending
+- [ ] Live view and alerts recover on their own after a hub restart, with missed events replayed
+- [ ] Lighthouse mobile performance and accessibility ≥ 90
 
 ---
 
