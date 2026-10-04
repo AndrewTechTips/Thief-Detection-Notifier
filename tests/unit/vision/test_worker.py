@@ -1,3 +1,5 @@
+import itertools
+import statistics
 import threading
 from datetime import UTC, datetime, timedelta
 
@@ -5,6 +7,7 @@ import cv2
 import numpy as np
 import pytest
 
+from vision_hub.core.metrics import Metrics
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import (
     CameraEvent,
@@ -12,11 +15,12 @@ from vision_hub.domain.events import (
     MotionEndedEvent,
     MotionStartedEvent,
 )
+from vision_hub.domain.motion import BoundingBox
 from vision_hub.vision.bridge import FramePacket
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.frame import Frame
 from vision_hub.vision.sources import Backoff, SourceError, SyntheticSource, SyntheticSourceConfig
-from vision_hub.vision.worker import CameraWorker, EncodingSettings
+from vision_hub.vision.worker import CameraWorker, EncodingSettings, encode_stream_frame
 
 DETECTION = DetectionConfig(warmup_frames=3, motion_end_grace_seconds=0.5)
 
@@ -65,6 +69,22 @@ class RecordingSink:
         return [e.status for e in self.events if isinstance(e, DeviceStatusChanged)]
 
 
+class JitteryClock:
+    """Advances by each step in turn: a camera whose frames arrive slightly irregularly."""
+
+    def __init__(self, steps: tuple[float, ...]) -> None:
+        self.now = datetime(2026, 1, 1, tzinfo=UTC)
+        self.steps = itertools.cycle(timedelta(seconds=step) for step in steps)
+        self.calls = 0
+        self.lock = threading.Lock()
+
+    def __call__(self) -> datetime:
+        with self.lock:
+            self.calls += 1
+            self.now += next(self.steps)
+            return self.now
+
+
 def synthetic(**overrides: float) -> SyntheticSource:
     fields = {"fps": 10, "visit_every_seconds": 4, "visit_seconds": 1.5, "seed": 3}
     return SyntheticSource(SyntheticSourceConfig.model_validate(fields | overrides), paced=False)
@@ -97,6 +117,28 @@ def run_until_done(worker: CameraWorker, sink: RecordingSink, timeout: float = 1
     assert worker.stop(timeout=5)
 
 
+class TestLiveFrames:
+    def test_boxes_are_drawn_on_the_downscaled_image(self) -> None:
+        frame = np.zeros((1080, 1920, 3), np.uint8)
+
+        jpeg, width, height = encode_stream_frame(
+            frame, [BoundingBox(x=960, y=540, width=400, height=200)], EncodingSettings()
+        )
+
+        image = decode(jpeg)
+        assert (width, height) == (960, 540) == (image.shape[1], image.shape[0])
+        assert image[270:370, 480:680].max() > 100  # the box, at half the coordinates
+        assert image[:200, :400].max() < 30  # untouched elsewhere
+
+    def test_frames_without_motion_are_encoded_as_they_are(self) -> None:
+        frame = np.full((480, 640, 3), 128, np.uint8)
+
+        jpeg, width, _ = encode_stream_frame(frame, (), EncodingSettings())
+
+        assert width == 640
+        assert abs(int(decode(jpeg).mean()) - 128) <= 1
+
+
 class TestLifecycle:
     def test_publishes_motion_events_with_jpeg_evidence(self) -> None:
         sink = RecordingSink(viewers=True, stop_after_ended=2)
@@ -113,6 +155,23 @@ class TestLifecycle:
         assert ended[0].boxes
         assert not np.array_equal(clean, annotated)  # boxes only on the annotated copy
         assert ended[0].event.device_id == "cam-1"
+
+    def test_counts_frames_and_events_in_metrics(self) -> None:
+        metrics = Metrics(process_metrics=False)
+        sink = RecordingSink(viewers=True, stop_after_ended=1)
+        worker = make_worker(sink)
+        worker._metrics = metrics.camera("cam-1")
+
+        run_until_done(worker, sink)
+
+        def value(name: str) -> float:
+            return metrics.registry.get_sample_value(name, {"device": "cam-1"}) or 0
+
+        analysed = value("vision_hub_camera_frames_analysed_total")
+        assert analysed >= 10
+        assert value("vision_hub_camera_processing_seconds_count") == analysed
+        assert value("vision_hub_camera_frames_streamed_total") == len(sink.frames)
+        assert value("vision_hub_motion_events_total") >= 1
 
     def test_reports_status_through_its_life(self) -> None:
         sink = RecordingSink(stop_after_ended=1)
@@ -153,11 +212,23 @@ class TestLifecycle:
 
         run_until_done(make_worker(sink, step=0.02, fps=10), sink)
 
-        gaps = {
-            round((b.captured_at - a.captured_at).total_seconds(), 2)
-            for a, b in zip(sink.frames, sink.frames[1:], strict=False)
-        }
-        assert min(gaps) >= 0.1
+        gaps = [
+            (b.captured_at - a.captured_at).total_seconds()
+            for a, b in itertools.pairwise(sink.frames)
+        ]
+        assert min(gaps) >= 0.075  # a quarter interval of tolerance
+        assert statistics.mean(gaps) == pytest.approx(0.1, abs=0.01)
+
+    def test_a_camera_at_the_target_rate_loses_no_frames_to_jitter(self) -> None:
+        """Frames 99 and 101 ms apart at a 10 fps target: every one is analysed."""
+        sink = RecordingSink(viewers=True, stop_after_ended=1)
+        worker = make_worker(sink, fps=10)
+        jittery = JitteryClock((0.099, 0.101))
+        worker._clock = jittery
+
+        run_until_done(worker, sink)
+
+        assert len(sink.frames) >= jittery.calls * 0.9
 
     def test_stopping_mid_event_still_delivers_it(self) -> None:
         sink = RecordingSink()

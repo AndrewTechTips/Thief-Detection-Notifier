@@ -24,14 +24,25 @@ def resize_to_width(frame: Frame, width: int) -> tuple[Frame, float]:
     """Downscale (never upscale) to ``width``, keeping the aspect ratio.
 
     Returns the resized frame and the factor that maps its coordinates back to the original.
+
+    Halves with ``INTER_AREA`` while possible, then finishes with ``INTER_LINEAR``. OpenCV only
+    has a fast path for an exact 2x area reduction: a direct 1080p -> 640 px ``INTER_AREA``
+    resize costs about 9x more, and 1440p -> 960 px about 70x more, for practically the same
+    image (see docs/performance.md).
     """
     original_width = frame.shape[1]
     if original_width <= width:
         return frame, 1.0
-    scale = original_width / width
-    height = max(1, round(frame.shape[0] / scale))
-    resized = cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
-    return np.asarray(resized, dtype=np.uint8), scale
+    resized = frame
+    while resized.shape[1] // 2 >= width:
+        half = (resized.shape[1] // 2, max(1, resized.shape[0] // 2))
+        resized = np.asarray(cv2.resize(resized, half, interpolation=cv2.INTER_AREA), np.uint8)
+    if resized.shape[1] > width:
+        height = max(1, round(frame.shape[0] * width / original_width))
+        resized = np.asarray(
+            cv2.resize(resized, (width, height), interpolation=cv2.INTER_LINEAR), np.uint8
+        )
+    return resized, original_width / resized.shape[1]
 
 
 def to_gray(frame: Frame) -> Frame:

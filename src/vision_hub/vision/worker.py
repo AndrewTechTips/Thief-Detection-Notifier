@@ -5,7 +5,7 @@ event loop (AD-7). OpenCV releases the GIL inside its C++ calls, so cameras run 
 """
 
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Protocol
@@ -14,6 +14,7 @@ import cv2
 import structlog
 
 from vision_hub.core.logging import get_logger
+from vision_hub.core.metrics import CameraMetrics, Metrics
 from vision_hub.core.security import utc_now
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import (
@@ -22,6 +23,7 @@ from vision_hub.domain.events import (
     MotionEndedEvent,
     MotionStartedEvent,
 )
+from vision_hub.domain.motion import BoundingBox
 from vision_hub.vision.annotate import draw_boxes
 from vision_hub.vision.bridge import FramePacket
 from vision_hub.vision.config import DetectionConfig
@@ -74,6 +76,7 @@ class CameraWorker:
         encoding: EncodingSettings | None = None,
         backoff: Backoff | None = None,
         clock: Callable[[], datetime] = utc_now,
+        metrics: CameraMetrics | None = None,
     ) -> None:
         self.device_id = device_id
         self._stop = threading.Event()
@@ -86,9 +89,10 @@ class CameraWorker:
         self._interval = timedelta(seconds=1 / target_fps)
         self._encoding = encoding or EncodingSettings()
         self._clock = clock
+        self._metrics = metrics or Metrics(process_metrics=False).camera(device_id)
         self._thread: threading.Thread | None = None
         self._sequence = 0
-        self._last_processed: datetime | None = None
+        self._next_due: datetime | None = None
         self._last_streamed: datetime | None = None
 
     @property
@@ -139,13 +143,27 @@ class CameraWorker:
 
     def _due(self, at: datetime) -> bool:
         """Frame-rate limiting: live cameras keep delivering at their own rate (and must be
-        drained to avoid latency); only every ``1/target_fps`` seconds is a frame analysed."""
-        if self._last_processed is not None and at - self._last_processed < self._interval:
+        drained to avoid latency); frames are analysed on a fixed ``1/target_fps`` schedule.
+
+        The schedule tolerates a quarter interval of jitter. Comparing each frame with the
+        previous analysed one instead loses up to half the frames when the camera runs at the
+        target rate: a frame 99 ms after the last misses a 100 ms interval, so the next
+        analysed frame is 200 ms later.
+        """
+        if self._next_due is not None and at < self._next_due - self._interval / 4:
             return False
-        self._last_processed = at
+        if self._next_due is None or at - self._next_due > self._interval:
+            self._next_due = at + self._interval  # first frame, or fell behind: start over
+        else:
+            self._next_due += self._interval
         return True
 
     def _process(self, frame: Frame, at: datetime) -> None:
+        with self._metrics.processing_seconds.time():
+            self._analyse(frame, at)
+        self._metrics.frames_analysed.inc()
+
+    def _analyse(self, frame: Frame, at: datetime) -> None:
         detection = self._detector.process(frame)
         update = self._tracker.update(frame, detection, at)
         if isinstance(update, MotionStarted):
@@ -158,23 +176,20 @@ class CameraWorker:
         idle_due = self._last_streamed is None or at - self._last_streamed >= IDLE_SNAPSHOT_INTERVAL
         if self._sink.has_viewers or idle_due:
             self._last_streamed = at
-            self._publish_frame(draw_boxes(frame, detection.boxes), at, motion=detection.motion)
-
-    def _publish_frame(self, frame: Frame, at: datetime, *, motion: bool) -> None:
-        small, _ = resize_to_width(frame, self._encoding.stream_max_width)
-        jpeg = _encode(small, self._encoding.stream_jpeg_quality)
-        self._sequence += 1
-        self._sink.publish_frame(
-            FramePacket(
-                device_id=self.device_id,
-                sequence=self._sequence,
-                captured_at=at,
-                width=small.shape[1],
-                height=small.shape[0],
-                motion=motion,
-                jpeg=jpeg,
+            jpeg, width, height = encode_stream_frame(frame, detection.boxes, self._encoding)
+            self._metrics.frames_streamed.inc()
+            self._sequence += 1
+            self._sink.publish_frame(
+                FramePacket(
+                    device_id=self.device_id,
+                    sequence=self._sequence,
+                    captured_at=at,
+                    width=width,
+                    height=height,
+                    motion=detection.motion,
+                    jpeg=jpeg,
+                )
             )
-        )
 
     def _publish_motion_ended(self, ended: MotionEnded) -> None:
         quality = self._encoding.snapshot_jpeg_quality
@@ -185,6 +200,7 @@ class CameraWorker:
             motion_frames=ended.event.motion_frames,
             peak_area_ratio=round(ended.event.peak_area_ratio, 4),
         )
+        self._metrics.motion_events.inc()
         annotated = draw_boxes(ended.best_frame, boxes)
         thumbnail, _ = resize_to_width(annotated, self._encoding.thumbnail_width)
         self._sink.publish_event(
@@ -214,6 +230,17 @@ class CameraWorker:
         self._publish_status(DeviceStatus.FAILED if crashed else DeviceStatus.STOPPED)
         logger.info("camera_worker_stopped", crashed=crashed)
         self._sink.worker_exited(crashed=crashed)
+
+
+def encode_stream_frame(
+    frame: Frame, boxes: Sequence[BoundingBox], settings: EncodingSettings
+) -> tuple[bytes, int, int]:
+    """Live-view JPEG and its size. Downscales *before* drawing, so boxes are drawn on the
+    small image, and a frame without motion is encoded without any copy."""
+    small, scale = resize_to_width(frame, settings.stream_max_width)
+    if boxes:
+        small = draw_boxes(small, [box.scaled(1 / scale) for box in boxes])
+    return _encode(small, settings.stream_jpeg_quality), small.shape[1], small.shape[0]
 
 
 def _encode(frame: Frame, quality: int) -> bytes:

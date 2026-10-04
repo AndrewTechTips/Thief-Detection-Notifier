@@ -9,11 +9,14 @@ from http import HTTPStatus
 from typing import ClassVar
 
 import structlog
+from fastapi.routing import iter_route_contexts
 from starlette.datastructures import Headers, MutableHeaders
+from starlette.routing import Match
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from vision_hub.core.errors import problem_response
 from vision_hub.core.logging import get_logger
+from vision_hub.core.metrics import Metrics
 
 REQUEST_ID_HEADER = "X-Request-ID"
 # Accept caller-supplied IDs only if they are short and log-safe (no spaces, newlines, quotes).
@@ -37,9 +40,15 @@ class RequestContextMiddleware:
     requests to ``quiet_paths`` (e.g. health probes) are logged at DEBUG to keep logs readable.
     """
 
-    def __init__(self, app: ASGIApp, quiet_paths: frozenset[str] = frozenset()) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        quiet_paths: frozenset[str] = frozenset(),
+        metrics: Metrics | None = None,
+    ) -> None:
         self.app = app
         self.quiet_paths = quiet_paths
+        self.metrics = metrics or Metrics(process_metrics=False)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] not in {"http", "websocket"}:
@@ -84,7 +93,9 @@ class RequestContextMiddleware:
             )
             await response(scope, receive, send_with_request_id)
         finally:
-            duration_ms = round((time.perf_counter() - started) * 1000, 2)
+            elapsed = time.perf_counter() - started
+            duration_ms = round(elapsed * 1000, 2)
+            _observe(self.metrics, scope, status_code, elapsed)
             if status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
                 log = logger.error
             elif scope["path"] in self.quiet_paths:
@@ -101,6 +112,28 @@ class RequestContextMiddleware:
             if username := scope["state"].get("username"):  # set by the auth dependency
                 fields["user"] = username
             log("request", **fields)
+
+
+def _observe(metrics: Metrics, scope: Scope, status_code: int, elapsed: float) -> None:
+    """Labelled by route template (``/api/v1/devices/{device_id}``), never by raw path, so
+    unknown URLs cannot create unbounded series."""
+    route = _route_template(scope)
+    method = scope["method"]
+    metrics.http_requests.labels(method, route, str(status_code)).inc()
+    metrics.http_duration.labels(method, route).observe(elapsed)
+
+
+def _route_template(scope: Scope) -> str:
+    """The app route matching the request, with its full prefix (the route object in the
+    scope may come from a nested router and lack it)."""
+    app = scope.get("app")
+    if scope.get("route") is None or app is None:
+        return "unmatched"
+    for route in iter_route_contexts(app.routes):
+        match, _ = route.matches(scope)
+        if match is Match.FULL:
+            return str(route.path)
+    return "unmatched"  # pragma: no cover - the router matched, so one of its routes does
 
 
 class SecurityHeadersMiddleware:

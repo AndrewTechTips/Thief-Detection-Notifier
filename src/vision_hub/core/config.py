@@ -194,6 +194,13 @@ class NotificationsConfig(_Group):
         return self
 
 
+class MetricsConfig(_Group):
+    enabled: bool = True  # GET /metrics in the Prometheus text format
+    # Static bearer token for the scraper (Prometheus `authorization.credentials`); admins can
+    # always use their own access token.
+    token: Annotated[SecretStr, Field(min_length=32)] | None = None
+
+
 class DatabaseConfig(_Group):
     # A full SQLAlchemy URL overrides the PostgreSQL fields below (tests use SQLite this way).
     url: SecretStr | None = None
@@ -243,6 +250,9 @@ class VisionConfig(_Group):
     alert_cooldown_seconds: float = Field(default=60.0, ge=0)
     stream_jpeg_quality: int = Field(default=70, ge=1, le=100)
     stream_max_width: int = Field(default=960, ge=160, le=3840)
+    # OpenCV's own thread pool. Cameras already run in parallel threads, so the default 0 (no
+    # pool, every call sequential) avoids oversubscription; see docs/performance.md.
+    opencv_threads: int = Field(default=0, ge=0, le=64)
 
     @field_validator("blur_kernel_size")
     @classmethod
@@ -277,6 +287,7 @@ class Settings(BaseSettings):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     smtp: SmtpConfig = Field(default_factory=SmtpConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
+    metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     db: DatabaseConfig = Field(default_factory=DatabaseConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     vision: VisionConfig = Field(default_factory=VisionConfig)

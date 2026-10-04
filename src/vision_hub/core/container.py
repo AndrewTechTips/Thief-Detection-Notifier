@@ -1,12 +1,14 @@
 """Service container: long-lived objects created at startup and released at shutdown."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import TypedDict
 
+import cv2
+from prometheus_client.core import Metric
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -16,10 +18,12 @@ from vision_hub.core.config import NotificationsConfig, Settings, env_name
 from vision_hub.core.encryption import SecretBox
 from vision_hub.core.lifecycle import Lifecycle, ShutdownCheck
 from vision_hub.core.logging import get_logger
-from vision_hub.core.security import PasswordHasher, TokenService, UrlSigner
+from vision_hub.core.metrics import Metrics, StateCollector, gauge
+from vision_hub.core.security import PasswordHasher, TokenService, UrlSigner, utc_now
 from vision_hub.core.tasks import TaskSupervisor
 from vision_hub.domain.audit import AuditAction, AuditTarget
 from vision_hub.domain.auth import Role
+from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import CameraEvent, topic_for
 from vision_hub.domain.health import HealthCheck
 from vision_hub.domain.notifications import Notifier, RetryPolicy
@@ -71,6 +75,7 @@ class Container:
     devices: DeviceService
     events: EventService
     auditor: Auditor
+    metrics: Metrics
     lifecycle: Lifecycle
     url_signer: UrlSigner
     tickets: InMemoryTicketStore
@@ -86,7 +91,7 @@ class LifespanState(TypedDict):
 
 @asynccontextmanager
 async def build_container(
-    settings: Settings, lifecycle: Lifecycle | None = None
+    settings: Settings, lifecycle: Lifecycle | None = None, metrics: Metrics | None = None
 ) -> AsyncIterator[Container]:
     """Create services on startup and release them, in reverse order, on shutdown.
 
@@ -99,6 +104,7 @@ async def build_container(
     WebSocket clients are closed, background tasks end, then the database pool closes.
     """
     lifecycle = lifecycle or Lifecycle()
+    metrics = metrics or Metrics()
     async with AsyncExitStack() as stack:
         lock = ProcessLock(settings.vision.lock_file)
         lock.acquire()
@@ -110,7 +116,7 @@ async def build_container(
         if settings.db.migrate_on_startup:
             await upgrade_to_head(engine)
         # Registered here so it runs after every service has stopped, before the pool closes.
-        tasks = TaskSupervisor()
+        tasks = TaskSupervisor(metrics=metrics)
         stack.push_async_callback(tasks.aclose)
         sessions = create_sessions(engine)
         auditor = Auditor(SqlAuditLog(sessions))
@@ -133,7 +139,7 @@ async def build_container(
 
         bus: InMemoryEventBus[CameraEvent] = InMemoryEventBus()
         stack.callback(bus.close)
-        realtime = ConnectionManager(bus, settings.realtime, history=events)
+        realtime = ConnectionManager(bus, settings.realtime, history=events, metrics=metrics)
         stack.callback(realtime.close_all)  # runs before bus.close: clients get 1001
         notifications = NotificationService(
             bus,
@@ -144,7 +150,9 @@ async def build_container(
             cooldown_seconds=settings.vision.alert_cooldown_seconds,
             policy=_retry_policy(settings.notifications),
             tasks=tasks,
+            metrics=metrics,
         )
+        metrics.on_scrape(notifications.refresh_metrics)
         await notifications.start()  # subscribes before any camera can publish
         stack.push_async_callback(notifications.stop)
 
@@ -155,12 +163,15 @@ async def build_container(
             snapshots,
             publish=lambda event: bus.publish(topic_for(event), event),
             tasks=tasks,
+            metrics=metrics,
         )
         recorder.start()
         stack.push_async_callback(recorder.stop)
 
+        cv2.setNumThreads(settings.vision.opencv_threads)
         cameras = CameraManager(
             on_event=recorder.submit,
+            metrics=metrics,
             worker_factory=camera_worker_factory(
                 default_fps=settings.vision.target_fps,
                 encoding=EncodingSettings(
@@ -169,6 +180,7 @@ async def build_container(
                     snapshot_jpeg_quality=settings.storage.jpeg_quality,
                     thumbnail_width=settings.storage.thumbnail_width,
                 ),
+                metrics=metrics,
             ),
         )
         stack.push_async_callback(cameras.stop_all)
@@ -191,6 +203,12 @@ async def build_container(
         retention.start()
         stack.push_async_callback(retention.stop)
 
+        collector = StateCollector(lambda: _live_state(cameras, realtime))
+        metrics.add_collector(collector)
+        stack.callback(metrics.registry.unregister, collector)
+        loop_monitor = tasks.spawn("event-loop-monitor", metrics.watch_event_loop)
+        stack.push_async_callback(_cancel, loop_monitor)
+
         container = Container(
             settings=settings,
             database=engine,
@@ -208,6 +226,7 @@ async def build_container(
             devices=devices,
             events=events,
             auditor=auditor,
+            metrics=metrics,
             lifecycle=lifecycle,
             url_signer=UrlSigner(
                 settings.security.jwt_secret, ttl_seconds=settings.security.signed_url_ttl_seconds
@@ -281,6 +300,33 @@ def _load_fleet(settings: Settings, defaults: DetectionConfig) -> list[DeviceSpe
     if settings.vision.devices_file is None:
         return []
     return load_fleet(settings.vision.devices_file, defaults=defaults)
+
+
+def _live_state(cameras: CameraManager, realtime: ConnectionManager) -> Iterator[Metric]:
+    """Per-camera health, read at scrape time."""
+    status = gauge("camera_status", "1 for the camera's current status.", ["device", "status"])
+    viewers = gauge("camera_live_viewers", "Open MJPEG streams.", ["device"])
+    frame_age = gauge(
+        "camera_last_frame_age_seconds",
+        "Age of the newest live frame (refreshed at least every second while running).",
+        ["device"],
+    )
+    now = utc_now()
+    for device_id in cameras.device_ids:
+        current = cameras.status(device_id)
+        for state in DeviceStatus:
+            status.add_metric([device_id, state.value], float(state is current))
+        viewers.add_metric([device_id], cameras.viewers(device_id))
+        if cameras.is_running(device_id) and (latest := cameras.frames(device_id).latest):
+            frame_age.add_metric([device_id], (now - latest.captured_at).total_seconds())
+    clients = gauge("websocket_clients", "Connected WebSocket clients.", [])
+    clients.add_metric([], realtime.active)
+    yield from (status, viewers, frame_age, clients)
+
+
+async def _cancel(task: asyncio.Task[None]) -> None:
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
 
 
 def _retry_policy(config: NotificationsConfig) -> RetryPolicy:

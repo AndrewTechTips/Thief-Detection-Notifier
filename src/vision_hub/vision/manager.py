@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Protocol, cast
 
 from vision_hub.core.logging import get_logger
+from vision_hub.core.metrics import Metrics
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import CameraEvent, DeviceStatusChanged, MotionEndedEvent
 from vision_hub.domain.motion import MotionEvent
@@ -34,7 +35,10 @@ type EventListener = Callable[[CameraEvent], None]
 
 
 def camera_worker_factory(
-    *, default_fps: float, encoding: EncodingSettings | None = None
+    *,
+    default_fps: float,
+    encoding: EncodingSettings | None = None,
+    metrics: Metrics | None = None,
 ) -> WorkerFactory:
     def build(spec: DeviceSpec, sink: WorkerSink) -> Worker:
         return CameraWorker(
@@ -44,6 +48,7 @@ def camera_worker_factory(
             sink=sink,
             target_fps=spec.target_fps or default_fps,
             encoding=encoding,
+            metrics=metrics.camera(spec.id) if metrics else None,
         )
 
     return build
@@ -57,11 +62,13 @@ class CameraManager:
         on_event: EventListener | None = None,
         restart_backoff: Callable[[], Backoff] = lambda: Backoff(initial=1, maximum=60),
         stop_timeout: float = 5.0,
+        metrics: Metrics | None = None,
     ) -> None:
         self._worker_factory = worker_factory
         self._on_event = on_event or (lambda _event: None)
         self._restart_backoff = restart_backoff
         self._stop_timeout = stop_timeout
+        self._metrics = metrics or Metrics(process_metrics=False)
         self._specs: dict[str, DeviceSpec] = {}
         self._workers: dict[str, Worker] = {}
         self._frames: dict[str, LatestFrame] = {}
@@ -123,6 +130,11 @@ class CameraManager:
         await self.stop(device_id)
         for state in (self._specs, self._frames, self._statuses, self._last_events, self._backoffs):
             state.pop(device_id, None)
+        self._metrics.forget_camera(device_id)
+
+    def viewers(self, device_id: str) -> int:
+        frames = self._frames.get(device_id)
+        return frames.viewers if frames else 0
 
     def close_streams(self) -> None:
         """End every live stream (shutdown has begun); cameras keep running until stopped."""
@@ -167,6 +179,7 @@ class CameraManager:
             self._wanted.discard(device_id)
             return
         # Still wanted: stop() removes the worker first, so its exit returns early above.
+        self._metrics.camera_restarts.labels(device_id).inc()
         delay = self._backoffs[device_id].next_delay()
         logger.warning(
             "camera_worker_restart_scheduled", device_id=device_id, delay_s=round(delay, 1)

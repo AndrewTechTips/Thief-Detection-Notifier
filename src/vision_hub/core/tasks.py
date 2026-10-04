@@ -11,6 +11,7 @@ from typing import Any
 
 from vision_hub.core.backoff import Backoff
 from vision_hub.core.logging import get_logger
+from vision_hub.core.metrics import Metrics
 
 logger = get_logger(__name__)
 
@@ -31,9 +32,11 @@ class TaskSupervisor:
         *,
         backoff: Callable[[], Backoff] = lambda: Backoff(initial=1, maximum=60),
         healthy_after: float = 60.0,
+        metrics: Metrics | None = None,
     ) -> None:
         self._backoff = backoff
         self._healthy_after = healthy_after
+        self._metrics = metrics or Metrics(process_metrics=False)
         self._tasks: set[asyncio.Task[None]] = set()
 
     @property
@@ -64,6 +67,7 @@ class TaskSupervisor:
                 await factory()
             except Exception:
                 crashes += 1
+                self._metrics.task_crashes.labels(name).inc()
                 if not restart:
                     logger.exception("task_crashed", task=name, restarting=False)
                     return

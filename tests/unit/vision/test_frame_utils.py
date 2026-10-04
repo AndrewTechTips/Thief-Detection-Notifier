@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+import cv2
 import numpy as np
 import pytest
 from pydantic import ValidationError
@@ -23,6 +24,33 @@ class TestResize:
 
         assert small.shape == (360, 640, 3)
         assert scale == 3.0
+
+    @pytest.mark.parametrize(
+        ("width", "height", "target", "expected"),
+        [
+            (1920, 1080, 960, (540, 960)),  # one exact halving
+            (2560, 1440, 960, (540, 960)),  # halve to 1280, then finish linearly
+            (3840, 2160, 640, (360, 640)),  # halve twice, then finish
+            (1001, 601, 500, (300, 500)),  # odd sizes
+        ],
+    )
+    def test_any_size_lands_on_the_target_width(
+        self, width: int, height: int, target: int, expected: tuple[int, int]
+    ) -> None:
+        small, scale = resize_to_width(blank(width, height), target)
+
+        assert small.shape[:2] == expected
+        assert scale == pytest.approx(width / target)
+
+    def test_matches_an_area_average_closely(self) -> None:
+        rng = np.random.default_rng(1)
+        noise = rng.integers(0, 255, (1080, 1920, 3), dtype=np.uint8)
+        frame = np.asarray(cv2.GaussianBlur(noise, (5, 5), 0), np.uint8)
+
+        small, _ = resize_to_width(frame, 640)
+
+        reference = cv2.resize(frame, (640, 360), interpolation=cv2.INTER_AREA)
+        assert np.abs(small.astype(int) - reference.astype(int)).mean() < 3
 
     def test_never_upscales(self) -> None:
         frame = blank(320, 240)
@@ -102,3 +130,10 @@ class TestDetectionConfig:
     def test_is_immutable_and_strict(self) -> None:
         with pytest.raises(ValidationError):
             DetectionConfig(unknown=1)  # type: ignore[call-arg]
+
+
+def test_boxes_scale_with_the_image() -> None:
+    box = BoundingBox(x=100, y=50, width=300, height=3)
+
+    assert box.scaled(0.5) == BoundingBox(x=50, y=25, width=150, height=2)
+    assert box.scaled(0.1).height == 1  # never collapses to nothing

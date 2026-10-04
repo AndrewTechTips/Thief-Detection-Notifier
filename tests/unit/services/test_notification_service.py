@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from vision_hub.core.metrics import Metrics
 from vision_hub.core.security import utc_now
 from vision_hub.domain.events import (
     CameraEvent,
@@ -174,6 +175,7 @@ class Harness:
         clock: Callable[[], datetime] = utc_now,
         policy: RetryPolicy = FAST,
         cooldown_seconds: float = 60,
+        metrics: Metrics | None = None,
     ) -> NotificationService:
         return NotificationService(
             self.bus,
@@ -185,6 +187,7 @@ class Harness:
             policy=policy,
             clock=clock,
             poll_interval=0.01,
+            metrics=metrics,
         )
 
     def publish(self, event: CameraEvent) -> None:
@@ -479,6 +482,44 @@ class TestRetries:
     def test_needs_at_least_one_attempt(self) -> None:
         with pytest.raises(ValueError, match="at least 1"):
             RetryPolicy(max_attempts=0)
+
+
+class TestMetrics:
+    async def test_outcomes_cooldowns_and_pending_alerts_are_counted(self, hub: Harness) -> None:
+        metrics = Metrics(process_metrics=False)
+        flaky = FakeNotifier(failures=[NotificationError("busy", retryable=True)])
+        alerts = hub.service(flaky, clock=Clock(), metrics=metrics)
+        hub.ended("porch", "old")
+        await hub.outbox.enqueue("old", "porch", ["fake"], at=T0 - timedelta(days=2))
+
+        await alerts.handle(hub.ended("porch", "e1"))
+        await alerts.handle(hub.ended("porch", "e2"))  # within the cooldown
+        await alerts.refresh_metrics()
+        pending = metrics.registry.get_sample_value("vision_hub_alerts_pending")
+        await alerts.stop()  # e1: first attempt fails and is rescheduled; old: expired
+
+        def count(name: str, **labels: str) -> float | None:
+            return metrics.registry.get_sample_value(name, labels)
+
+        assert pending == 2
+        assert count("vision_hub_alerts_total", channel="fake", outcome="retry") == 1
+        assert count("vision_hub_alerts_total", channel="fake", outcome="expired") == 1
+        assert count("vision_hub_alerts_suppressed_total", device="porch") == 1
+        assert count("vision_hub_alert_delivery_seconds_count", channel="fake") == 1
+
+    async def test_direct_sending_is_counted_too(self, hub: Harness) -> None:
+        metrics = Metrics(process_metrics=False)
+        hub.outbox.broken = True
+        notifier = FakeNotifier()
+        alerts = hub.service(notifier, metrics=metrics)
+
+        await alerts.handle(hub.ended())
+        await alerts.stop()
+
+        sent = metrics.registry.get_sample_value(
+            "vision_hub_alerts_total", {"channel": "fake", "outcome": "sent"}
+        )
+        assert sent == 1
 
 
 class TestConcurrencyAndShutdown:

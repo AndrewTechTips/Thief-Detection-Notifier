@@ -21,6 +21,7 @@ from typing import Any
 from structlog.stdlib import BoundLogger
 
 from vision_hub.core.logging import get_logger
+from vision_hub.core.metrics import Metrics
 from vision_hub.core.security import utc_now
 from vision_hub.core.tasks import TaskSupervisor
 from vision_hub.domain.bus import EventBus, Subscription
@@ -55,6 +56,7 @@ class NotificationService:
         cooldown_seconds: float,
         policy: RetryPolicy | None = None,
         tasks: TaskSupervisor | None = None,
+        metrics: Metrics | None = None,
         clock: Callable[[], datetime] = utc_now,
         poll_interval: float = 5.0,
         max_concurrent: int = 4,
@@ -67,6 +69,7 @@ class NotificationService:
         self._cooldown = timedelta(seconds=cooldown_seconds)
         self._policy = policy or RetryPolicy()
         self._tasks = tasks or TaskSupervisor()
+        self._metrics = metrics or Metrics(process_metrics=False)
         self._clock = clock
         self._poll_interval = poll_interval
         self._slots = asyncio.Semaphore(max_concurrent)
@@ -132,6 +135,7 @@ class NotificationService:
         now = self._clock()
         last = self._last_alert.get(device_id)
         if last is not None and now - last < self._cooldown:
+            self._metrics.alerts_suppressed.labels(device_id).inc()
             logger.info(
                 "alert_suppressed_by_cooldown", device_id=device_id, event_id=ended.event.id
             )
@@ -188,6 +192,7 @@ class NotificationService:
             await self._outbox.mark_failed(
                 delivery.id, attempts=delivery.attempts, at=now, error="expired"
             )
+            self._metrics.alerts.labels(delivery.channel, "expired").inc()
             log.warning("alert_expired", age_s=round((now - delivery.created_at).total_seconds()))
             return
         evidence = await self._evidence(delivery.event_id)
@@ -200,7 +205,8 @@ class NotificationService:
 
         attempts = delivery.attempts + 1
         try:
-            await self._notifiers[delivery.channel].send(self._alert(*evidence))
+            with self._metrics.alert_delivery_seconds.labels(delivery.channel).time():
+                await self._notifiers[delivery.channel].send(self._alert(*evidence))
         except Exception as exc:
             error = (
                 exc
@@ -210,6 +216,7 @@ class NotificationService:
             await self._failed(delivery, attempts, error, log)
             return
         await self._outbox.mark_sent(delivery.id, attempts=attempts, at=self._clock())
+        self._metrics.alerts.labels(delivery.channel, "sent").inc()
         log.info("alert_sent", attempts=attempts)
 
     async def _failed(
@@ -222,6 +229,7 @@ class NotificationService:
         now = self._clock()
         if not error.retryable or attempts >= self._policy.max_attempts:
             await self._outbox.mark_failed(delivery.id, attempts=attempts, at=now, error=str(error))
+            self._metrics.alerts.labels(delivery.channel, "failed").inc()
             log.error(
                 "alert_failed", attempts=attempts, error=str(error), retryable=error.retryable
             )
@@ -230,6 +238,7 @@ class NotificationService:
         await self._outbox.retry_later(
             delivery.id, attempts=attempts, next_attempt_at=now + delay, error=str(error)
         )
+        self._metrics.alerts.labels(delivery.channel, "retry").inc()
         log.warning(
             "alert_retry",
             attempt=attempts,
@@ -247,14 +256,22 @@ class NotificationService:
                 await notifier.send(alert)
             except NotificationError as exc:
                 if not exc.retryable or attempt == self._policy.max_attempts:
+                    self._metrics.alerts.labels(notifier.name, "failed").inc()
                     log.error(
                         "alert_failed", attempts=attempt, error=str(exc), retryable=exc.retryable
                     )
                     return
+                self._metrics.alerts.labels(notifier.name, "retry").inc()
                 await asyncio.sleep(self._policy.delay(attempt).total_seconds())
             else:
+                self._metrics.alerts.labels(notifier.name, "sent").inc()
                 log.info("alert_sent", attempts=attempt, outbox=False)
                 return
+
+    async def refresh_metrics(self) -> None:
+        """Before a scrape: how many alerts wait in the outbox."""
+        if self.enabled:
+            self._metrics.alerts_pending.set(await self._outbox.pending_count())
 
     def _alert(self, event: MotionEvent, image_jpeg: bytes) -> Alert:
         return Alert(

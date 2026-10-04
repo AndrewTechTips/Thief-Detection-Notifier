@@ -19,6 +19,7 @@ from starlette.types import Message
 
 from vision_hub.core.config import RealtimeConfig
 from vision_hub.core.logging import get_logger
+from vision_hub.core.metrics import Metrics
 from vision_hub.domain.auth import Principal
 from vision_hub.domain.bus import EventBus, Subscription
 from vision_hub.domain.events import (
@@ -197,10 +198,12 @@ class ConnectionManager:
         bus: EventBus[CameraEvent],
         config: RealtimeConfig,
         history: EventService | None = None,
+        metrics: Metrics | None = None,
     ) -> None:
         self._bus = bus
         self._config = config
         self._history = history
+        self._metrics = metrics or Metrics(process_metrics=False)
         self._connections: set[_Connection] = set()
 
     @property
@@ -233,6 +236,7 @@ class ConnectionManager:
             self._connections.discard(connection)
             if reason != "client left":
                 await _close_quietly(socket, code, reason)
+            self._metrics.websocket_disconnects.labels(str(code)).inc()
             log.info("ws_disconnected", code=code, reason=reason, clients=self.active)
 
     def close_all(self) -> None:

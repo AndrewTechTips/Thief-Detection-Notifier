@@ -24,6 +24,7 @@ dependencies = [
     "asyncpg>=0.31.0",
     "alembic>=1.20.0",
     "cryptography>=50.0.2",
+    "prometheus-client>=0.26.0",
 ]
 
 [project.scripts]
@@ -74,6 +75,7 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"benchmarks/**" = ["T201"]  # reports are printed
 "tests/**" = [
     "S101", "S105", "S106", "S107", "S311",  # asserts, fake credentials, seeded randomness
     "ASYNC110",  # polling a condition with sleep is fine in tests
@@ -91,7 +93,7 @@ docstring-code-format = true
 [tool.mypy]
 python_version = "3.14"
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "benchmarks"]
 plugins = ["pydantic.mypy"]
 warn_unreachable = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]

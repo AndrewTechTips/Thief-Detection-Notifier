@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from vision_hub.core.metrics import Metrics
 from vision_hub.core.security import utc_now
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import CameraEvent, DeviceStatusChanged, MotionEndedEvent
@@ -113,13 +114,28 @@ class TestWithRealWorkers:
 class TestSupervision:
     async def test_crashed_workers_are_restarted(self) -> None:
         factory = FakeFactory(crash=True)
-        manager = CameraManager(worker_factory=factory, restart_backoff=fast_backoff)
+        metrics = Metrics(process_metrics=False)
+        manager = CameraManager(
+            worker_factory=factory, restart_backoff=fast_backoff, metrics=metrics
+        )
 
         await manager.start(spec())
         await wait_for(lambda: len(factory.workers) >= 3)
         await manager.stop("cam-1")
 
         assert len(factory.workers) >= 3
+        restarts = metrics.registry.get_sample_value(
+            "vision_hub_camera_restarts_total", {"device": "cam-1"}
+        )
+        assert restarts is not None
+        assert restarts >= 2
+        await manager.forget("cam-1")
+        assert (
+            metrics.registry.get_sample_value(
+                "vision_hub_camera_restarts_total", {"device": "cam-1"}
+            )
+            is None
+        )
 
     async def test_clean_exit_is_not_restarted(self) -> None:
         class ExitingFactory(FakeFactory):

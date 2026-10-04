@@ -10,6 +10,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from vision_hub import __version__
+from vision_hub.api.metrics import METRICS_PATH
+from vision_hub.api.metrics import router as metrics_router
 from vision_hub.api.middleware import (
     REQUEST_ID_HEADER,
     RequestContextMiddleware,
@@ -23,6 +25,7 @@ from vision_hub.core.container import LifespanState, build_container
 from vision_hub.core.errors import register_exception_handlers
 from vision_hub.core.lifecycle import Lifecycle
 from vision_hub.core.logging import configure_logging, get_logger
+from vision_hub.core.metrics import Metrics
 
 logger = get_logger(__name__)
 
@@ -49,17 +52,21 @@ OPENAPI_TAGS = [
     },
 ]
 DOCS_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc"})
+# Polled by orchestrators and Prometheus (Host is often the container IP): exempt from the
+# Host check, and logged at DEBUG unless they fail.
+OPS_PATHS = PROBE_PATHS | {METRICS_PATH}
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings)
     lifecycle = Lifecycle()  # the server signals shutdown through app.state.lifecycle
+    metrics = Metrics()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[LifespanState]:
         logger.info("startup", app=settings.app.name, version=__version__, env=settings.app.env)
-        async with build_container(settings, lifecycle) as container:
+        async with build_container(settings, lifecycle, metrics) as container:
             yield {"container": container}
         logger.info("shutdown")
 
@@ -79,11 +86,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_problem_details_schema(app)
     register_exception_handlers(app)
     app.include_router(api_router)
-    _add_middleware(app, settings)
+    if settings.metrics.enabled:
+        app.include_router(metrics_router)
+    _add_middleware(app, settings, metrics)
     return app
 
 
-def _add_middleware(app: FastAPI, settings: Settings) -> None:
+def _add_middleware(app: FastAPI, settings: Settings, metrics: Metrics) -> None:
     """Each call wraps the previous ones, so the request path is the reverse of this order:
     RequestContext -> SecurityHeaders -> TrustedHost -> CORS -> routes."""
     security = settings.security
@@ -98,8 +107,8 @@ def _add_middleware(app: FastAPI, settings: Settings) -> None:
         max_age=600,
     )
     app.add_middleware(
-        TrustedHostMiddleware, allowed_hosts=security.allowed_hosts, exempt_paths=PROBE_PATHS
+        TrustedHostMiddleware, allowed_hosts=security.allowed_hosts, exempt_paths=OPS_PATHS
     )
     app.add_middleware(SecurityHeadersMiddleware, hsts=settings.is_prod, relaxed_paths=DOCS_PATHS)
     # Outermost, so request IDs and access logs cover every response, including rejections.
-    app.add_middleware(RequestContextMiddleware, quiet_paths=PROBE_PATHS)
+    app.add_middleware(RequestContextMiddleware, quiet_paths=OPS_PATHS, metrics=metrics)

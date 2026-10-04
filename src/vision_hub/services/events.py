@@ -7,6 +7,7 @@ from pathlib import Path
 
 from vision_hub.core.errors import NotFoundError
 from vision_hub.core.logging import get_logger
+from vision_hub.core.metrics import Metrics
 from vision_hub.core.security import utc_now
 from vision_hub.core.tasks import TaskSupervisor
 from vision_hub.domain.events import CameraEvent, MotionEndedEvent, MotionStartedEvent
@@ -33,11 +34,13 @@ class EventRecorder:
         publish: Callable[[CameraEvent], None],
         *,
         tasks: TaskSupervisor | None = None,
+        metrics: Metrics | None = None,
     ) -> None:
         self._repository = repository
         self._store = store
         self._publish = publish
         self._tasks = tasks or TaskSupervisor()
+        self._metrics = metrics or Metrics(process_metrics=False)
         self._queue: asyncio.Queue[CameraEvent] = asyncio.Queue()  # unbounded: events are rare
         self._task: asyncio.Task[None] | None = None
 
@@ -63,6 +66,7 @@ class EventRecorder:
             try:
                 await self._record(event)
             except Exception:
+                self._metrics.event_record_failures.inc()
                 logger.exception("event_record_failed", event_type=type(event).__name__)
             finally:
                 self._publish(event)

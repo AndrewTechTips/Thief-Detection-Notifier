@@ -7,6 +7,7 @@ import pytest
 from starlette.types import Message
 
 from vision_hub.core.config import RealtimeConfig
+from vision_hub.core.metrics import Metrics
 from vision_hub.domain.auth import Principal, Role
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import (
@@ -75,7 +76,8 @@ def motion(device_id: str) -> MotionEvent:
 class Harness:
     def __init__(self, **config: Any) -> None:
         self.bus: InMemoryEventBus[CameraEvent] = InMemoryEventBus()
-        self.manager = ConnectionManager(self.bus, RealtimeConfig(**config))
+        self.metrics = Metrics(process_metrics=False)
+        self.manager = ConnectionManager(self.bus, RealtimeConfig(**config), metrics=self.metrics)
         self.socket = FakeSocket()
         self.task: asyncio.Task[None] | None = None
 
@@ -259,6 +261,10 @@ class TestHeartbeatAndBackPressure:
         await harness.finished(within=5)
 
         assert socket.closed == (CloseCode.TRY_AGAIN_LATER, "client too slow")
+        disconnects = harness.metrics.registry.get_sample_value(
+            "vision_hub_websocket_disconnects_total", {"code": "1013"}
+        )
+        assert disconnects == 1
 
     async def test_stalled_sends_time_out(self) -> None:
         harness = Harness(send_timeout_seconds=0.05)

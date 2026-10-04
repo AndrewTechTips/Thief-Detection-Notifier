@@ -17,6 +17,15 @@ class BoundingBox:
     def area(self) -> int:
         return self.width * self.height
 
+    def scaled(self, factor: float) -> BoundingBox:
+        """The same box on an image resized by ``factor`` (e.g. 0.5 for half the width)."""
+        return BoundingBox(
+            x=round(self.x * factor),
+            y=round(self.y * factor),
+            width=max(1, round(self.width * factor)),
+            height=max(1, round(self.height * factor)),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class DetectionResult:

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from vision_hub.core.metrics import Metrics
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import (
     CameraEvent,
@@ -104,13 +105,20 @@ async def test_persists_before_publishing(tmp_path: Path, log: list[str]) -> Non
 async def test_still_publishes_when_recording_fails(
     tmp_path: Path, log: list[str], log_records: object
 ) -> None:
-    events = recorder(FakeRepository(log, broken=True), tmp_path, log)
+    metrics = Metrics(process_metrics=False)
+    events = EventRecorder(
+        FakeRepository(log, broken=True),
+        LocalSnapshotStore(tmp_path),
+        lambda event: log.append(f"published {type(event).__name__}"),
+        metrics=metrics,
+    )
     events.start()
 
     events.submit(ended())
     await events.stop()
 
     assert log == ["published MotionEndedEvent"]  # the alert is not lost
+    assert metrics.registry.get_sample_value("vision_hub_event_record_failures_total") == 1
 
 
 async def test_status_changes_are_published_without_storage(tmp_path: Path, log: list[str]) -> None:

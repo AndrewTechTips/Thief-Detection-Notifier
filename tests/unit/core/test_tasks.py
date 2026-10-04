@@ -3,6 +3,7 @@ from collections.abc import Callable
 from typing import Any
 
 from vision_hub.core.backoff import Backoff
+from vision_hub.core.metrics import Metrics
 from vision_hub.core.tasks import TaskSupervisor
 
 type LogRecords = Callable[[], list[dict[str, Any]]]
@@ -19,6 +20,7 @@ def supervisor(healthy_after: float = 60) -> TaskSupervisor:
 
 
 async def test_crashed_tasks_are_logged_and_restarted(log_records: LogRecords) -> None:
+    metrics = Metrics(process_metrics=False)
     runs = 0
 
     async def flaky() -> None:
@@ -27,9 +29,15 @@ async def test_crashed_tasks_are_logged_and_restarted(log_records: LogRecords) -
         if runs < 3:
             raise RuntimeError("boom")
 
-    await supervisor().spawn("flaky", flaky)
+    await TaskSupervisor(
+        backoff=lambda: Backoff(initial=0.001, maximum=0.001), metrics=metrics
+    ).spawn("flaky", flaky)
 
     assert runs == 3
+    crash_count = metrics.registry.get_sample_value(
+        "vision_hub_background_task_crashes_total", {"task": "flaky"}
+    )
+    assert crash_count == 2
     crashes = [r for r in log_records() if r["event"] == "task_crashed"]
     assert [r["crashes"] for r in crashes] == [1, 2]
     assert all(r["task"] == "flaky" and "exception" in r for r in crashes)
