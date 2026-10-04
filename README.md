@@ -42,6 +42,7 @@
 - **Event history:** every event is stored with its clean frame, annotated frame and thumbnail, browsable through the API, with signed image links and per-camera retention
 - **Device API:** add, update, start and stop cameras, hot-reload detection settings, and test a source before saving it
 - **Persistent:** PostgreSQL via async SQLAlchemy and Alembic migrations (applied on startup); camera passwords encrypted at rest with rotatable keys; an audit trail of every device and user change
+- **Observable and efficient:** Prometheus metrics for every camera (analysed fps, time per frame, frame age, status) plus alerts, HTTP and event-loop lag; about 7 % of a core per 1080p camera at 10 fps ([benchmarks](docs/performance.md))
 - **Resilient:** supervised background tasks restart after a crash, events cut short by a crash are flagged on the next start, and shutdown is graceful: live streams end, cameras close their events, and readiness fails so traffic drains
 - **Secure by default:** JWT with rotating refresh tokens (reuse detection survives restarts), roles, rate-limited login, single-use stream tickets, write-only camera passwords, security headers, and strict production config checks
 
@@ -84,7 +85,7 @@ src/vision_hub/
 ├── api/        # FastAPI routers, dependencies, middleware
 ├── schemas/    # Pydantic request/response and WebSocket models
 ├── domain/     # Pure domain models and ports (Protocols)
-├── services/   # Application logic: auth, devices, events, health, notifications
+├── services/   # Application logic: audit, auth, devices, events, health, notifications
 ├── vision/     # Frame sources, motion detector, tracker, camera workers
 ├── realtime/   # WebSocket connections and MJPEG streaming
 └── infra/      # Adapters: database, snapshot storage, event bus, notifiers, auth stores, rate limiting
@@ -207,6 +208,26 @@ mode, wildcard CORS/hosts and unencrypted SMTP.
   (compose uses `stop_grace_period: 30s`).
 - **Sensitivity** is set per camera: `min_motion_area` (fraction of the frame),
   `pixel_threshold`, regions of interest, and how long a quiet period ends an event.
+
+### Metrics
+
+`GET /metrics` serves Prometheus metrics. Set `VISION_HUB_METRICS__TOKEN` (32+ characters) and
+give Prometheus the same token:
+
+```yaml
+scrape_configs:
+  - job_name: vision-hub
+    static_configs:
+      - targets: ["vision-hub:8000"]
+    authorization:
+      credentials: "<VISION_HUB_METRICS__TOKEN>"
+```
+
+Useful queries: `rate(vision_hub_camera_frames_analysed_total[1m])` (analysed fps per camera),
+`vision_hub_camera_status{status="online"} == 0` (camera down),
+`vision_hub_camera_last_frame_age_seconds > 10` (stalled), `vision_hub_alerts_pending > 0` and
+`histogram_quantile(0.99, rate(vision_hub_event_loop_lag_seconds_bucket[5m]))`.
+Where the CPU goes and how the hub was tuned is in [`docs/performance.md`](docs/performance.md).
 
 ---
 

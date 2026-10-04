@@ -16,9 +16,9 @@
 
 ## 📍 Current Status
 
-- **Active phase:** Phase 3 — Persistence & Optimization
+- **Active phase:** Phase 4 — Frontend MVP (Phase 3 complete)
 - **Working branch:** `main`
-- **Next task:** 3.4 Optimization & observability → "Profile per-camera CPU; run detection on downscaled frames"
+- **Next task:** 4 → "Choose stack ... and record it as AD-19"
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -34,7 +34,7 @@
 | AD-4 | Dependency injection | FastAPI `Depends` with `Annotated[...]` aliases; services built once in `lifespan` and exposed through typed lifespan state (`request.state.container`) | No module-level globals; trivially overridable in tests. |
 | AD-5 | Layering | `api` → `services` → `domain` (pure) ← `infra` adapters, via `typing.Protocol` ports | Business logic testable without FastAPI, camera hardware, SMTP or a DB. |
 | AD-6 | Ingestion model | **Pull**: the hub opens each video source (USB webcam, RTSP/HTTP IP camera, video file, synthetic) and runs detection locally | Cameras stay dumb; no edge agents to deploy or authenticate. |
-| AD-7 | OpenCV concurrency | **One dedicated thread per camera** (OpenCV releases the GIL in its C++ calls) bridged to asyncio with `loop.call_soon_threadsafe` | Never blocks the event loop; a long-lived thread keeps the capture device open. |
+| AD-7 | OpenCV concurrency | **One dedicated thread per camera** (OpenCV releases the GIL in its C++ calls) bridged to asyncio with `loop.call_soon_threadsafe`; OpenCV's own thread pool disabled | Never blocks the event loop; a long-lived thread keeps the capture device open. Benchmarked in 3.4: same throughput as a process per camera, 3x a process pool per frame (`docs/performance.md`). |
 | AD-8 | Deployment topology | **Single process**: API + `CameraManager` in one Uvicorn process, run with **exactly one worker** | Cameras are owned by the process — multiple Uvicorn workers would each open every camera. |
 | AD-9 | Internal messaging | `EventBus` port with an **in-memory** implementation only (asyncio fan-out, bounded per-subscriber queues). Redis is deferred to *Future* | Zero extra infrastructure for the MVP; the port keeps a later swap cheap. |
 | AD-10 | Real-time transport | **WebSocket** for alerts/state (JSON envelopes, discriminated unions); **MJPEG** over HTTP for live video (WS binary frames as an option) | MJPEG works in a plain `<img>` tag and is cheap; WebRTC is a possible later upgrade. |
@@ -44,7 +44,7 @@
 | AD-14 | Snapshot storage | `SnapshotStore` port with a **local filesystem** implementation (`data/snapshots/`). DB stores metadata + relative path only. JPEG (q≈85), not PNG. S3/MinIO deferred to *Future* | Blobs out of the DB; ~10× smaller files than the current 2 MB PNGs; no extra infra. |
 | AD-15 | Notifications | `Notifier` port: **async SMTP (`aiosmtplib`)** first, webhook/Telegram later. **DB-backed outbox**: one row per alert and channel, sent by a dispatcher with exponential retries and a max age; delivery is at-least-once and survives restarts | Replaces the fire-and-forget thread + bare `except`; an intrusion alert must not die with the process. |
 | AD-16 | Quality gates | **ruff** (lint + format, replaces black), **mypy --strict**, **pytest** + `pytest-asyncio`, `httpx2.AsyncClient` + `asgi-lifespan`, **pre-commit**, GitHub Actions | |
-| AD-17 | Observability | **structlog** (JSON in prod), request-ID middleware, `/health/live` + `/health/ready`, Prometheus metrics (Phase 3) | |
+| AD-17 | Observability | **structlog** (JSON in prod), request-ID middleware, `/health/live` + `/health/ready`, Prometheus `/metrics` (`prometheus-client`, per-app registry, scrape token) | Counters and histograms, rates derived in PromQL; route templates as labels keep cardinality bounded. |
 | AD-18 | Packaging / deploy | Multi-stage **Docker** image (`opencv-python-headless`), `docker compose` with **api + postgres** only | Headless OpenCV: no `imshow` on a server. Minimal moving parts. |
 
 ---
@@ -278,16 +278,16 @@
 - [x] Startup recovery: resume configured cameras, re-dispatch pending notifications, flag events left open by a crash as `interrupted` (device status is never persisted, so every camera starts offline by design)
 
 ### 3.4 Optimization & observability
-- [ ] Profile per-camera CPU; run detection on downscaled frames (e.g. 640 px wide) and scale boxes back
-- [ ] Benchmark `asyncio.to_thread` vs dedicated threads vs processes per camera; document results
-- [ ] Reuse buffers / avoid redundant `frame.copy()`; encode JPEG once per frame and share across subscribers
-- [ ] Prometheus `/metrics`: FPS per camera, processing latency, event-loop lag, WS clients, queue drops, notification failures
-- [ ] Optional detector plug-in: person detection (e.g. ONNX/YOLO) to filter motion events, behind the same `Detector` protocol
+- [x] Profile per-camera CPU; run detection on downscaled frames (e.g. 640 px wide) and scale boxes back (`benchmarks/pipeline.py`). Found and fixed: the frame-rate limiter lost up to half the frames of a camera running at the target rate (6.3 → 10 fps); `INTER_AREA` resizes at non-2x factors cost up to 20 ms (progressive halving now); OpenCV's thread pool fought the camera threads (disabled: ~25 % less CPU)
+- [x] Benchmark `asyncio.to_thread` vs dedicated threads vs processes per camera; document results (`benchmarks/concurrency.py`, `docs/performance.md`: threads kept)
+- [x] Reuse buffers / avoid redundant `frame.copy()`; encode JPEG once per frame and share across subscribers (live frames are downscaled before annotation and not copied without motion; one JPEG per frame was already shared by all viewers)
+- [x] Prometheus `/metrics`: FPS per camera, processing latency, event-loop lag, WS clients, queue drops, notification failures (plus camera status, frame age, restarts, alerts pending, HTTP by route, process CPU/memory; scrape token)
+- [ ] Optional detector plug-in: person detection (e.g. ONNX/YOLO) to filter motion events, behind the same `Detector` protocol — deferred to *Future*
 
 **✅ Phase 3 exit criteria**
 - [x] Events and snapshots survive restarts and are queryable via the API
 - [x] Pending notifications are delivered after a crash/restart
-- [ ] Metrics show per-camera health
+- [x] Metrics show per-camera health
 
 ---
 
@@ -322,6 +322,7 @@ Not part of the MVP. The ports introduced above (`EventBus`, `SnapshotStore`, re
 - [ ] Redis-backed rate limiting and WS ticket store (required once there is more than one API replica)
 - [ ] `S3SnapshotStore` (`aioboto3`, MinIO locally) with presigned URLs
 - [ ] Short MP4 clip per event (pre-roll ring buffer + event) written by the worker
+- [ ] Person detection (ONNX/YOLO via `onnxruntime`) to filter motion events, behind the `Detector` protocol
 - [ ] Multiple API replicas behind a reverse proxy; verify rebalancing on worker loss
 - [ ] Optional push-mode edge devices (device API keys or MQTT) alongside the pull model
 

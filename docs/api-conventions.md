@@ -149,6 +149,7 @@ GET /api/v1/events?limit=50&cursor=eyJhZnRlcl9pZCI6NDJ9
 | Endpoint | Meaning | Codes |
 |----------|---------|-------|
 | `GET /api/v1/health/live` | Process is up. Never checks dependencies. | `200` |
+| `GET /metrics` | Prometheus metrics, outside the versioned API. Needs `VISION_HUB_METRICS__TOKEN` or an admin's access token. | `200` / `401` / `403` |
 | `GET /api/v1/health/ready` | All dependencies reachable; safe to route traffic. Turns `503` as soon as shutdown begins, so load balancers drain the hub. | `200` / `503` |
 
 - Public (no auth), `Cache-Control: no-store`, and logged at DEBUG unless they fail.
