@@ -45,6 +45,7 @@ REVALIDATE = "no-cache"
 # Top-level names that belong to the API or to FastAPI, never to the dashboard.
 RESERVED = frozenset({"api", "docs", "redoc", "openapi.json", "metrics"})
 ENCODINGS = (("br", ".br"), ("gzip", ".gz"))
+SERVICE_WORKER = "sw.js"
 
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 mimetypes.add_type("text/javascript", ".js")
@@ -91,7 +92,9 @@ def _send(file: Path, root: Path, accept_encoding: str) -> FileResponse:
     media_type = mimetypes.guess_type(file.name)[0] or "application/octet-stream"
     hashed = file.parent == root / "assets"
     headers = {"Cache-Control": IMMUTABLE if hashed else REVALIDATE, "Vary": "Accept-Encoding"}
-    if media_type == "text/html":
+    # Pages and the service worker get the page policy: a worker obeys the CSP sent with its own
+    # script, and the API's `default-src 'none'` would forbid it to fetch (and cache) anything.
+    if media_type == "text/html" or file == root / SERVICE_WORKER:
         headers["Content-Security-Policy"] = PAGE_CSP
     accepted = _accepted_encodings(accept_encoding)
     for encoding, suffix in ENCODINGS:

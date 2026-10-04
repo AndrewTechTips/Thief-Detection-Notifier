@@ -24,6 +24,7 @@ def dist(tmp_path: Path) -> Path:
     (root / "assets").mkdir(parents=True)
     (root / "index.html").write_text(INDEX)
     (root / "favicon.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'/>")
+    (root / "sw.js").write_text("self.addEventListener('fetch', () => {});")
     (root / "assets" / "app-1a2b.js").write_text(SCRIPT)
     (root / "assets" / "app-1a2b.js.gz").write_bytes(gzip.compress(SCRIPT.encode()))
     (tmp_path / "secret.txt").write_text("not for the web")
@@ -67,6 +68,16 @@ class TestPages:
         assert "unsafe-inline" not in PAGE_CSP
         assert api.headers["content-security-policy"].startswith("default-src 'none'")
         assert page.headers["x-frame-options"] == "DENY"
+
+    async def test_the_service_worker_may_fetch_from_the_hub(
+        self, client: httpx2.AsyncClient
+    ) -> None:
+        # A worker obeys the CSP of its own script: the API's would block every fetch.
+        response = await client.get("/sw.js")
+
+        assert response.headers["content-security-policy"] == PAGE_CSP
+        assert response.headers["content-type"].startswith("text/javascript")
+        assert response.headers["cache-control"] == "no-cache"
 
     async def test_head_requests_work(self, client: httpx2.AsyncClient) -> None:
         response = await client.head("/events")
