@@ -4,7 +4,7 @@ import { ApiError } from "./api/errors.js";
 import { registerServiceWorker } from "./app-install.js";
 import { startAlerts } from "./realtime/alerts.js";
 import { realtime } from "./realtime/live.js";
-import { createRouter, safeRedirect } from "./router.js";
+import { createRouter, match, safeRedirect } from "./router.js";
 import { session } from "./state/auth.js";
 import { loadDevices } from "./state/devices.js";
 import { checkHubNow, hub, startHubMonitor } from "./state/hub.js";
@@ -16,7 +16,8 @@ import { createShell } from "./views/shell.js";
 
 /** If the hub answers within this time, the boot screen never appears. */
 const BOOT_DELAY_MS = 400;
-/** Time to read "Hub online" before the boot screen gives way to the dashboard. */
+/** Time to read "Hub online" after a problem, before the boot screen gives way to the dashboard.
+ * A hub that was merely slow to answer gets no pause: the dashboard is what you came for. */
 const BOOT_LINGER_MS = 700;
 
 const LOGIN = "/login";
@@ -35,11 +36,18 @@ const bootScreen = $(app, "[data-boot-screen]");
 
 startHubMonitor();
 registerServiceWorker();
+// Neither needs the health check's answer: on a slow network, starting them now saves two
+// round trips before the first page shows. A hub that is away fails the restore, which then
+// waits for it to come back.
+const restoring = restoreSession();
+preload(session.hasStoredSession() ? location.pathname : LOGIN);
 const stopBoot = mountBoot($(bootScreen, "[data-boot]"));
 const reveal = window.setTimeout(() => bootScreen.removeAttribute("data-pending"), BOOT_DELAY_MS);
 
 let started = false;
+let troubled = false;
 const stopWaiting = hub.subscribe((status) => {
+  if (status.state !== "online" && status.state !== "checking") troubled = true;
   if (status.state === "online" && !started) {
     started = true;
     queueMicrotask(start);
@@ -50,13 +58,13 @@ async function start() {
   stopWaiting();
   window.clearTimeout(reveal);
   if (!bootScreen.hasAttribute("data-pending")) {
-    await new Promise((resolve) => setTimeout(resolve, BOOT_LINGER_MS));
+    if (troubled) await new Promise((resolve) => setTimeout(resolve, BOOT_LINGER_MS));
     await exit(bootScreen, [{ opacity: 1 }, { opacity: 0, transform: "scale(0.98)" }], {
       duration: 240,
     });
   }
   stopBoot();
-  await restoreSession();
+  await restoring;
 
   /** @type {ReturnType<typeof createShell> | null} */
   let shell = null;
@@ -95,6 +103,14 @@ async function start() {
     status = next.status;
     router.refresh();
   });
+}
+
+/** Starts fetching a page's code (the router's own import then reuses it).
+ * @param {string} pathname */
+function preload(pathname) {
+  match(routes, pathname)
+    .route?.load()
+    .catch(() => {});
 }
 
 /** Live events run while signed in. The hub monitor and the socket help each other: a dropped

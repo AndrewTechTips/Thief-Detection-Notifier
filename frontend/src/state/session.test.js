@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../api/errors.js";
-import { REFRESH_KEY, Session } from "./session.js";
+import { principalFrom, REFRESH_KEY, Session } from "./session.js";
 
 /** A hub that rotates refresh tokens and rejects any reuse, like the real one. */
 function fakeHub() {
@@ -346,4 +346,29 @@ it("works in memory when storage is blocked", async () => {
 
   expect(session.token()).not.toBeNull();
   await expect(session.rotate()).resolves.toMatch(/^a/);
+});
+
+describe("reading the access token", () => {
+  /** @param {object} claims */
+  const jwt = (claims) => {
+    const bytes = new TextEncoder().encode(JSON.stringify(claims));
+    const payload = btoa(String.fromCharCode(...bytes))
+      .replaceAll("+", "-")
+      .replaceAll("/", "_");
+    return ["e30", payload.replace(/=+$/, ""), "signature"].join(".");
+  };
+
+  it("names the user from its claims, including non-ASCII names", () => {
+    expect(principalFrom(jwt({ sub: "zoë", role: "viewer", typ: "access" }))).toEqual({
+      username: "zoë",
+      role: "viewer",
+    });
+  });
+
+  it("gives up on anything it can't read, so /auth/me answers instead", () => {
+    expect(principalFrom("access-1")).toBeNull();
+    expect(principalFrom("a.!!!.c")).toBeNull();
+    expect(principalFrom(jwt({ sub: "admin", role: "owner" }))).toBeNull();
+    expect(principalFrom(jwt({ role: "admin" }))).toBeNull();
+  });
 });

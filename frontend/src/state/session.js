@@ -91,6 +91,11 @@ export class Session {
     return this.access && this.now() < this.accessExpiresAt - EXPIRY_SKEW_MS ? this.access : null;
   }
 
+  /** Whether a session was kept from an earlier visit (before restore() checks it). */
+  hasStoredSession() {
+    return read(this.deps.local) !== null || read(this.deps.ephemeral) !== null;
+  }
+
   /**
    * On startup: resume a stored session. Throws ApiError if the hub can't be reached, so the
    * caller can try again; a refused token simply means "signed out".
@@ -103,11 +108,13 @@ export class Session {
       this.state.set({ status: "signed-out", user: null, reason: null });
       return;
     }
-    if (!(await this.rotate())) {
+    const access = await this.rotate();
+    if (!access) {
       this.end("expired");
       return;
     }
-    const user = await this.loadUser();
+    // The access token already names you: no round trip to /auth/me on every page load.
+    const user = principalFrom(access) ?? (await this.loadUser());
     this.state.set({ status: "signed-in", user, reason: null });
   }
 
@@ -278,6 +285,24 @@ function isRefusal(error) {
     error.kind === "http" &&
     [400, 401, 403, 422].includes(error.status)
   );
+}
+
+/**
+ * Who an access token belongs to, read from its claims, or null if it can't be read. Only for
+ * display and routing: the hub checks the token's signature on every request.
+ * @param {string} token
+ * @returns {Principal | null}
+ */
+export function principalFrom(token) {
+  try {
+    const payload = token.split(".")[1].replaceAll("-", "+").replaceAll("_", "/");
+    const bytes = Uint8Array.from(atob(payload), (char) => char.charCodeAt(0));
+    const claims = JSON.parse(new TextDecoder().decode(bytes));
+    if (typeof claims.sub !== "string" || !["admin", "viewer"].includes(claims.role)) return null;
+    return { username: claims.sub, role: claims.role };
+  } catch {
+    return null;
+  }
 }
 
 // Storage can throw (blocked cookies, private modes, full quota): fall back to memory only.

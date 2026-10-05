@@ -1,9 +1,8 @@
 // Live: every camera, with its video and status, updated by live events.
 
-import { listDevices } from "../api/devices.js";
 import { describeError } from "../api/errors.js";
 import { realtime } from "../realtime/live.js";
-import { rememberDevices } from "../state/devices.js";
+import { devices as directory, loadDevices } from "../state/devices.js";
 import { cameraTile } from "../ui/camera-tile.js";
 import { h } from "../ui/dom.js";
 import { icon } from "../ui/icons.js";
@@ -46,10 +45,11 @@ export default {
 
     async function load() {
       try {
-        const devices = await listDevices({ signal: controller.signal });
-        rememberDevices(devices);
+        // Shares the request the app makes for the camera directory when you sign in.
+        await loadDevices();
+        if (controller.signal.aborted) return;
         loaded = true;
-        show(devices);
+        show([...directory.get().values()]);
       } catch (error) {
         if (controller.signal.aborted) return;
         showError(error);
