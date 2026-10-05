@@ -37,7 +37,7 @@
 
 - **Multi-camera ingestion:** USB webcams, RTSP cameras (with automatic reconnection), video files and a built-in simulator, each on its own worker thread so the API never blocks
 - **Smart motion detection:** an adaptive background that ignores dusk and passing clouds, a reset instead of an alarm when the lights switch on, debounced events, per-camera regions of interest, and best-frame selection
-- **Email alerts that are not lost:** the annotated snapshot sent inline and as an attachment, with per-camera cooldowns; pending alerts are stored in the database and retried, even across restarts
+- **Alerts that are not lost:** email with the annotated snapshot inline and attached, and web push notifications to phones and desktops (encrypted per device, also when the dashboard is closed), with per-camera cooldowns; pending alerts are stored in the database and retried, even across restarts
 - **Real time:** WebSocket alerts with per-camera subscriptions and replay of events missed while offline, and MJPEG live streams that work in a plain `<img>` tag
 - **Event history:** every event is stored with its clean frame, annotated frame and thumbnail, browsable through the API, with signed image links and per-camera retention
 - **Device API:** add, update, start and stop cameras, hot-reload detection settings, and test a source before saving it
@@ -67,6 +67,7 @@ flowchart LR
         R -->|"then publish"| B[("Event bus")]
         F --> M["MJPEG streams<br/>& snapshots"]
         B --> N["Notification service"] -->|"outbox, retries"| E["Email (SMTP)"]
+        N -->|"encrypted per browser"| WP["Web push"]
         B --> W["WebSocket clients"]
         P -. "replay & history" .-> W
         A["REST API"] --> DS["Device service"] --> CM["Camera manager"]
@@ -156,6 +157,7 @@ keeps its data in the `hub-data` and `pg-data` volumes.
 | `GET /api/v1/events` · `/events/{id}` | Event history (filter by camera and time) | logged in |
 | `GET /api/v1/events/{id}/snapshot?kind=` | Event image: `annotated`, `clean` or `thumbnail` | bearer or signed link |
 | `GET /api/v1/audit` | Who changed which device or user, and when | admin |
+| `GET /api/v1/push` · `POST /push/subscriptions` · `DELETE /push/subscriptions/{id}` · `POST /push/test` | Web push key, subscribe or unsubscribe a browser, send yourself a test | logged in |
 | `WS /api/v1/ws/events` | Live motion and status events | ticket |
 | `GET /api/v1/health/live` · `/ready` | Probes for Docker and Kubernetes | public |
 
@@ -214,6 +216,14 @@ mode, wildcard CORS/hosts and unencrypted SMTP.
   Password works. Failed deliveries are retried with growing delays
   (`VISION_HUB_NOTIFICATIONS__*`) and survive restarts; an alert may arrive twice after a crash,
   but is never silently lost.
+- **Push notifications** are on by default: anyone signed in can turn them on per device in the
+  dashboard. Browsers allow push only on secure pages, so open the dashboard over HTTPS (a
+  reverse proxy or a tunnel such as Tailscale) or on `localhost`; a plain `http://192.168…`
+  address shows no switch. iPhones and iPads need the dashboard added to the Home Screen first.
+  The hub signs with a VAPID key: `vision-hub vapid-key` prints one for
+  `VISION_HUB_PUSH__VAPID_PRIVATE_KEY`, otherwise one is created in `data/`. Set
+  `VISION_HUB_PUSH__SUBJECT` to a `mailto:` contact (Safari's push service requires one). The
+  hub only sends to the browsers' own push services (`VISION_HUB_PUSH__ALLOWED_HOSTS`).
 - **Shutdown:** `SIGTERM`/`Ctrl-C` drains gracefully. Requests still open after
   `VISION_HUB_APP__SHUTDOWN_TIMEOUT_SECONDS` (10) are cancelled; give containers more than that
   (compose uses `stop_grace_period: 30s`).

@@ -16,9 +16,9 @@
 
 ## 📍 Current Status
 
-- **Active phase:** Phase 4 — Frontend Dashboard (Phase 3 complete)
+- **Active phase:** none. Phases 1–4 are complete (the MVP is done)
 - **Working branch:** `main`
-- **Next task:** 4.4 → "Optional: web-push notifications" (needs approval: VAPID keys and a new backend dependency). Everything else in Phase 4 is done
+- **Next task:** Phase 4 is complete. Next is the optional *Future* section, only if needed
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -344,7 +344,14 @@
   - **Animation:** 60 fps at 4× CPU slowdown (opt-in `e2e/perf.e2e.js`).
   - **Accessibility checks:** axe WCAG 2.2 AA plus best practices on every page and dialog, desktop and phone (`e2e/a11y.e2e.js`); keyboard-only flows (`e2e/keyboard.e2e.js`).
   - **Bugs found:** the skip link did nothing (the router swallowed `#main`), the sign-in and boot screens had no `main` landmark, and axe read contrast mid-fade.
-- [ ] Optional: web-push notifications (needs VAPID keys and a new backend dependency; ask first)
+- [x] Web push notifications, with no new dependency: RFC 8291 encryption and RFC 8292 VAPID signing on the existing `cryptography` and PyJWT, checked against the RFC's worked example.
+  - **Backend:** a `push` alert channel beside email, through the same outbox and retries. Expired subscriptions are removed, and the event id as notification tag makes a retried alert replace the first. Channels with nobody to notify are skipped.
+  - **Security:** subscriptions only to known push services over HTTPS, with no redirects (no SSRF).
+  - **Endpoints and setup:** `/push` endpoints (key, subscribe, unsubscribe your own, test); `vision-hub vapid-key`, or a key file created once.
+  - **Dashboard:** a "Notifications" switch in the sidebar and phone menu. It explains blocked permissions and the iPhone Home Screen requirement, and repairs subscriptions the browser dropped or that were made with an old key. Signing out unsubscribes the device.
+  - **Service worker:** shows the alert with the snapshot, stays quiet while the dashboard is in front, and opens the event in place when tapped.
+  - **Tests:** 7 e2e tests in full Chromium (the headless shell has no notifications) and an end-to-end hub test (motion → encrypted push → signed snapshot loads).
+  - **Not verified here:** delivery through Google's, Mozilla's or Apple's real push services, which needs a real browser on HTTPS.
 
 **✅ Phase 4 exit criteria**
 - [x] Dashboard usable on a phone; alerts appear within 1 s of motion ending (e2e on Pixel 7: 17–444 ms from the hub's `motion.ended` to the toast)
