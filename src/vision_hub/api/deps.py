@@ -11,13 +11,14 @@ from starlette.requests import HTTPConnection
 from vision_hub.api.v1 import API_V1_PREFIX
 from vision_hub.core.config import Settings
 from vision_hub.core.container import Container
-from vision_hub.core.errors import AuthenticationError, PermissionDeniedError
+from vision_hub.core.errors import AuthenticationError, NotFoundError, PermissionDeniedError
 from vision_hub.domain.auth import Principal, Role
 from vision_hub.domain.health import HealthCheck
 from vision_hub.services.audit import Auditor
 from vision_hub.services.auth import AuthService
 from vision_hub.services.devices import DeviceService
 from vision_hub.services.events import EventService
+from vision_hub.services.push import PushService
 
 
 def get_container(connection: HTTPConnection) -> Container:
@@ -66,6 +67,16 @@ def get_event_service(container: ContainerDep) -> EventService:
 
 
 EventServiceDep = Annotated[EventService, Depends(get_event_service)]
+
+
+def get_push_service(container: ContainerDep) -> PushService:
+    if container.push is None:
+        msg = "Push notifications are turned off on this hub."
+        raise NotFoundError(msg)
+    return container.push
+
+
+PushServiceDep = Annotated[PushService, Depends(get_push_service)]
 
 
 def get_auditor(container: ContainerDep) -> Auditor:

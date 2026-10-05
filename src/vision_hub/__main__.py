@@ -1,4 +1,4 @@
-"""Command-line entrypoint: ``vision-hub [serve|hash-password|create-user|openapi]``."""
+"""Command-line entrypoint: ``vision-hub [serve|hash-password|create-user|openapi|vapid-key]``."""
 
 import argparse
 import asyncio
@@ -20,6 +20,7 @@ from vision_hub.infra.db.engine import create_engine, create_sessions
 from vision_hub.infra.db.migrate import upgrade_to_head
 from vision_hub.infra.db.repositories.audit import SqlAuditLog
 from vision_hub.infra.db.repositories.users import SqlUserRepository
+from vision_hub.infra.notifiers.webpush import VapidKey
 from vision_hub.main import create_app
 from vision_hub.services.audit import Auditor
 
@@ -55,8 +56,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     openapi.add_argument("-o", "--output", type=Path, help="write to this file instead")
     openapi.set_defaults(command="openapi")
 
+    vapid_key = commands.add_parser(
+        "vapid-key", help=f"print a new web push key for {env_name('push', 'vapid_private_key')}"
+    )
+    vapid_key.set_defaults(command="vapid-key")
+
     args = parser.parse_args(argv)
-    if args.command == "openapi":
+    if args.command == "vapid-key":
+        sys.stdout.write(VapidKey.generate().to_text() + "\n")
+    elif args.command == "openapi":
         _write_openapi(args.output)
     elif args.command == "hash-password":
         sys.stdout.write(PasswordHasher().hash(_prompt_new_password()) + "\n")

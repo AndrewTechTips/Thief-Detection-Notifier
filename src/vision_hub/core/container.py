@@ -13,8 +13,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from vision_hub.api.v1 import API_V1_PREFIX
 from vision_hub.core.backoff import Backoff
-from vision_hub.core.config import NotificationsConfig, Settings, env_name
+from vision_hub.core.config import NotificationsConfig, PushConfig, Settings, env_name
 from vision_hub.core.encryption import SecretBox
 from vision_hub.core.lifecycle import Lifecycle, ShutdownCheck
 from vision_hub.core.logging import get_logger
@@ -27,6 +28,7 @@ from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import CameraEvent, topic_for
 from vision_hub.domain.health import HealthCheck
 from vision_hub.domain.notifications import Notifier, RetryPolicy
+from vision_hub.domain.storage import SnapshotKind
 from vision_hub.infra.auth import InMemoryTicketStore
 from vision_hub.infra.bus.memory import InMemoryEventBus
 from vision_hub.infra.db.engine import Sessions, create_engine, create_sessions
@@ -36,18 +38,26 @@ from vision_hub.infra.db.repositories.audit import SqlAuditLog
 from vision_hub.infra.db.repositories.devices import SqlDeviceRepository
 from vision_hub.infra.db.repositories.events import SqlEventRepository
 from vision_hub.infra.db.repositories.notifications import SqlNotificationOutbox
+from vision_hub.infra.db.repositories.push import SqlPushSubscriptionRepository
 from vision_hub.infra.db.repositories.tokens import SqlTokenRevocationStore
 from vision_hub.infra.db.repositories.users import SqlUserRepository
 from vision_hub.infra.notifiers.email import EmailNotifier
+from vision_hub.infra.notifiers.webpush import (
+    VapidKey,
+    WebPushNotifier,
+    load_or_create_vapid_key,
+)
 from vision_hub.infra.process_lock import ProcessLock
 from vision_hub.infra.rate_limit import RateLimiter
 from vision_hub.infra.storage.local import LocalSnapshotStore
 from vision_hub.realtime.connections import ConnectionManager
+from vision_hub.schemas.events import snapshot_resource
 from vision_hub.services.audit import SYSTEM_ACTOR, Auditor
 from vision_hub.services.auth import AuthService
 from vision_hub.services.devices import DeviceService
 from vision_hub.services.events import EventRecorder, EventService, RetentionService
 from vision_hub.services.notifications import NotificationService
+from vision_hub.services.push import PushService
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.fleet import DeviceSpec, load_fleet
 from vision_hub.vision.manager import CameraManager, camera_worker_factory
@@ -80,6 +90,7 @@ class Container:
     url_signer: UrlSigner
     tickets: InMemoryTicketStore
     realtime: ConnectionManager
+    push: PushService | None = None  # None when push is turned off
     health_checks: tuple[HealthCheck, ...] = ()
 
 
@@ -141,9 +152,19 @@ async def build_container(
         stack.callback(bus.close)
         realtime = ConnectionManager(bus, settings.realtime, history=events, metrics=metrics)
         stack.callback(realtime.close_all)  # runs before bus.close: clients get 1001
+        url_signer = UrlSigner(
+            settings.security.jwt_secret, ttl_seconds=settings.security.signed_url_ttl_seconds
+        )
+        notifiers = _build_notifiers(settings)
+        push: PushService | None = None
+        if settings.push.enabled:
+            subscriptions = SqlPushSubscriptionRepository(sessions)
+            web_push = _build_web_push(settings, subscriptions, url_signer)
+            notifiers.append(web_push)
+            push = PushService(subscriptions, web_push, allowed_hosts=settings.push.allowed_hosts)
         notifications = NotificationService(
             bus,
-            _build_notifiers(settings),
+            notifiers,
             outbox=SqlNotificationOutbox(sessions),
             evidence=events.evidence,
             device_name=lambda device_id: devices.name_of(device_id),
@@ -228,11 +249,10 @@ async def build_container(
             auditor=auditor,
             metrics=metrics,
             lifecycle=lifecycle,
-            url_signer=UrlSigner(
-                settings.security.jwt_secret, ttl_seconds=settings.security.signed_url_ttl_seconds
-            ),
+            url_signer=url_signer,
             tickets=InMemoryTicketStore(settings.security.ticket_ttl_seconds),
             realtime=realtime,
+            push=push,
             health_checks=(DatabaseHealthCheck(engine), ShutdownCheck(lifecycle)),
         )
         await devices.start_enabled()
@@ -343,3 +363,44 @@ def _build_notifiers(settings: Settings) -> list[Notifier]:
         logger.info("email_alerts_disabled", hint=f"set {env_name('smtp', 'enabled')}=true")
         return []
     return [EmailNotifier(settings.smtp)]
+
+
+def _build_web_push(
+    settings: Settings, subscriptions: SqlPushSubscriptionRepository, signer: UrlSigner
+) -> WebPushNotifier:
+    config = settings.push
+
+    def snapshot_link(event_id: str) -> str:
+        # Relative: the service worker resolves it against the dashboard's own origin.
+        resource = snapshot_resource(API_V1_PREFIX, event_id, SnapshotKind.ANNOTATED)
+        expires, signature = signer.sign(resource)
+        return f"{resource}&expires={expires}&signature={signature}"
+
+    return WebPushNotifier(
+        subscriptions,
+        _vapid_key(config),
+        subject=_push_subject(settings),
+        ttl_seconds=config.ttl_seconds,
+        timeout_seconds=config.timeout_seconds,
+        snapshot_link=snapshot_link,
+    )
+
+
+def _vapid_key(config: PushConfig) -> VapidKey:
+    if config.vapid_private_key is not None:
+        return VapidKey.from_text(config.vapid_private_key.get_secret_value())
+    return load_or_create_vapid_key(config.vapid_key_file)
+
+
+def _push_subject(settings: Settings) -> str:
+    """Push services contact this address about problems; Apple's rejects missing ones."""
+    if settings.push.subject:
+        return settings.push.subject
+    if sender := settings.smtp.effective_sender:
+        return f"mailto:{sender}"
+    logger.warning(
+        "push_subject_missing",
+        hint=f"set {env_name('push', 'subject')} to a mailto: address; Safari's push service "
+        "may refuse alerts without a real contact",
+    )
+    return "mailto:vision-hub@localhost"

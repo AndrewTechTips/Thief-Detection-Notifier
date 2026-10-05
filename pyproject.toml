@@ -94,6 +94,9 @@ docstring-code-format = true
 python_version = "3.14"
 strict = true
 files = ["src", "tests", "benchmarks"]
+# Module names from paths (tests have no __init__.py), so `tests.fakes.*` imports resolve.
+mypy_path = "src:benchmarks"
+explicit_package_bases = true
 plugins = ["pydantic.mypy"]
 warn_unreachable = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
@@ -106,6 +109,7 @@ warn_required_dynamic_aliases = true
 # ── Pytest / Coverage ───────────────────────────────────────
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]  # shared fakes: `from tests.fakes... import`
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = [

@@ -4,6 +4,7 @@ Every variable is prefixed with ``VISION_HUB_`` and nested groups use ``__`` as 
 e.g. ``VISION_HUB_SMTP__PASSWORD`` maps to ``Settings().smtp.password``.
 """
 
+import base64
 import secrets
 from enum import StrEnum
 from functools import lru_cache
@@ -196,6 +197,53 @@ class NotificationsConfig(_Group):
         return self
 
 
+# Push services of the major browsers (Chrome/Edge/Android, Firefox, Safari/iOS, Windows).
+DEFAULT_PUSH_HOSTS = (
+    "fcm.googleapis.com",
+    "push.services.mozilla.com",
+    "push.apple.com",
+    "notify.windows.com",
+)
+
+
+class PushConfig(_Group):
+    """Web push alerts to the browsers that turned them on in the dashboard."""
+
+    enabled: bool = True
+    # Base64url P-256 private key (``vision-hub vapid-key`` prints one). Unset: a key file is
+    # created once. Browsers subscribe to its public half, so keep it stable.
+    vapid_private_key: SecretStr | None = None
+    vapid_key_file: Path = Path("data/vapid.key")
+    # Contact for push services, "mailto:" or "https:". Unset: the SMTP sender, if any.
+    subject: str | None = None
+    ttl_seconds: int = Field(default=6 * 3600, ge=0, le=28 * 24 * 3600)  # held while offline
+    timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    # Subscriptions must point at these hosts (or their subdomains): the hub POSTs to them.
+    allowed_hosts: CsvStrList = Field(default_factory=lambda: list(DEFAULT_PUSH_HOSTS))
+
+    @field_validator("subject")
+    @classmethod
+    def _contact_uri(cls, value: str | None) -> str | None:
+        if value is not None and not value.startswith(("mailto:", "https://")):
+            msg = "must be a mailto: or https: URI"
+            raise ValueError(msg)
+        return value
+
+    @field_validator("vapid_private_key")
+    @classmethod
+    def _valid_key(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None:
+            text = value.get_secret_value().strip()
+            try:
+                raw = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+            except ValueError:  # binascii.Error included
+                raw = b""
+            if len(raw) != 32:
+                msg = "must be a 32-byte P-256 private key, base64url-encoded"
+                raise ValueError(msg)
+        return value
+
+
 class MetricsConfig(_Group):
     enabled: bool = True  # GET /metrics in the Prometheus text format
     # Static bearer token for the scraper (Prometheus `authorization.credentials`); admins can
@@ -289,6 +337,7 @@ class Settings(BaseSettings):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     smtp: SmtpConfig = Field(default_factory=SmtpConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
+    push: PushConfig = Field(default_factory=PushConfig)
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     db: DatabaseConfig = Field(default_factory=DatabaseConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)

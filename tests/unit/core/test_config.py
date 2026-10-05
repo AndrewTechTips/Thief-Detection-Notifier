@@ -129,6 +129,9 @@ class TestFieldValidation:
             ("app__log_level", "verbose", "DEBUG"),
             ("smtp__recipients", "not-an-email", "valid email"),
             ("storage__jpeg_quality", "0", "greater than or equal to 1"),
+            ("push__subject", "admin@example.com", "mailto: or https:"),
+            ("push__vapid_private_key", "c2hvcnQ", "32-byte P-256"),
+            ("push__vapid_private_key", "not base64 at all!", "32-byte P-256"),
         ],
     )
     def test_invalid_values_are_rejected(

@@ -152,3 +152,21 @@ class AuditLogRow(Base):
     target_id: Mapped[str] = mapped_column(String(100))
     details: Mapped[dict[str, Any]] = mapped_column(JsonDocument, default=dict)
     request_id: Mapped[str | None] = mapped_column(String(64))
+
+
+class PushSubscriptionRow(Base):
+    """A browser receiving alerts as web push notifications. ``id`` is the SHA-256 of the
+    endpoint (one row per browser); deleted with its user."""
+
+    __tablename__ = "push_subscriptions"
+    __table_args__ = (Index("ix_push_subscriptions_username", "username"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    username: Mapped[str] = mapped_column(
+        String(100), ForeignKey("users.username", ondelete="CASCADE")
+    )
+    endpoint: Mapped[str] = mapped_column(String(1024))
+    p256dh: Mapped[str] = mapped_column(String(100))
+    auth: Mapped[str] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+    last_success_at: Mapped[datetime | None]

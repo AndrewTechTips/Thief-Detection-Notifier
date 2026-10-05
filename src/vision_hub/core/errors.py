@@ -61,6 +61,11 @@ class InvalidCursorError(BadRequestError):
         super().__init__(detail or "Use the next_cursor value from a previous page.", **extensions)
 
 
+class PushServiceNotAllowedError(BadRequestError):
+    code = "push-service-not-allowed"
+    title = "Push Service Not Allowed"
+
+
 class NotFoundError(AppError):
     status_code = HTTPStatus.NOT_FOUND
     code = "not-found"

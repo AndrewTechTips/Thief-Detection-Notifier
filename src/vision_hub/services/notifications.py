@@ -141,12 +141,15 @@ class NotificationService:
             )
             return
         self._last_alert[device_id] = now
+        channels = [name for name, notifier in self._notifiers.items() if await _wanted(notifier)]
+        if not channels:
+            return
         try:
-            await self._outbox.enqueue(ended.event.id, device_id, list(self._notifiers), at=now)
+            await self._outbox.enqueue(ended.event.id, device_id, channels, at=now)
         except Exception:
             logger.exception("outbox_unavailable", device_id=device_id, event_id=ended.event.id)
             alert = self._alert(ended.event, ended.annotated_jpeg)
-            for notifier in self._notifiers.values():
+            for notifier in (self._notifiers[name] for name in channels):
                 self._track(self._send_directly(notifier, alert))
             return
         self._wake.set()
@@ -285,3 +288,12 @@ class NotificationService:
         task = asyncio.create_task(coroutine)
         self._deliveries.add(task)
         task.add_done_callback(self._deliveries.discard)
+
+
+async def _wanted(notifier: Notifier) -> bool:
+    """Whether to store a delivery for this channel. When unsure (its storage is down), yes."""
+    try:
+        return await notifier.has_recipients()
+    except Exception:
+        logger.exception("notifier_recipients_unknown", channel=notifier.name)
+        return True

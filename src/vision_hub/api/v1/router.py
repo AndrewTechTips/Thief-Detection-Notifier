@@ -10,7 +10,7 @@ from vision_hub.api.deps import (
     require_signature_or_bearer,
 )
 from vision_hub.api.v1 import API_V1_PREFIX
-from vision_hub.api.v1.routes import audit, auth, devices, events, health, ws
+from vision_hub.api.v1.routes import audit, auth, devices, events, health, push, ws
 from vision_hub.schemas.problem import ProblemDetail
 
 public_router = APIRouter()
@@ -25,6 +25,7 @@ protected_router.include_router(auth.identity_router)
 protected_router.include_router(devices.router)
 protected_router.include_router(events.router)
 protected_router.include_router(audit.router)
+protected_router.include_router(push.router)
 
 # Endpoints browsers open without headers accept a single-use ?ticket= as well as a bearer token.
 ticket_router = APIRouter(

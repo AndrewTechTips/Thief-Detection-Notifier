@@ -7,8 +7,11 @@ import pytest
 import uvicorn
 from fastapi import FastAPI
 from pwdlib import PasswordHash
+from pydantic import SecretStr
 
 from vision_hub import __main__ as cli
+from vision_hub.core.config import PushConfig
+from vision_hub.infra.notifiers.webpush import VapidKey
 
 
 @pytest.fixture
@@ -145,3 +148,12 @@ class TestOpenApi:
 
         assert output.read_text(encoding="utf-8").endswith("}\n")
         assert json.loads(output.read_text(encoding="utf-8"))["paths"]
+
+
+def test_vapid_key_prints_a_key_the_settings_accept(capsys: pytest.CaptureFixture[str]) -> None:
+    cli.main(["vapid-key"])
+
+    printed = capsys.readouterr().out.strip()
+    config = PushConfig(vapid_private_key=SecretStr(printed))
+    assert config.vapid_private_key is not None
+    assert VapidKey.from_text(printed).to_text() == printed

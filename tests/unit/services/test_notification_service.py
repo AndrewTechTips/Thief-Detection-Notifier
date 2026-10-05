@@ -39,8 +39,10 @@ class FakeNotifier:
         *,
         failures: Sequence[Exception] = (),
         delay: float = 0,
+        recipients: bool | Exception = True,
     ) -> None:
         self._name = name
+        self.recipients = recipients
         self.failures = list(failures)
         self.delay = delay
         self.attempts = 0
@@ -50,6 +52,11 @@ class FakeNotifier:
     @property
     def name(self) -> str:
         return self._name
+
+    async def has_recipients(self) -> bool:
+        if isinstance(self.recipients, Exception):
+            raise self.recipients
+        return self.recipients
 
     async def send(self, alert: Alert) -> None:
         self.attempts += 1
@@ -246,6 +253,29 @@ class TestAlerts:
 
         assert len(email.sent) == len(webhook.sent) == 1
         assert sorted(hub.outbox.rows) == ["e1:email", "e1:webhook"]
+
+    async def test_channels_nobody_listens_on_are_skipped(self, hub: Harness) -> None:
+        email, push = FakeNotifier("email"), FakeNotifier("push", recipients=False)
+        alerts = hub.service(email, push)
+        await alerts.start()
+
+        hub.publish(hub.ended())
+        await alerts.stop()
+
+        assert push.attempts == 0
+        assert sorted(hub.outbox.rows) == ["e1:email"]
+
+    async def test_a_channel_that_cannot_tell_still_gets_the_alert(
+        self, hub: Harness, log_records: LogRecords
+    ) -> None:
+        push = FakeNotifier("push", recipients=RuntimeError("database down"))
+        alerts = hub.service(push)
+
+        await alerts.handle(hub.ended())
+        await alerts.stop()
+
+        assert len(push.sent) == 1
+        assert any(r["event"] == "notifier_recipients_unknown" for r in log_records())
 
     async def test_other_messages_on_the_topic_are_ignored(self, hub: Harness) -> None:
         notifier = FakeNotifier()

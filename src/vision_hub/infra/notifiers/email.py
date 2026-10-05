@@ -33,6 +33,9 @@ class EmailNotifier:
     def name(self) -> str:
         return "email"
 
+    async def has_recipients(self) -> bool:
+        return True  # required by the constructor
+
     async def send(self, alert: Alert) -> None:
         config = self._config
         password = config.password.get_secret_value() if config.password else None

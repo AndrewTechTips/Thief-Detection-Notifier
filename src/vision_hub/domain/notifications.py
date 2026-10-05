@@ -31,6 +31,11 @@ class Notifier(Protocol):
     @property
     def name(self) -> str: ...
 
+    async def has_recipients(self) -> bool:
+        """False when nobody would receive an alert now (no browser subscribed to push, say):
+        the channel is skipped instead of storing deliveries to no one."""
+        ...
+
     async def send(self, alert: Alert) -> None:
         """Deliver the alert or raise ``NotificationError``."""
         ...
