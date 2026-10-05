@@ -30,7 +30,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from vision_hub.core.logging import get_logger
 from vision_hub.core.security import utc_now
 from vision_hub.domain.notifications import Alert, NotificationError
-from vision_hub.domain.push import PushSubscription, PushSubscriptionRepository
+from vision_hub.domain.push import PushSubscription, PushSubscriptionRepository, PushTestResult
 
 logger = get_logger(__name__)
 
@@ -259,11 +259,13 @@ class WebPushNotifier:
             msg = "every push service rejected the alert"
             raise NotificationError(msg, retryable=False)
 
-    async def send_test(self, username: str) -> int:
-        """A test notification to ``username``'s browsers; returns how many accepted it."""
+    async def send_test(self, username: str) -> PushTestResult:
+        """A test notification to ``username``'s browsers. Subscriptions found expired are
+        removed and counted in neither number."""
         subscriptions = await self._subscriptions.list(username=username)
         outcomes = await self._fan_out(subscriptions, {"kind": "test"}, urgency="normal")
-        return outcomes.count(Outcome.SENT)
+        failed = outcomes.count(Outcome.RETRY) + outcomes.count(Outcome.REJECTED)
+        return PushTestResult(delivered=outcomes.count(Outcome.SENT), failed=failed)
 
     def payload(self, alert: Alert) -> dict[str, Any]:
         """What the service worker needs to show the alert; it formats the text itself, in the

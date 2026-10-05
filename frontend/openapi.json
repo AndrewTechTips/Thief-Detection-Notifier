@@ -1995,7 +1995,7 @@
           "push"
         ],
         "summary": "Send a test notification",
-        "description": "To every browser subscribed under your account.",
+        "description": "To every browser subscribed under your account. Browsers whose subscription turns out to\nhave expired are removed and counted in neither number.",
         "operationId": "push_send_test",
         "responses": {
           "200": {
@@ -3286,11 +3286,17 @@
             "type": "integer",
             "title": "Delivered",
             "description": "Browsers whose push service accepted it"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed",
+            "description": "Push service unreachable or refused it"
           }
         },
         "type": "object",
         "required": [
-          "delivered"
+          "delivered",
+          "failed"
         ],
         "title": "PushTestOut"
       },

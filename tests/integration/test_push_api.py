@@ -221,7 +221,7 @@ class TestDelivery:
 
         response = await client.post(f"{PUSH}/test", headers=admin)
 
-        assert response.json() == {"delivered": 2}
+        assert response.json() == {"delivered": 2, "failed": 0}
         _, headers, body = push_service.request_for(mine)
         assert json.loads(mine.decrypt(body)) == {"kind": "test"}
         assert "mailto:owner@example.com" not in headers["Authorization"]  # inside the JWT

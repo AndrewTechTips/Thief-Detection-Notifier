@@ -251,6 +251,16 @@ class TestNotifier:
 
         await notifier.send(alert())
 
+    async def test_a_test_reports_failures_apart_from_expired_browsers(self) -> None:
+        down, refused, gone = Browser(), Browser(), Browser()
+        service = FakePushService({down.endpoint: 503, refused.endpoint: 400, gone.endpoint: 410})
+        subscriptions = [b.subscribe("ana") for b in (down, refused, gone)]
+        notifier, _ = make_notifier(service, subscriptions)
+
+        result = await notifier.send_test("ana")
+
+        assert (result.delivered, result.failed) == (0, 2)
+
     async def test_unusable_stored_keys_are_removed(self) -> None:
         broken = Browser().subscribe("ana", p256dh=b64url_encode(b"\x04" + b"\x00" * 64))
         service = FakePushService()
@@ -266,9 +276,9 @@ class TestNotifier:
         service = FakePushService()
         notifier, _ = make_notifier(service, [mine.subscribe("ana"), theirs.subscribe("bo")])
 
-        delivered = await notifier.send_test("ana")
+        result = await notifier.send_test("ana")
 
-        assert delivered == 1
+        assert (result.delivered, result.failed) == (1, 0)
         _, headers, body = service.request_for(mine)
         assert json.loads(mine.decrypt(body)) == {"kind": "test"}
         assert headers["Urgency"] == "normal"

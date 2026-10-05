@@ -36,14 +36,20 @@ class PushSubscriptionRepository(Protocol):
     async def mark_used(self, subscription_id: str, *, at: datetime) -> None: ...
 
 
+@dataclass(frozen=True, slots=True)
+class PushTestResult:
+    delivered: int  # accepted by the browser's push service
+    failed: int  # push service unreachable or refused it
+
+
 class PushSender(Protocol):
     @property
     def public_key(self) -> str:
         """The key browsers subscribe with (``applicationServerKey``), base64url."""
         ...
 
-    async def send_test(self, username: str) -> int:
-        """A test notification to the user's browsers; returns how many accepted it."""
+    async def send_test(self, username: str) -> PushTestResult:
+        """A test notification to the user's browsers."""
         ...
 
 

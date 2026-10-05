@@ -440,7 +440,8 @@ export interface paths {
         put?: never;
         /**
          * Send a test notification
-         * @description To every browser subscribed under your account.
+         * @description To every browser subscribed under your account. Browsers whose subscription turns out to
+         *     have expired are removed and counted in neither number.
          */
         post: operations["push_send_test"];
         delete?: never;
@@ -899,6 +900,11 @@ export interface components {
              * @description Browsers whose push service accepted it
              */
             delivered: number;
+            /**
+             * Failed
+             * @description Push service unreachable or refused it
+             */
+            failed: number;
         };
         /** Readiness */
         Readiness: {

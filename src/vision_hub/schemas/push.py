@@ -44,3 +44,4 @@ class PushConfigOut(ApiSchema):
 
 class PushTestOut(ApiSchema):
     delivered: Annotated[int, Field(description="Browsers whose push service accepted it")]
+    failed: Annotated[int, Field(description="Push service unreachable or refused it")]

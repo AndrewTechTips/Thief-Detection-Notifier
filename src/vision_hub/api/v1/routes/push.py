@@ -63,5 +63,6 @@ async def unsubscribe(
 
 @router.post("/test", summary="Send a test notification")
 async def send_test(push: PushServiceDep, principal: CurrentPrincipal) -> PushTestOut:
-    """To every browser subscribed under your account."""
-    return PushTestOut(delivered=await push.send_test(principal))
+    """To every browser subscribed under your account. Browsers whose subscription turns out to
+    have expired are removed and counted in neither number."""
+    return PushTestOut.model_validate(await push.send_test(principal))

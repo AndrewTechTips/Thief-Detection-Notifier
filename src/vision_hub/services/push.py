@@ -10,6 +10,7 @@ from vision_hub.domain.push import (
     PushSender,
     PushSubscription,
     PushSubscriptionRepository,
+    PushTestResult,
     endpoint_allowed,
     subscription_id,
 )
@@ -57,5 +58,5 @@ class PushService:
             msg = "No such subscription."
             raise NotFoundError(msg)
 
-    async def send_test(self, principal: Principal) -> int:
+    async def send_test(self, principal: Principal) -> PushTestResult:
         return await self._sender.send_test(principal.username)
