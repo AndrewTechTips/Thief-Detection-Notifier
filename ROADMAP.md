@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 4 — Frontend Dashboard (Phase 3 complete)
 - **Working branch:** `main`
-- **Next task:** 4.4 → "Performance & accessibility pass"
+- **Next task:** 4.4 → "Optional: web-push notifications" (needs approval: VAPID keys and a new backend dependency). Everything else in Phase 4 is done
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -337,13 +337,19 @@
 - [x] Serve the built assets from FastAPI (`api/dashboard.py`, `APP__DASHBOARD_DIR`): SPA fallback for page paths only (missing files, `/api`, docs and `..` escapes are 404 problem+json), strict page CSP (`script-src`/`style-src 'self'`, no inline; style attributes moved to the CSSOM), `immutable` year-long caching for hashed `assets/`, `no-cache` elsewhere; Brotli/gzip copies written at build time (`scripts/compress.mjs`, 132.7 → 40.7 kB) and served by `Accept-Encoding`, so nothing is compressed per request and MJPEG streams are untouched; Node build stage in the Dockerfile; CI smoke check. Verified in the browser from the hub (no CSP violations) and in the compose stack
 - [x] Installable PWA: manifest (standalone, shortcuts), lens icons rendered by `scripts/make-icons.py` (any, maskable, Apple); service worker generated per build by a Vite plugin (exact hashed precache list, version from its hash, build fails if a placeholder survives): hashed assets cache-first, pages network-first with a 3 s fallback to the cached shell (the app opens when the hub is down and says so), `/api`, docs and metrics never intercepted (verified: no API response cached after streams and 29 snapshots); production builds only; “Update ready, Reload” prompt (verified with a real new build); “Install app” button when the browser offers it. The hub sends the page CSP with `sw.js`: a worker obeys its script's CSP, and the API's blocked every fetch (found live)
 - [x] Playwright end-to-end tests (desktop Chromium + Pixel 7): a throwaway hub per run (`e2e/start-hub.sh`: SQLite, synthetic cameras with a visit every 9 s, test-only admin, the built dashboard, port 8765); sign-in with redirect and wrong password, sign-out, live tiles with real frames and states, motion alert → snapshot → viewer with the hub-to-toast latency measured from real WebSocket frames (17–444 ms over 3 repeats), camera page stop/start, offline start from the service worker, not-found page; 42/42 over `--repeat-each=3`, no flakes; CI job with the report uploaded on failure. Found a real bug: the service worker missed every cached script offline (`Vary: Origin` vs `crossorigin` requests), now matched with `ignoreVary`
-- [ ] Performance & accessibility pass: Lighthouse (mobile), animation frame timing in a performance trace, keyboard navigation, contrast
+- [x] Performance & accessibility pass (`docs/performance.md#dashboard`):
+  - **Lighthouse mobile, applied throttling:** sign-in 97, live 95, events 100, camera 95. Accessibility and best practices 100, CLS ≤ 0.001, TBT 0.
+  - **Startup no longer runs in series:** session restore and the page's code load with the health check, the user comes from the token's claims, and the boot screen pauses only after a real problem. Live LCP 12.4 → 2.9 s.
+  - **LCP and layout shift:** a first-frame poster `<img>` gives LCP an element. Tiles are sized from the stream, and toasts stack with `translate` (CLS 0.125 → 0.001).
+  - **Animation:** 60 fps at 4× CPU slowdown (opt-in `e2e/perf.e2e.js`).
+  - **Accessibility checks:** axe WCAG 2.2 AA plus best practices on every page and dialog, desktop and phone (`e2e/a11y.e2e.js`); keyboard-only flows (`e2e/keyboard.e2e.js`).
+  - **Bugs found:** the skip link did nothing (the router swallowed `#main`), the sign-in and boot screens had no `main` landmark, and axe read contrast mid-fade.
 - [ ] Optional: web-push notifications (needs VAPID keys and a new backend dependency; ask first)
 
 **✅ Phase 4 exit criteria**
-- [ ] Dashboard usable on a phone; alerts appear within 1 s of motion ending
-- [ ] Live view and alerts recover on their own after a hub restart, with missed events replayed
-- [ ] Lighthouse mobile performance and accessibility ≥ 90
+- [x] Dashboard usable on a phone; alerts appear within 1 s of motion ending (e2e on Pixel 7: 17–444 ms from the hub's `motion.ended` to the toast)
+- [x] Live view and alerts recover on their own after a hub restart, with missed events replayed (verified live by restarting the hub under an open dashboard)
+- [x] Lighthouse mobile performance and accessibility ≥ 90 (applied throttling: 95–100 and 100; simulated 75 on stream pages is a Lantern artifact, see `docs/performance.md`)
 
 ---
 

@@ -1,7 +1,7 @@
 # Performance
 
 How much a camera costs, where the time goes, and why the hub runs one thread per camera.
-Every number here can be reproduced:
+The [dashboard](#dashboard) has its own section at the end. Every number here can be reproduced:
 
 ```bash
 uv run python benchmarks/pipeline.py --opencv-threads 0   # stage costs, CPU per camera
@@ -107,3 +107,51 @@ decoding, so CPU, not the architecture, sets the limit on cameras per machine.
 `vision_hub_camera_processing_seconds` (time per frame), `vision_hub_camera_last_frame_age_seconds`
 (a stalled camera), `vision_hub_event_loop_lag_seconds`, and process CPU and memory (Linux).
 See the README for a scrape configuration.
+
+## Dashboard
+
+Lighthouse 12, mobile (Moto G Power viewport, 4G at 562 ms RTT and 1.6 Mbps, 4× CPU slowdown),
+against the hub serving the production build with the demo cameras. *Applied* throttling slows
+the real browser; *simulated* (Lighthouse's default) loads unthrottled and models the timings.
+
+| Page | Performance (applied) | LCP | FCP | CLS | Accessibility | Best practices |
+|------|----------------------:|----:|----:|----:|--------------:|---------------:|
+| Sign in (first visit, cold cache) | 97 | 2.2 s | 2.2 s | 0 | 100 | 100 |
+| Live (two cameras) | 95 | 2.9 s | 1.3 s | 0.001 | 100 | 100 |
+| Events | 100 | 1.7 s | 1.3 s | 0.001 | 100 | 100 |
+| Camera | 95 | 2.9 s | 1.3 s | 0.001 | 100 | 100 |
+
+Total blocking time is 0 ms on every page.
+
+### What changed
+
+| Finding | Change | Effect |
+|---------|--------|--------|
+| A `<canvas>` can't be the LCP element, so a later toast thumbnail was (33–44 s) | The first frame of each stream also goes into a poster `<img>` under the canvas | LCP is the first video frame |
+| Tiles jumped from 16:9 to 4:3 on the first frame, and new toasts pushed the stack | Tiles take their shape from the camera's stream size; toasts stack with `translate` | CLS 0.125 → 0.001 |
+| Startup ran in series: health check, then token refresh, then `/auth/me`, then the page's code, then the camera list, then the streams | The session restore and the page's code start at once with the health check; the user comes from the access token's claims instead of `/auth/me`; the live page shares the camera-list request the app already makes | Live LCP **12.4 → 2.9 s** |
+| The boot screen paused 0.7 s on “Hub online” whenever the hub took over 0.4 s to answer | It pauses only after a real problem (hub offline, server error) | Sign in **74 → 97** |
+
+### Reading the numbers
+
+- **Simulated scores for live and camera pages are 75.** Lantern models the first frame as waiting
+  for its MJPEG response to *finish*, and a stream never finishes, so it predicts an LCP of
+  45–65 s. The same runs observed the frame at under 100 ms unthrottled, and applied throttling
+  measures 2.9 s. The other pages score 100 simulated.
+- **Events LCP depends on timing.** Rows appear live, and a row whose text paints larger than
+  anything so far becomes a new LCP candidate. In one run a visit from the demo cameras moved
+  LCP to 12.9 s while the speed index was 0.9 s. With no motion during the trace it's 1.7 s.
+- **The hub allows 5 token refreshes a minute per address.** Each audited page load refreshes once,
+  so back-to-back runs hit 429, wait for `Retry-After` and lose best-practice points. Leave about
+  15 s between runs.
+
+### Animation and accessibility
+
+- **Frame timing** (`PERF=1 npx playwright test e2e/perf.e2e.js`, 4× CPU slowdown through CDP):
+  the live grid, page changes and the event viewer all hold 60 fps, p95 frame 16.8 ms, no frame
+  over 50 ms. The test was checked against an injected 120 ms block, which it reports.
+- **Accessibility:** axe (WCAG 2.2 A/AA plus best practices) runs on every page and dialog, on
+  desktop and phone (`e2e/a11y.e2e.js`), after entry animations finish so contrast is measured on
+  final colours. A keyboard-only test (`e2e/keyboard.e2e.js`) covers signing in, the skip link,
+  navigation, the event viewer (arrow keys, Escape returns focus to the row) and the filters.
+  Each focus stop must be visible.
