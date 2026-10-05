@@ -1,6 +1,10 @@
 // Live video: reads an MJPEG stream (multipart/x-mixed-replace, one JPEG per part) with fetch and
-// paints the newest frame on a canvas. Unlike <img src>, this knows when frames arrive, so it
-// can tell a stalled stream from a live one, reconnect, and stop instantly when told to.
+// paints the newest frame on a canvas. Unlike pointing <img src> at the stream, this knows when
+// frames arrive, so it can tell a stalled stream from a live one, reconnect, and stop instantly.
+//
+// The very first frame also goes into a poster <img> under the canvas, like a <video> poster:
+// Largest Contentful Paint ignores canvases, and an <img> whose source keeps changing would
+// count every frame as a new "largest paint". The poster marks when the picture first appeared.
 
 /**
  * idle: not playing. loading: connecting, no frame yet. playing: frames arriving.
@@ -52,6 +56,7 @@ export function createPartParser(onPart) {
 /**
  * @param {{
  *   canvas: HTMLCanvasElement,
+ *   poster?: HTMLImageElement,
  *   source: () => Promise<string>,
  *   onState?: (state: PlayerState) => void,
  *   onFrame?: (width: number, height: number) => void,
@@ -59,7 +64,7 @@ export function createPartParser(onPart) {
  * }} options
  * `source` returns a fresh stream URL (with a new ticket) for every connection.
  */
-export function createPlayer({ canvas, source, onState, onFrame, stallMs = 8_000 }) {
+export function createPlayer({ canvas, poster, source, onState, onFrame, stallMs = 8_000 }) {
   const context = canvas.getContext("2d");
   /** @type {PlayerState} */
   let state = "idle";
@@ -86,10 +91,10 @@ export function createPlayer({ canvas, source, onState, onFrame, stallMs = 8_000
     while (pending) {
       const jpeg = pending;
       pending = null;
+      const blob = new Blob([/** @type {BlobPart} */ (jpeg)], { type: "image/jpeg" });
+      if (poster && !poster.src) poster.src = URL.createObjectURL(blob);
       try {
-        const bitmap = await createImageBitmap(
-          new Blob([/** @type {BlobPart} */ (jpeg)], { type: "image/jpeg" }),
-        );
+        const bitmap = await createImageBitmap(blob);
         if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
           canvas.width = bitmap.width;
           canvas.height = bitmap.height;

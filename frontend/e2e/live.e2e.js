@@ -13,8 +13,12 @@ test("live view shows each camera with its state and real frames", async ({ page
   await expect(shed).toContainText("This camera is stopped.");
   await expect(page.getByText(/1 of 2 cameras live/)).toBeVisible();
 
-  // The canvas shows a picture, not a blank: its pixels vary.
-  const distinct = await porch.locator("canvas").evaluate((canvas) => {
+  // The picture is real video, not a blank: its pixels vary.
+  const picture = porch.getByRole("img", { name: "Live view of E2E porch" });
+  await expect
+    .poll(() => picture.evaluate((c) => /** @type {HTMLCanvasElement} */ (c).width))
+    .toBeGreaterThan(0);
+  const distinct = await picture.evaluate((canvas) => {
     const c = /** @type {HTMLCanvasElement} */ (canvas);
     const data = c.getContext("2d")?.getImageData(0, 0, c.width, c.height).data ?? [];
     const values = new Set();

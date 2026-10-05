@@ -1,10 +1,12 @@
-// Toast notifications. Newest sits closest to the screen edge; siblings glide (FLIP) as toasts
-// come and go. Timers pause while the pointer or focus is on a toast and while the tab is
-// hidden, so an alert raised in the background is still there when you come back.
+// Toast notifications. Newest sits closest to the screen edge; older ones glide away from it.
+// Toasts are positioned with the CSS `translate` property, never by page layout, so adding or
+// removing one doesn't shift anything (no layout shift, compositor-only motion). Timers pause
+// while the pointer or focus is on a toast and while the tab is hidden, so an alert raised in
+// the background is still there when you come back.
 
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
-import { EASE_OUT, enter, exit, flip, reducedMotion } from "./motion.js";
+import { EASE_OUT, enter, exit, reducedMotion } from "./motion.js";
 
 /**
  * @typedef {"iris" | "signal" | "sodium" | "alarm"} Tone
@@ -25,6 +27,8 @@ const MAX_VISIBLE = 4;
 const DEFAULT_MS = 5000;
 const ALARM_MS = 9000;
 const SWIPE_DISMISS_PX = 72;
+/** Space between stacked toasts, in pixels. */
+const GAP = 10;
 
 /** @type {HTMLElement | undefined} */
 let region;
@@ -67,8 +71,21 @@ function getRegion() {
     document.addEventListener("visibilitychange", () => {
       for (const item of active) item.setPaused("hidden", document.hidden);
     });
+    window.addEventListener("resize", arrange); // widths change, and with them heights
   }
   return region;
+}
+
+/** Stacks the toasts: the newest at the edge, each older one a toast's height further away.
+ * Direction comes from CSS (--toast-stack: -1 upwards from the bottom, 1 down from the top). */
+function arrange() {
+  if (!region) return;
+  const direction = Number(getComputedStyle(region).getPropertyValue("--toast-stack")) || -1;
+  let offset = 0;
+  for (const item of [...active].reverse()) {
+    item.element.style.translate = `0 ${direction * offset}px`;
+    offset += item.element.offsetHeight + GAP;
+  }
 }
 
 class Toast {
@@ -153,7 +170,8 @@ class Toast {
     const container = getRegion();
     if (this.options.key) byKey.set(this.options.key, this);
     active.add(this);
-    flip(container.children, () => container.append(this.element));
+    container.append(this.element);
+    arrange();
     const y = getComputedStyle(container).getPropertyValue("--toast-enter-y").trim() || "16px";
     enter(this.element, [
       { opacity: 0, transform: `translateY(${y}) scale(0.97)` },
@@ -167,6 +185,7 @@ class Toast {
   update(options) {
     this.options = options;
     this.render();
+    arrange(); // the new text may change its height
     this.restartTimer();
     enter(this.element, [{ transform: "scale(1.025)" }, { transform: "none" }], {
       duration: 260,
@@ -300,12 +319,11 @@ class Toast {
     el.style.pointerEvents = "none";
     const from = el.style.transform || "none";
     const to = direction ? `translateX(${direction * 110}%)` : "scale(0.96)";
+    // The others close the gap while this one fades out.
+    arrange();
     exit(el, [
       { opacity: Number(el.style.opacity || 1), transform: from },
       { opacity: 0, transform: to },
-    ]).then(() => {
-      const container = getRegion();
-      flip(container.children, () => el.remove());
-    });
+    ]).then(() => el.remove());
   }
 }

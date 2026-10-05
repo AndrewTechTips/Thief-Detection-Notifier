@@ -54,7 +54,12 @@ export function liveView({ device: initial, host, fps, onFrameSize }) {
   let restart;
 
   host.classList.add("live-host");
+  // The canvas shows the live picture; the poster under it holds the first frame (see mjpeg.js).
   const canvas = h("canvas", { class: "camera-canvas", attrs: { role: "img" } });
+  const poster = h("img", {
+    class: "camera-canvas camera-poster",
+    attrs: { alt: "", "aria-hidden": "true", decoding: "async" },
+  });
   const placeholder = h("div", { class: "camera-placeholder" });
   const chipLight = h("span", { class: "dot", attrs: { "aria-hidden": "true" } });
   const chipLabel = h("span");
@@ -65,10 +70,16 @@ export function liveView({ device: initial, host, fps, onFrameSize }) {
     h("span", { class: "dot", attrs: { "aria-hidden": "true", "data-pulse": "" } }),
     "Motion",
   );
-  const element = h("div", { class: "camera-view" }, canvas, placeholder, chip, motionChip);
+  const element = h("div", { class: "camera-view" }, poster, canvas, placeholder, chip, motionChip);
+
+  // Start at the camera's real shape when the hub knows it, so the first frame doesn't resize
+  // the view and push the page around (layout shift).
+  if (initial.stream)
+    element.style.aspectRatio = `${initial.stream.width} / ${initial.stream.height}`;
 
   const player = createPlayer({
     canvas,
+    poster,
     source: () => streamUrl(device.id, { fps }),
     onState(state) {
       playerState = state;
@@ -132,7 +143,6 @@ export function liveView({ device: initial, host, fps, onFrameSize }) {
 
   return {
     element,
-    canvas,
     /** @param {Device} next */
     update(next) {
       device = next;

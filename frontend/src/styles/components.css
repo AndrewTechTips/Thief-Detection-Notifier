@@ -488,32 +488,40 @@
   }
 
   /* ── Toasts (see ui/toast.js) ────────────────────────────── */
+  /* A zero-height anchor at the screen edge. Toasts sit on it and are stacked by ui/toast.js
+     with `translate`, so they never take part in page layout. */
   .toast-region {
     /* Newest toast sits closest to the screen edge and slides in from it. */
     --toast-enter-y: 16px;
+    --toast-stack: -1;
     position: fixed;
     z-index: 50;
     right: 1rem;
     bottom: calc(1rem + env(safe-area-inset-bottom));
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
     width: min(24rem, calc(100vw - 2rem));
+    height: 0;
     pointer-events: none;
+    & > .toast {
+      position: absolute;
+      inset: auto 0 0;
+    }
     /* Phone layout (no sidebar, a bottom tab bar): toasts drop in from the top instead. */
     @media (max-width: 767px) {
       --toast-enter-y: -16px;
+      --toast-stack: 1;
       top: calc(0.75rem + env(safe-area-inset-top));
       right: 0.75rem;
       bottom: auto;
       left: 0.75rem;
       width: auto;
-      flex-direction: column-reverse;
+      & > .toast {
+        inset: 0 0 auto;
+      }
     }
   }
 
   .toast {
-    position: relative;
+    transition: translate var(--duration-enter) var(--ease-out-soft);
     overflow: hidden;
     display: grid;
     grid-template-columns: auto 1fr auto;

@@ -75,8 +75,6 @@ export default {
         attrs: { "aria-label": "Live view" },
       });
       const view = liveView({ device, host: stage });
-      if (device.stream)
-        view.element.style.aspectRatio = `${device.stream.width} / ${device.stream.height}`;
       const areasText = h("p", { class: "text-sm text-haze" });
       const editAreas = h("button", {
         class: "btn btn-secondary btn-sm",
