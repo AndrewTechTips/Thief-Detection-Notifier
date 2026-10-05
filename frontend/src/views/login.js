@@ -120,7 +120,7 @@ export default {
 
     outlet.append(
       h(
-        "div",
+        "main",
         { class: "login-screen" },
         panel,
         h("div", { class: "mt-5 flex justify-center" }, pill.element),

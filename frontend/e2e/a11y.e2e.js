@@ -1,0 +1,90 @@
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test } from "@playwright/test";
+
+import { signedIn } from "./fixtures.js";
+
+/** WCAG 2.2 A and AA, the standard the dashboard aims for, plus axe's best practices. */
+const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"];
+
+/**
+ * Runs axe on the page as it is now and fails with a readable list of violations.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} where
+ */
+async function audit(page, where) {
+  // Colours are only final once fades finish (looping pulses never do: skip those).
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+        .map((animation) => animation.finished.catch(() => {})),
+    ),
+  );
+  const { violations } = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+  const report = violations.map(
+    (v) =>
+      `${v.id} (${v.impact}): ${v.help}\n${v.nodes
+        .slice(0, 5)
+        .map(
+          (n) => `    ${n.target.join(" ")}: ${n.failureSummary?.split("\n").slice(1).join(" ")}`,
+        )
+        .join("\n")}`,
+  );
+  expect(report, `accessibility problems on ${where}`).toEqual([]);
+}
+
+test("sign-in page", async ({ page }) => {
+  await page.goto("/login");
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+  await audit(page, "sign-in");
+});
+
+test("live view", async ({ page }) => {
+  await signedIn(page);
+  await expect(page.locator(".camera-tile").first()).toHaveAttribute(
+    "data-state",
+    /playing|stopped/,
+  );
+  await audit(page, "live view");
+});
+
+test("events and the snapshot viewer", async ({ page }) => {
+  await signedIn(page, "/events");
+  const first = page.getByRole("button", { name: /^Open snapshot/ }).first();
+  await expect(first).toBeVisible({ timeout: 20_000 });
+  await audit(page, "events");
+  await first.click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await audit(page, "snapshot viewer");
+});
+
+test("camera page with admin controls", async ({ page }) => {
+  await signedIn(page, "/devices/e2e-porch");
+  await expect(page.getByRole("button", { name: "Edit areas" })).toBeVisible();
+  await audit(page, "camera page");
+  await page.getByRole("button", { name: "Edit areas" }).click();
+  await audit(page, "camera page, editing areas");
+});
+
+test("activity and not-found pages", async ({ page }) => {
+  await signedIn(page, "/activity");
+  await expect(page.locator(".activity-row").first()).toBeVisible();
+  await audit(page, "activity");
+  await page.goto("/no/such/page");
+  await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
+  await audit(page, "not found");
+});
+
+test("the hub-unreachable screen", async ({ page, context }) => {
+  await signedIn(page);
+  await expect
+    .poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), {
+      timeout: 15_000,
+    })
+    .toBe(true);
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.getByText("Can't reach the hub")).toBeVisible();
+  await audit(page, "hub unreachable");
+});

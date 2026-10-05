@@ -42,6 +42,22 @@ const NAV = [
   },
 ];
 
+/** Jumps past the navigation. Moves focus itself: browsers don't reliably focus a fragment
+ * target, and the point is that the next Tab continues from the page content. */
+function skipLink() {
+  return h("a", {
+    class: "skip-link",
+    attrs: { href: "#main" },
+    text: "Skip to content",
+    on: {
+      click: (event) => {
+        event.preventDefault();
+        document.getElementById("main")?.focus();
+      },
+    },
+  });
+}
+
 function brand() {
   return h(
     "a",
@@ -82,7 +98,7 @@ export function createShell() {
   const element = h(
     "div",
     { class: "shell" },
-    h("a", { class: "skip-link", attrs: { href: "#main" }, text: "Skip to content" }),
+    skipLink(),
     h(
       "aside",
       { class: "sidebar panel" },

@@ -67,3 +67,29 @@ describe("safeRedirect", () => {
     expect(safeRedirect("/login?next=/x", origin, ["/login"])).toBe("/");
   });
 });
+
+describe("isInternalClick", () => {
+  it("leaves same-page fragment links (like a skip link) to the browser", async () => {
+    const { isInternalClick } = await import("./router.js");
+    const location = { pathname: "/events", search: "", origin: "http://hub.test" };
+    globalThis.location = /** @type {any} */ (location);
+    /** @param {string} href */
+    const link = (href) => {
+      const url = new URL(href, "http://hub.test/events");
+      return /** @type {any} */ ({
+        target: "",
+        origin: url.origin,
+        pathname: url.pathname,
+        search: url.search,
+        hash: url.hash,
+        hasAttribute: () => false,
+      });
+    };
+    const click = /** @type {any} */ ({ defaultPrevented: false, button: 0 });
+
+    expect(isInternalClick(click, link("#main"))).toBe(false);
+    expect(isInternalClick(click, link("/devices/porch"))).toBe(true);
+    expect(isInternalClick(click, link("/#main"))).toBe(true);
+    expect(isInternalClick(click, link("/api/v1/events/1/snapshot"))).toBe(false);
+  });
+});

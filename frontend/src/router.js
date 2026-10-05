@@ -89,6 +89,10 @@ export function isInternalClick(event, link) {
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
   if (link.target && link.target !== "_self") return false;
   if (link.hasAttribute("download") || link.origin !== location.origin) return false;
+  // A jump within this page (e.g. the skip link to #main) is the browser's job.
+  if (link.hash && link.pathname === location.pathname && link.search === location.search) {
+    return false;
+  }
   // API endpoints (snapshots, streams) and other pages are real documents.
   return !link.pathname.startsWith("/api/") && !link.pathname.endsWith(".html");
 }
