@@ -7,6 +7,7 @@ import { connectionPill } from "../ui/connection.js";
 import { h } from "../ui/dom.js";
 import { icon, logo } from "../ui/icons.js";
 import { installButton } from "../ui/install-button.js";
+import { pushToggle } from "../ui/push-toggle.js";
 
 /**
  * @typedef {import("../ui/icons.js").IconName} IconName
@@ -108,6 +109,7 @@ export function createShell() {
         "div",
         { class: "sidebar-footer" },
         installButton("btn btn-ghost btn-sm justify-start").element,
+        pushToggle().element,
         account.element,
         h(
           "div",

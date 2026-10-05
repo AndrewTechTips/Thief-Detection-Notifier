@@ -281,8 +281,52 @@
     top: calc(100% + 0.625rem);
     right: 0;
     z-index: 40;
-    width: 14rem;
+    width: 16.5rem;
     padding: 0.875rem;
     transform-origin: top right;
+  }
+
+  .account-menu-section {
+    margin-bottom: 0.75rem;
+    padding: 0.75rem 0.25rem;
+    border-block: 1px solid rgb(255 255 255 / 0.06);
+  }
+
+  /* Notifications switch: an icon, the label with its state, and the switch itself. */
+  .push-toggle {
+    display: grid;
+    gap: 0.5rem;
+  }
+  .push-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+    & label {
+      cursor: pointer;
+    }
+  }
+  .push-icon {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 9999px;
+    background: rgb(255 255 255 / 0.05);
+    color: var(--color-haze);
+    & svg {
+      width: 1.125rem;
+      height: 1.125rem;
+    }
+  }
+  .push-toggle:has(.switch:checked) .push-icon {
+    background: color-mix(in oklab, var(--color-iris) 16%, transparent);
+    color: var(--color-iris);
+  }
+  /* Its text lines up with the label above. */
+  .push-test {
+    justify-self: start;
+    margin-left: 2rem;
+    padding-inline: 0.625rem;
   }
 }

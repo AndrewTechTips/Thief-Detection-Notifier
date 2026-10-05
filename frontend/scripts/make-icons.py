@@ -59,6 +59,17 @@ def lens(size: int, *, full_bleed: bool, mark: float) -> np.ndarray:
     return cv2.resize(image, (size, size), interpolation=cv2.INTER_AREA)
 
 
+def badge(size: int) -> np.ndarray:
+    """Android's status-bar badge: only the alpha channel shows, in the system's colour."""
+    s = size * SCALE
+    image = np.zeros((s, s, 4), np.uint8)
+    center, outer = (s // 2, s // 2), int(s * 0.4)
+    white = (255, 255, 255, 255)
+    cv2.circle(image, center, outer, white, int(s * 0.09), cv2.LINE_AA)
+    cv2.circle(image, center, int(outer * 0.42), white, -1, cv2.LINE_AA)
+    return cv2.resize(image, (size, size), interpolation=cv2.INTER_AREA)
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     icons = {
@@ -68,6 +79,7 @@ def main() -> None:
         "icon-maskable-512.png": lens(512, full_bleed=True, mark=0.27),
         # iOS rounds the corners itself and ignores the manifest.
         "apple-touch-icon.png": lens(180, full_bleed=True, mark=0.3),
+        "badge-96.png": badge(96),
     }
     for name, image in icons.items():
         cv2.imwrite(str(OUT / name), image, [cv2.IMWRITE_PNG_COMPRESSION, 9])

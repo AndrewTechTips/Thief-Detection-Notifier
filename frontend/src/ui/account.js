@@ -1,10 +1,12 @@
 // Who is signed in, with a way to sign out: a row in the sidebar, a menu in the phone top bar.
 
+import { disablePush } from "../push.js";
 import { session } from "../state/auth.js";
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
 import { installButton } from "./install-button.js";
 import { enter, exit } from "./motion.js";
+import { pushToggle } from "./push-toggle.js";
 
 /** @typedef {import("../api/types.js").Principal} Principal */
 
@@ -19,9 +21,11 @@ function avatar(user) {
   });
 }
 
-/** @param {HTMLButtonElement} button */
+/** Signing out also stops this device's notifications: it may be shared.
+ * @param {HTMLButtonElement} button */
 async function signOut(button) {
   button.setAttribute("aria-busy", "true");
+  await disablePush().catch(() => {});
   await session.signOut();
 }
 
@@ -84,6 +88,7 @@ export function accountMenu() {
     "div",
     { class: "account-menu panel-solid", attrs: { id, hidden: true } },
     h("div", { class: "px-1 pb-3" }, name, role),
+    h("div", { class: "account-menu-section" }, pushToggle().element),
     h(
       "div",
       { class: "grid gap-2" },

@@ -2,6 +2,7 @@ import "./styles/main.css";
 
 import { ApiError } from "./api/errors.js";
 import { registerServiceWorker } from "./app-install.js";
+import { syncPush } from "./push.js";
 import { startAlerts } from "./realtime/alerts.js";
 import { realtime } from "./realtime/live.js";
 import { createRouter, match, safeRedirect } from "./router.js";
@@ -92,6 +93,10 @@ async function start() {
       }),
   });
   await router.start();
+  // A tapped notification opens its event here, without reloading the app.
+  navigator.serviceWorker?.addEventListener("message", (event) => {
+    if (event.data?.type === "open") router.navigate(event.data.url);
+  });
   announceHubChanges();
   connectRealtime();
   startAlerts(realtime, { navigate: router.navigate });
@@ -121,6 +126,7 @@ function connectRealtime() {
       realtime.start();
       // Alerts and lists name cameras from this directory, whichever page opens first.
       loadDevices().catch(() => {});
+      syncPush().catch(() => {});
     } else {
       realtime.stop();
     }

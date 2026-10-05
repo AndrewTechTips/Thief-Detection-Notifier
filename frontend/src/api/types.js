@@ -32,6 +32,10 @@
 /** @typedef {Schemas["AuditEntryOut"]} AuditEntry */
 /** @typedef {Schemas["Page_AuditEntryOut_"]} AuditPage */
 
+// Web push
+/** @typedef {Schemas["PushConfigOut"]} PushConfig */
+/** @typedef {Schemas["PushTestOut"]} PushTest */
+
 // WebSocket protocol (/api/v1/ws/events), discriminated on `type`
 /** @typedef {Schemas["WsServerMessage"]} ServerMessage */
 /** @typedef {Schemas["WsClientMessage"]} ClientMessage */

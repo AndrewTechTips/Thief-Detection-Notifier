@@ -103,6 +103,108 @@ async function staleWhileRevalidate(/** @type {Request} */ request) {
   return cached ?? network;
 }
 
+// ── Notifications ───────────────────────────────────────────
+// The hub sends each alert encrypted for this browser; the browser decrypts it before `push`.
+
+/**
+ * @typedef {{
+ *   kind: "motion",
+ *   event_id: string,
+ *   device_id: string,
+ *   device_name: string,
+ *   started_at: string,
+ *   duration_seconds: number | null,
+ *   image: string | null,
+ * } | { kind: "test" }} PushAlert
+ */
+
+const ICON = "/icons/icon-192.png";
+const BADGE = "/icons/badge-96.png"; // Android's status bar: a white mark on transparent
+
+worker.addEventListener("push", (event) => {
+  /** @type {PushAlert | null} */
+  let alert = null;
+  try {
+    alert = event.data?.json() ?? null;
+  } catch {
+    // not ours: still show something (browsers require a notification for every push)
+  }
+  event.waitUntil(notify(alert));
+});
+
+/** @param {PushAlert | null} alert */
+async function notify(alert) {
+  const registration = worker.registration;
+  if (alert?.kind === "test") {
+    return registration.showNotification("Notifications are on", {
+      body: "Motion alerts will appear like this.",
+      icon: ICON,
+      badge: BADGE,
+      tag: "test",
+    });
+  }
+  if (alert?.kind !== "motion") {
+    return registration.showNotification("Vision Hub", {
+      body: "Open to see what's new.",
+      icon: ICON,
+    });
+  }
+  // Someone looking at the dashboard already sees the alert there.
+  const windows = await worker.clients.matchAll({ type: "window" });
+  if (windows.some((client) => client.focused && client.visibilityState === "visible")) return;
+
+  const lasted = alert.duration_seconds;
+  return registration.showNotification(`Motion on ${alert.device_name}`, {
+    body: lasted
+      ? `At ${clock(alert.started_at)}, for ${duration(lasted)}.`
+      : `At ${clock(alert.started_at)}.`,
+    icon: ICON,
+    badge: BADGE,
+    // Shown large on Android and Windows; the link is signed, so no sign-in is needed.
+    ...(alert.image && { image: new URL(alert.image, worker.location.origin).href }),
+    tag: alert.event_id, // a repeat of the same alert replaces it quietly
+    timestamp: Date.parse(alert.started_at),
+    data: { url: `/events?event=${encodeURIComponent(alert.event_id)}` },
+  });
+}
+
+worker.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const path = event.notification.data?.url ?? "/";
+  event.waitUntil(open(path));
+});
+
+/** Brings the dashboard forward on the event (in place if it's open), or opens it there.
+ * @param {string} path */
+async function open(path) {
+  const windows = await worker.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const existing = windows.find((client) => new URL(client.url).origin === worker.location.origin);
+  if (existing) {
+    existing.postMessage({ type: "open", url: path });
+    await existing.focus();
+    return;
+  }
+  await worker.clients.openWindow(path);
+}
+
+// The page's formats (src/ui/time.js), repeated here: the worker is a single plain file.
+const clockFormat = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+
+/** @param {string} when */
+function clock(when) {
+  return clockFormat.format(new Date(when));
+}
+
+/** @param {number} seconds */
+function duration(seconds) {
+  const total = Math.max(0, Math.round(seconds));
+  if (total < 60) return `${total} s`;
+  const minutes = Math.floor(total / 60);
+  if (minutes < 60) return total % 60 ? `${minutes} min ${total % 60} s` : `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  return minutes % 60 ? `${hours} h ${minutes % 60} min` : `${hours} h`;
+}
+
 /**
  * @template T
  * @param {Promise<T>} promise

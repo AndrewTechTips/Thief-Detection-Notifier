@@ -23,6 +23,11 @@ export VISION_HUB_SECURITY__JWT_SECRET="e2e-only-secret-that-is-long-enough-for-
 # Each test signs in afresh; the production limit (5/minute) would throttle the suite.
 export VISION_HUB_SECURITY__AUTH_RATE_LIMIT=200/minute
 
+# Real push services are out of reach from tests: subscriptions are faked onto this name, which
+# never resolves (e2e/push.e2e.js), so sending to them fails like an unreachable service.
+export VISION_HUB_PUSH__ALLOWED_HOSTS=push.e2e.invalid
+export VISION_HUB_PUSH__SUBJECT=mailto:e2e@example.com
+
 # Relative data paths (snapshots, keys, the lock file) land in the throwaway folder.
 cd "$DATA"
 exec uv run --project "$REPO" --frozen vision-hub serve
