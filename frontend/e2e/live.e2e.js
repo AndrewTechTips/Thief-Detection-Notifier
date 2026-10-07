@@ -58,17 +58,19 @@ test("motion raises an alert within a second of the hub closing the event", asyn
   test.info().annotations.push({ type: "alert latency", description: `${latency} ms` });
   expect(latency).toBeLessThan(1000);
 
-  // "View" opens the snapshot.
+  // "View" opens the event.
   await alert.getByRole("button", { name: "View" }).click();
   await expect(page).toHaveURL(/\/events\?event=/);
   const viewer = page.getByRole("dialog");
   await expect(viewer).toBeVisible();
   await expect(viewer.getByRole("heading", { name: "E2E porch" })).toBeVisible();
-  await expect
-    .poll(() =>
-      viewer.locator("img").evaluate((img) => /** @type {HTMLImageElement} */ (img).naturalWidth),
-    )
-    .toBeGreaterThan(0);
+  // The event opens on its clip, with the snapshot as the poster until it plays.
+  const video = viewer.locator("video");
+  await expect(video).toBeVisible();
+  const poster = await video.getAttribute("poster");
+  expect(poster).toMatch(/\/snapshot\?kind=annotated/);
+  const image = await page.request.get(/** @type {string} */ (poster));
+  expect(image.headers()["content-type"]).toBe("image/jpeg");
   await page.keyboard.press("Escape");
   await expect(viewer).toBeHidden();
 });

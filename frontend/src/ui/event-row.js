@@ -24,6 +24,12 @@ export function eventRow(initial, { onOpen } = {}) {
     on: { click: () => onOpen?.(event.id) },
   });
   const thumb = h("div", { class: "event-thumb" });
+  const clipMark = h(
+    "span",
+    { class: "event-clip-mark", attrs: { "aria-hidden": "true", title: "Has a clip" } },
+    icon("play"),
+  );
+  const media = h("div", { class: "event-media" }, thumb, clipMark);
   const name = h("p", { class: "truncate font-medium" });
   const facts = h("p", { class: "event-facts" });
   const tags = h("div", { class: "event-tags" });
@@ -33,7 +39,7 @@ export function eventRow(initial, { onOpen } = {}) {
     "li",
     { class: "event-row" },
     onOpen ? open : null,
-    thumb,
+    media,
     h("div", { class: "min-w-0 flex-1" }, name, facts, tags),
     h("div", { class: "event-when" }, clock, ago),
   );
@@ -46,13 +52,14 @@ export function eventRow(initial, { onOpen } = {}) {
         ? "interrupted"
         : "live";
     name.textContent = camera;
+    clipMark.hidden = !event.clip;
     // Snapshots exist once the motion has ended.
     open.disabled = !event.complete && !event.interrupted;
     open.setAttribute(
       "aria-label",
       open.disabled
         ? `${camera}, motion in progress`
-        : `Open snapshot: ${camera}, ${formatClock(event.started_at)}`,
+        : `Open snapshot${event.clip ? " and clip" : ""}: ${camera}, ${formatClock(event.started_at)}`,
     );
     clock.textContent = formatClock(event.started_at, { seconds: true });
     clock.dateTime = event.started_at;

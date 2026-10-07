@@ -1,6 +1,7 @@
-// Snapshot viewer: a modal dialog with the event's picture, with or without the motion boxes.
-// Browse with the arrows, the arrow keys or a swipe. Escape closes it and focus returns to
-// where it was. Signed snapshot links expire, so a broken image fetches fresh links once.
+// Event viewer: a modal dialog with the event's picture (with or without the motion boxes) or
+// its clip. Browse with the arrows, the arrow keys or a swipe. Escape closes it and focus
+// returns to where it was. Signed links expire, so a broken image or clip fetches fresh links
+// once. Clips never play on their own: the snapshot is their poster until you press play.
 
 import { snapshotUrl } from "../api/events.js";
 import { deviceName } from "../state/devices.js";
@@ -12,6 +13,7 @@ import { formatClock, formatDay, formatDuration } from "./time.js";
 /** @typedef {import("./event-row.js").ListedEvent} ListedEvent */
 
 const BOXES_KEY = "vision-hub.snapshot-boxes";
+const MODE_KEY = "vision-hub.viewer-mode";
 const SWIPE_PX = 60;
 
 /**
@@ -27,10 +29,25 @@ const SWIPE_PX = 60;
 export function openLightbox({ items, index, refresh, onClose }) {
   let current = index;
   let boxes = readBoxes();
+  let mode = readMode();
   /** @type {Set<string>} events whose links were already refreshed once */
   const refreshed = new Set();
 
   const image = h("img", { class: "lightbox-image", attrs: { alt: "", decoding: "async" } });
+  const video = h("video", {
+    class: "lightbox-image",
+    attrs: { controls: true, playsinline: true, preload: "metadata", hidden: true },
+  });
+  const modes = h(
+    "div",
+    { class: "segmented lightbox-modes", attrs: { role: "radiogroup", "aria-label": "Show" } },
+    ...[
+      ["snapshot", "Snapshot"],
+      ["clip", "Clip"],
+    ].map(([value, label]) =>
+      h("label", {}, h("input", { attrs: { type: "radio", name: "lightbox-mode", value } }), label),
+    ),
+  );
   const status = h("p", { class: "lightbox-status", attrs: { role: "status" } });
   const previous = navButton("back", "Previous event", () => go(current - 1));
   const next = navButton("forward", "Next event", () => go(current + 1));
@@ -42,11 +59,12 @@ export function openLightbox({ items, index, refresh, onClose }) {
     attrs: { type: "checkbox", role: "switch", id: "lightbox-boxes" },
   });
   boxesSwitch.checked = boxes;
+  const downloadLabel = h("span", { text: "Download" });
   const download = h(
     "a",
     { class: "btn btn-secondary btn-sm", attrs: { download: "" } },
     icon("download"),
-    "Download",
+    downloadLabel,
   );
   const close = h(
     "button",
@@ -57,7 +75,13 @@ export function openLightbox({ items, index, refresh, onClose }) {
     icon("close"),
   );
 
-  const frame = h("div", { class: "lightbox-frame" }, image, status, previous, next);
+  const boxesLabel = h(
+    "label",
+    { class: "flex cursor-pointer items-center gap-2 text-sm", attrs: { for: "lightbox-boxes" } },
+    boxesSwitch,
+    "Motion boxes",
+  );
+  const frame = h("div", { class: "lightbox-frame" }, image, video, status, previous, next);
   const dialog = h(
     "dialog",
     { class: "lightbox", attrs: { "aria-labelledby": "lightbox-title" } },
@@ -65,22 +89,8 @@ export function openLightbox({ items, index, refresh, onClose }) {
     h(
       "div",
       { class: "lightbox-bar panel-solid" },
-      h("div", { class: "min-w-0 flex-1" }, title, facts, position),
-      h(
-        "div",
-        { class: "flex flex-wrap items-center gap-3" },
-        h(
-          "label",
-          {
-            class: "flex cursor-pointer items-center gap-2 text-sm",
-            attrs: { for: "lightbox-boxes" },
-          },
-          boxesSwitch,
-          "Motion boxes",
-        ),
-        download,
-        close,
-      ),
+      h("div", { class: "lightbox-about" }, title, facts, position),
+      h("div", { class: "flex flex-wrap items-center gap-3" }, modes, boxesLabel, download, close),
     ),
   );
 
@@ -103,12 +113,16 @@ export function openLightbox({ items, index, refresh, onClose }) {
     previous.disabled = current === 0;
     next.disabled = current === items.length - 1;
 
+    const clip = event.clip;
+    const showing = clip ? mode : "snapshot";
+    modes.hidden = !clip;
+    for (const input of modes.querySelectorAll("input")) input.checked = input.value === showing;
+    boxesLabel.hidden = showing === "clip";
+    if (clip && showing === "clip") return showClip(event, clip, camera);
+    hideClip();
+
     const original = snapshotUrl(event, "clean");
-    download.hidden = !original;
-    if (original) {
-      download.href = original;
-      download.setAttribute("download", fileName(event));
-    }
+    setDownload(original, fileName(event, "jpg"), "Download");
 
     if (!url) {
       image.hidden = true;
@@ -128,6 +142,46 @@ export function openLightbox({ items, index, refresh, onClose }) {
     preload(current + 1);
   }
 
+  /**
+   * @param {ListedEvent} event
+   * @param {import("../api/types.js").ClipLink} clip
+   * @param {string} camera
+   */
+  function showClip(event, clip, camera) {
+    image.hidden = true;
+    video.hidden = false;
+    status.textContent = "";
+    delete frame.dataset.loading;
+    video.setAttribute("aria-label", `Clip from ${camera}, ${formatClock(event.started_at)}`);
+    if (video.getAttribute("src") !== clip.url) {
+      video.poster = snapshotUrl(event, "annotated") ?? snapshotUrl(event, "clean") ?? "";
+      video.src = clip.url;
+    }
+    setDownload(clip.url, fileName(event, "webm"), "Download clip");
+  }
+
+  /** Stops a clip and lets go of it (no more downloading in the background). */
+  function hideClip() {
+    if (!video.getAttribute("src")) return;
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    video.hidden = true;
+  }
+
+  /**
+   * @param {string | null} url
+   * @param {string} name
+   * @param {string} label
+   */
+  function setDownload(url, name, label) {
+    download.hidden = !url;
+    if (!url) return;
+    download.href = url;
+    download.setAttribute("download", name);
+    downloadLabel.textContent = label;
+  }
+
   /** @param {number} at */
   function preload(at) {
     const event = items[at];
@@ -141,18 +195,27 @@ export function openLightbox({ items, index, refresh, onClose }) {
     const direction = Math.sign(at - current);
     current = at;
     show();
-    enter(image, [{ opacity: 0, transform: `translateX(${direction * 24}px)` }, { opacity: 1 }], {
+    const shown = video.hidden ? image : video;
+    enter(shown, [{ opacity: 0, transform: `translateX(${direction * 24}px)` }, { opacity: 1 }], {
       duration: 260,
     });
   }
 
   image.addEventListener("load", () => delete frame.dataset.loading);
-  image.addEventListener("error", async () => {
+  image.addEventListener("error", () => recover("This snapshot couldn't be loaded."));
+  video.addEventListener("error", () => {
+    if (video.getAttribute("src")) recover("This clip couldn't be played.");
+  });
+
+  /** A broken image or clip: fresh links once (they expire), then say so.
+   * @param {string} problem */
+  async function recover(problem) {
     const event = items[current];
     if (refreshed.has(event.id)) {
       delete frame.dataset.loading;
       image.hidden = true;
-      status.textContent = "This snapshot couldn't be loaded. It may have been deleted.";
+      hideClip();
+      status.textContent = `${problem} It may have been deleted.`;
       return;
     }
     // Most likely an expired signed link: get fresh ones and try again.
@@ -162,6 +225,14 @@ export function openLightbox({ items, index, refresh, onClose }) {
       items[current] = { ...fresh, missed: event.missed };
       show();
     }
+  }
+
+  modes.addEventListener("change", (event) => {
+    mode = /** @type {Mode} */ (/** @type {HTMLInputElement} */ (event.target).value);
+    writeMode(mode);
+    show();
+    // Choosing the clip is asking to watch it.
+    if (mode === "clip" && !video.hidden) video.play().catch(() => {});
   });
 
   boxesSwitch.addEventListener("change", () => {
@@ -171,6 +242,8 @@ export function openLightbox({ items, index, refresh, onClose }) {
   });
 
   dialog.addEventListener("keydown", (event) => {
+    // On the clip and the Snapshot/Clip choice, arrows seek and choose: not the next event.
+    if (event.target === video || modes.contains(/** @type {Node} */ (event.target))) return;
     if (event.key === "ArrowLeft") go(current - 1);
     else if (event.key === "ArrowRight") go(current + 1);
   });
@@ -178,7 +251,8 @@ export function openLightbox({ items, index, refresh, onClose }) {
   // Swipe between events on touch screens.
   let startX = /** @type {number | null} */ (null);
   frame.addEventListener("pointerdown", (event) => {
-    if (event.pointerType !== "mouse") startX = event.clientX;
+    // A drag on the clip is scrubbing through it.
+    if (event.pointerType !== "mouse" && event.target !== video) startX = event.clientX;
   });
   frame.addEventListener("pointerup", (event) => {
     if (startX === null) return;
@@ -204,6 +278,7 @@ export function openLightbox({ items, index, refresh, onClose }) {
     await exit(dialog, [{ opacity: 1 }, { opacity: 0, transform: "scale(0.98)" }], {
       duration: 160,
     });
+    hideClip();
     dialog.close();
     dialog.remove();
     onClose?.(items[current].id);
@@ -234,12 +309,34 @@ function navButton(name, label, run) {
   );
 }
 
-/** e.g. "demo-porch-2026-10-04-19-55-38.jpg", in local time. @param {ListedEvent} event */
-function fileName(event) {
+/** e.g. "demo-porch-2026-10-04-19-55-38.jpg", in local time.
+ * @param {ListedEvent} event
+ * @param {"jpg" | "webm"} extension */
+function fileName(event, extension) {
   const date = new Date(event.started_at);
   const pad = (/** @type {number} */ n) => String(n).padStart(2, "0");
   const stamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}-${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
-  return `${event.device_id}-${stamp}.jpg`;
+  return `${event.device_id}-${stamp}.${extension}`;
+}
+
+/** @typedef {"snapshot" | "clip"} Mode */
+
+/** @returns {Mode} the clip unless the person last chose the snapshot */
+function readMode() {
+  try {
+    return localStorage.getItem(MODE_KEY) === "snapshot" ? "snapshot" : "clip";
+  } catch {
+    return "clip";
+  }
+}
+
+/** @param {Mode} value */
+function writeMode(value) {
+  try {
+    localStorage.setItem(MODE_KEY, value);
+  } catch {
+    // preference not remembered
+  }
 }
 
 function readBoxes() {
