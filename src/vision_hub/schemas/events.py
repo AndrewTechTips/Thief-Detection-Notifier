@@ -34,6 +34,13 @@ class EventOut(ApiSchema):
     interrupted: bool = Field(description="The hub stopped abruptly before the event ended")
     peak_area_ratio: float = Field(description="Largest moving region, as a fraction of the frame")
     motion_frames: int
+    person: bool | None = Field(
+        description="A person was seen; null when nobody could check (detection off, no model)"
+    )
+    person_confidence: float | None = Field(description="Best person score of the checks")
+    alert: bool = Field(
+        description="Raised an alert (false: the camera alerts on people only and none was seen)"
+    )
     boxes: list[BoundingBox]
     snapshots: list[SnapshotLink]
     clip: ClipLink | None = Field(
@@ -76,6 +83,9 @@ class EventOut(ApiSchema):
             interrupted=record.interrupted,
             peak_area_ratio=event.peak_area_ratio,
             motion_frames=event.motion_frames,
+            person=event.person,
+            person_confidence=event.person_confidence,
+            alert=event.alert,
             boxes=list(record.boxes),
             snapshots=links,
             clip=clip,

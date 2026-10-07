@@ -665,6 +665,12 @@ export interface components {
              * @default 120
              */
             max_event_seconds: number;
+            /**
+             * Alert On
+             * @default motion
+             * @enum {string}
+             */
+            alert_on: "motion" | "person";
         };
         /** DeviceCreate */
         DeviceCreate: {
@@ -768,6 +774,21 @@ export interface components {
             peak_area_ratio: number;
             /** Motion Frames */
             motion_frames: number;
+            /**
+             * Person
+             * @description A person was seen; null when nobody could check (detection off, no model)
+             */
+            person: boolean | null;
+            /**
+             * Person Confidence
+             * @description Best person score of the checks
+             */
+            person_confidence: number | null;
+            /**
+             * Alert
+             * @description Raised an alert (false: the camera alerts on people only and none was seen)
+             */
+            alert: boolean;
             /** Boxes */
             boxes: components["schemas"]["BoundingBox"][];
             /** Snapshots */
@@ -1265,6 +1286,18 @@ export interface components {
             motion_frames: number;
             /** Boxes */
             boxes: components["schemas"]["BoundingBox"][];
+            /**
+             * Person
+             * @description A person was seen; null when nobody could check
+             */
+            person: boolean | null;
+            /** Person Confidence */
+            person_confidence: number | null;
+            /**
+             * Alert
+             * @description Show an alert (false: people only, and none was seen)
+             */
+            alert: boolean;
         };
         /** MotionEndedMessage */
         MotionEndedMessage: {
@@ -2548,6 +2581,8 @@ export interface operations {
                 since?: components["schemas"]["UtcDateTime"] | null;
                 /** @description Started before (UTC) */
                 until?: components["schemas"]["UtcDateTime"] | null;
+                /** @description Only events with (true) or without (false) a person seen */
+                person?: boolean | null;
                 limit?: number;
                 cursor?: string | null;
             };

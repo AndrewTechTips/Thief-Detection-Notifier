@@ -5,6 +5,8 @@
   a crash may be sent again.
 * Per-device cooldown, so one busy camera cannot flood an inbox (events themselves are never
   dropped; only the alert is suppressed). Restored from the outbox after a restart.
+* Cameras set to alert on people only mark events without one as not alerting; those are
+  skipped.
 * A dispatcher sends due deliveries concurrently, so a slow channel never delays another;
   transient failures are retried with growing delays, permanent ones (bad credentials) are not,
   and alerts older than the policy's ``max_age`` are dropped instead of arriving days late.
@@ -132,6 +134,11 @@ class NotificationService:
 
     async def handle(self, ended: MotionEndedEvent) -> None:
         device_id = ended.event.device_id
+        if not ended.event.alert:
+            # The camera alerts on people only and none was seen. Before the cooldown, so a
+            # quiet event never holds back the alert for a real one.
+            logger.info("alert_skipped_no_person", device_id=device_id, event_id=ended.event.id)
+            return
         now = self._clock()
         last = self._last_alert.get(device_id)
         if last is not None and now - last < self._cooldown:

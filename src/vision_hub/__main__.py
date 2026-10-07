@@ -1,4 +1,5 @@
-"""Command-line entrypoint: ``vision-hub [serve|hash-password|create-user|openapi|vapid-key]``."""
+"""Command-line entrypoint:
+``vision-hub [serve|hash-password|create-user|openapi|vapid-key|download-model]``."""
 
 import argparse
 import asyncio
@@ -23,6 +24,7 @@ from vision_hub.infra.db.repositories.users import SqlUserRepository
 from vision_hub.infra.notifiers.webpush import VapidKey
 from vision_hub.main import create_app
 from vision_hub.services.audit import Auditor
+from vision_hub.vision.persons import MODEL_BYTES, ModelError, download_model
 
 MIN_PASSWORD_LENGTH = 12
 
@@ -61,8 +63,16 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     vapid_key.set_defaults(command="vapid-key")
 
+    download = commands.add_parser(
+        "download-model",
+        help=f"download the person-detection model to {env_name('persons', 'model_path')}",
+    )
+    download.set_defaults(command="download-model")
+
     args = parser.parse_args(argv)
-    if args.command == "vapid-key":
+    if args.command == "download-model":
+        _download_model()
+    elif args.command == "vapid-key":
         sys.stdout.write(VapidKey.generate().to_text() + "\n")
     elif args.command == "openapi":
         _write_openapi(args.output)
@@ -72,6 +82,18 @@ def main(argv: Sequence[str] | None = None) -> None:
         _create_user(args.username, Role(args.role))
     else:
         _serve(reload=args.reload)
+
+
+def _download_model() -> None:
+    path = get_settings().persons.model_path
+    size = MODEL_BYTES // 1_000_000
+    sys.stdout.write(f"Person-detection model (YOLOX-s, {size} MB): {path}\n")
+    try:
+        fetched = download_model(path)
+    except (OSError, ModelError) as exc:
+        sys.stderr.write(f"Download failed: {exc}\n")
+        raise SystemExit(1) from exc
+    sys.stdout.write("Downloaded and verified.\n" if fetched else "Already there and verified.\n")
 
 
 class GracefulServer(uvicorn.Server):

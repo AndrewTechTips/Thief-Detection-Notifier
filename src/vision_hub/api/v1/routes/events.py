@@ -31,6 +31,10 @@ async def list_events(
     device_id: Annotated[str | None, Query(max_length=63)] = None,
     since: Annotated[UtcDateTime | None, Query(description="Started at or after (UTC)")] = None,
     until: Annotated[UtcDateTime | None, Query(description="Started before (UTC)")] = None,
+    person: Annotated[
+        bool | None,
+        Query(description="Only events with (true) or without (false) a person seen"),
+    ] = None,
 ) -> Page[EventOut]:
     """Newest first. Snapshot links in the response are signed and expire after
     `VISION_HUB_SECURITY__SIGNED_URL_TTL_SECONDS`."""
@@ -40,6 +44,7 @@ async def list_events(
         since=since,
         until=until,
         before=page.time_position("started_at"),
+        person=person,
     )
     items = records[: page.limit]
     next_cursor = None

@@ -1455,6 +1455,24 @@
             "description": "Started before (UTC)"
           },
           {
+            "name": "person",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only events with (true) or without (false) a person seen",
+              "title": "Person"
+            },
+            "description": "Only events with (true) or without (false) a person seen"
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -2706,6 +2724,15 @@
             "exclusiveMinimum": 0.0,
             "title": "Max Event Seconds",
             "default": 120.0
+          },
+          "alert_on": {
+            "type": "string",
+            "enum": [
+              "motion",
+              "person"
+            ],
+            "title": "Alert On",
+            "default": "motion"
           }
         },
         "additionalProperties": false,
@@ -3018,6 +3045,35 @@
             "type": "integer",
             "title": "Motion Frames"
           },
+          "person": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person",
+            "description": "A person was seen; null when nobody could check (detection off, no model)"
+          },
+          "person_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person Confidence",
+            "description": "Best person score of the checks"
+          },
+          "alert": {
+            "type": "boolean",
+            "title": "Alert",
+            "description": "Raised an alert (false: the camera alerts on people only and none was seen)"
+          },
           "boxes": {
             "items": {
               "$ref": "#/components/schemas/BoundingBox"
@@ -3055,6 +3111,9 @@
           "interrupted",
           "peak_area_ratio",
           "motion_frames",
+          "person",
+          "person_confidence",
+          "alert",
           "boxes",
           "snapshots",
           "clip"
@@ -4165,6 +4224,34 @@
             },
             "title": "Boxes",
             "type": "array"
+          },
+          "person": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A person was seen; null when nobody could check",
+            "title": "Person"
+          },
+          "person_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person Confidence"
+          },
+          "alert": {
+            "description": "Show an alert (false: people only, and none was seen)",
+            "title": "Alert",
+            "type": "boolean"
           }
         },
         "required": [
@@ -4173,7 +4260,10 @@
           "ended_at",
           "peak_area_ratio",
           "motion_frames",
-          "boxes"
+          "boxes",
+          "person",
+          "person_confidence",
+          "alert"
         ],
         "title": "MotionEndedData",
         "type": "object"

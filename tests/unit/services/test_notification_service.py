@@ -167,8 +167,12 @@ class Harness:
         self.outbox = MemoryOutbox()
         self.events: dict[str, MotionEvent] = {}
 
-    def ended(self, device_id: str = "porch", event_id: str = "e1") -> MotionEndedEvent:
-        event = MotionEvent(id=event_id, device_id=device_id, started_at=T0, ended_at=T0)
+    def ended(
+        self, device_id: str = "porch", event_id: str = "e1", *, alert: bool = True
+    ) -> MotionEndedEvent:
+        event = MotionEvent(
+            id=event_id, device_id=device_id, started_at=T0, ended_at=T0, alert=alert
+        )
         self.events[event_id] = event
         return MotionEndedEvent(event=event, snapshot_jpeg=b"clean", annotated_jpeg=b"in-memory")
 
@@ -276,6 +280,20 @@ class TestAlerts:
 
         assert len(push.sent) == 1
         assert any(r["event"] == "notifier_recipients_unknown" for r in log_records())
+
+    async def test_events_that_do_not_alert_are_skipped_without_using_the_cooldown(
+        self, hub: Harness
+    ) -> None:
+        # A people-only camera: the first event had nobody in it, the second had someone.
+        notifier = FakeNotifier()
+        alerts = hub.service(notifier, cooldown_seconds=3600)
+
+        await alerts.handle(hub.ended(event_id="e1", alert=False))
+        await alerts.handle(hub.ended(event_id="e2"))
+        await alerts.stop()
+
+        assert [a.event.id for a in notifier.sent] == ["e2"]
+        assert sorted(hub.outbox.rows) == ["e2:fake"]
 
     async def test_other_messages_on_the_topic_are_ignored(self, hub: Harness) -> None:
         notifier = FakeNotifier()

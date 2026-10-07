@@ -65,14 +65,15 @@ class EmailNotifier:
         filename = f"motion-{alert.device_id}-{event.started_at:%Y%m%dT%H%M%SZ}.jpg"
 
         message = EmailMessage()
-        message["Subject"] = f"Motion detected: {alert.device_name}"
+        what = "Person" if event.person else "Motion"
+        message["Subject"] = f"{what} detected: {alert.device_name}"
         message["From"] = self._sender
         message["To"] = ", ".join(self._config.effective_recipients)
         message["X-Vision-Hub-Event"] = event.id
 
         image = alert.image_jpeg
         summary = (
-            f"Motion was detected by {alert.device_name} at {started} "
+            f"{what} was detected by {alert.device_name} at {started} "
             f"and lasted {duration:.1f} s. "
             + (
                 "The best frame of the event is attached."

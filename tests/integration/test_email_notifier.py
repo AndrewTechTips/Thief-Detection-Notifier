@@ -1,4 +1,5 @@
 import socket
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -56,6 +57,16 @@ class TestMessage:
         assert message["From"] == "alerts@example.com"
         assert message["To"] == "me@example.com, partner@example.com"
         assert message["X-Vision-Hub-Event"] == "01a1-event"
+
+    def test_says_person_when_one_was_seen(self) -> None:
+        seen = replace(ALERT, event=replace(ALERT.event, person=True, person_confidence=0.9))
+
+        message = EmailNotifier(smtp_config(25)).build_message(seen)
+
+        assert message["Subject"] == "Person detected: Front porch"
+        text = message.get_body(preferencelist=("plain",))
+        assert text is not None
+        assert "Person was detected by Front porch" in text.get_content()
 
     def test_text_body_summarises_the_event(self) -> None:
         message = EmailNotifier(smtp_config(25)).build_message(ALERT)

@@ -12,6 +12,7 @@ from pydantic import SecretStr
 from vision_hub import __main__ as cli
 from vision_hub.core.config import PushConfig
 from vision_hub.infra.notifiers.webpush import VapidKey
+from vision_hub.vision.persons import ModelError
 
 
 @pytest.fixture
@@ -157,3 +158,29 @@ def test_vapid_key_prints_a_key_the_settings_accept(capsys: pytest.CaptureFixtur
     config = PushConfig(vapid_private_key=SecretStr(printed))
     assert config.vapid_private_key is not None
     assert VapidKey.from_text(printed).to_text() == printed
+
+
+@pytest.mark.parametrize(("fetched", "says"), [(True, "Downloaded"), (False, "Already there")])
+def test_download_model_reports_what_it_did(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], fetched: bool, says: str
+) -> None:
+    monkeypatch.setattr(cli, "download_model", lambda path: fetched)
+
+    cli.main(["download-model"])
+
+    assert says in capsys.readouterr().out
+
+
+def test_download_model_fails_with_a_message(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def broken(path: Path) -> bool:
+        raise ModelError("downloaded model has SHA-256 abc, expected def")
+
+    monkeypatch.setattr(cli, "download_model", broken)
+
+    with pytest.raises(SystemExit) as exited:
+        cli.main(["download-model"])
+
+    assert exited.value.code == 1
+    assert "SHA-256" in capsys.readouterr().err

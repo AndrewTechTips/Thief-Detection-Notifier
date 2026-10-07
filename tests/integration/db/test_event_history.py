@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -99,6 +100,32 @@ class TestQueries:
         newer = await repository.after(event(3).id, limit=10)
 
         assert [r.event.id[-1] for r in newer] == list("456")  # oldest first
+
+
+class TestPersons:
+    async def test_person_results_are_stored_and_filtered(self, sessions: Sessions) -> None:
+        repository = SqlEventRepository(sessions)
+        verdicts = {1: (True, 0.91, True), 2: (False, 0.12, False), 3: (None, None, True)}
+        for n, (person, confidence, alert) in verdicts.items():
+            await repository.complete(
+                replace(event(n), person=person, person_confidence=confidence, alert=alert),
+                [],
+                [],
+            )
+
+        stored = {r.event.id[-1]: r.event for r in await repository.list(limit=10)}
+        with_person = await repository.list(limit=10, person=True)
+        without = await repository.list(limit=10, person=False)
+
+        assert (stored["1"].person, stored["1"].person_confidence, stored["1"].alert) == (
+            True,
+            0.91,
+            True,
+        )
+        assert (stored["2"].person, stored["2"].alert) == (False, False)
+        assert (stored["3"].person, stored["3"].person_confidence) == (None, None)
+        assert [r.event.id[-1] for r in with_person] == ["1"]
+        assert [r.event.id[-1] for r in without] == ["2"]  # unchecked events match neither
 
 
 class TestRetention:

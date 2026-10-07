@@ -105,9 +105,15 @@ class EventService:
         since: datetime | None = None,
         until: datetime | None = None,
         before: tuple[datetime, str] | None = None,
+        person: bool | None = None,
     ) -> Sequence[EventRecord]:
         return await self._repository.list(
-            limit=limit, device_id=device_id, since=since, until=until, before=before
+            limit=limit,
+            device_id=device_id,
+            since=since,
+            until=until,
+            before=before,
+            person=person,
         )
 
     async def get(self, event_id: str) -> EventRecord:

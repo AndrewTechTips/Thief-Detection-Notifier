@@ -384,6 +384,9 @@ export default {
             boxes: [],
             snapshots: [],
             clip: null,
+            person: null,
+            person_confidence: null,
+            alert: true,
             missed: message.replay,
           });
           return;
@@ -403,6 +406,9 @@ export default {
             peak_area_ratio: message.data.peak_area_ratio,
             motion_frames: message.data.motion_frames,
             boxes: message.data.boxes,
+            person: message.data.person,
+            person_confidence: message.data.person_confidence,
+            alert: message.data.alert,
           });
           if (rows.has(id)) complete(id);
           return;

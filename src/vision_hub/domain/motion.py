@@ -52,3 +52,8 @@ class MotionEvent:
     ended_at: datetime | None = None
     peak_area_ratio: float = 0.0
     motion_frames: int = 0
+    # Person detection: whether a person was seen (None when nobody could check: detection
+    # off, no model, or the event never finished) and the highest score of the checks.
+    person: bool | None = None
+    person_confidence: float | None = None
+    alert: bool = True  # False when the camera alerts on people only and none was seen

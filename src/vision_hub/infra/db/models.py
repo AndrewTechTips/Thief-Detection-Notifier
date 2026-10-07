@@ -14,6 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     false,
+    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -85,6 +86,11 @@ class MotionEventRow(Base):
     boxes: Mapped[list[dict[str, int]]] = mapped_column(JsonDocument, default=list)
     # Never ended because the hub stopped abruptly; set by the startup recovery.
     interrupted: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Whether a person was seen, and the best score; NULL when nobody checked.
+    person: Mapped[bool | None]
+    person_confidence: Mapped[float | None] = mapped_column(Float)
+    # False when the camera alerts on people only and none was seen.
+    alert: Mapped[bool] = mapped_column(default=True, server_default=true())
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
     snapshots: Mapped[list[SnapshotRow]] = relationship(
         back_populates="event", cascade="all, delete-orphan", passive_deletes=True, lazy="selectin"

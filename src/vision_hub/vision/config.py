@@ -1,6 +1,6 @@
 """Per-device motion detection settings (defaults come from ``VISION_HUB_VISION__*``)."""
 
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -36,6 +36,10 @@ class DetectionConfig(BaseModel):
     min_motion_frames: int = Field(default=2, ge=1, le=60)
     motion_end_grace_seconds: float = Field(default=2.0, ge=0, le=60)
     max_event_seconds: float = Field(default=120.0, gt=0, le=3600)
+
+    # Alerts: on any motion, or only when a person was seen (needs person detection; without
+    # it every event alerts)
+    alert_on: Literal["motion", "person"] = "motion"
 
     @field_validator("blur_kernel_size")
     @classmethod

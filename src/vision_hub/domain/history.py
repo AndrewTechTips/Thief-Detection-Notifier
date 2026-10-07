@@ -41,8 +41,10 @@ class EventRepository(Protocol):
         since: datetime | None = None,
         until: datetime | None = None,
         before: tuple[datetime, str] | None = None,
+        person: bool | None = None,
     ) -> Sequence[EventRecord]:
-        """Newest first. ``before`` is the (started_at, id) keyset cursor."""
+        """Newest first. ``before`` is the (started_at, id) keyset cursor; ``person`` keeps only
+        events with (True) or without (False) a person seen; unchecked events match neither."""
         ...
 
     async def after(self, event_id: str, *, limit: int) -> Sequence[EventRecord]:

@@ -61,6 +61,16 @@ jobs:
       - name: Type check
         run: uv run --frozen mypy
 
+      # The person-detection tests need the model (36 MB); it never changes for a pinned hash.
+      - name: Cache the person model
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: data/models
+          key: person-model-${{ hashFiles('src/vision_hub/vision/persons.py') }}
+
+      - name: Download the person model (verified by SHA-256)
+        run: uv run --frozen vision-hub download-model
+
       - name: Test (SQLite and PostgreSQL)
         run: uv run --frozen pytest --cov-report=term-missing --cov-report=xml
         env:

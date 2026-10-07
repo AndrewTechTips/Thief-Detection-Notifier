@@ -324,6 +324,18 @@ class ClipConfig(_Group):
     width: int = Field(default=640, ge=160, le=1920)
 
 
+class PersonConfig(_Group):
+    """Person detection during motion events (YOLOX-s on onnxruntime), so cameras can alert on
+    people only. Get the model with `vision-hub download-model`."""
+
+    enabled: bool = True
+    model_path: Path = Path("data/models/person-yolox-s.onnx")
+    # Score from which an event counts as having a person in it
+    threshold: float = Field(default=0.5, gt=0, lt=1)
+    # How often a camera checks while an event is open (each check takes about 45 ms)
+    check_interval_seconds: float = Field(default=1.0, ge=0.1, le=30)
+
+
 class RealtimeConfig(_Group):
     ping_interval_seconds: float = Field(default=20.0, gt=0, le=300)
     idle_timeout_seconds: float = Field(default=60.0, gt=0, le=3600)  # no client message -> close
@@ -354,6 +366,7 @@ class Settings(BaseSettings):
     storage: StorageConfig = Field(default_factory=StorageConfig)
     vision: VisionConfig = Field(default_factory=VisionConfig)
     clips: ClipConfig = Field(default_factory=ClipConfig)
+    persons: PersonConfig = Field(default_factory=PersonConfig)
     realtime: RealtimeConfig = Field(default_factory=RealtimeConfig)
 
     @property

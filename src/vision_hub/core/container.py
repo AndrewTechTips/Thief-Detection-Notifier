@@ -18,6 +18,7 @@ from vision_hub.core.backoff import Backoff
 from vision_hub.core.config import (
     ClipConfig,
     NotificationsConfig,
+    PersonConfig,
     PushConfig,
     Settings,
     env_name,
@@ -68,6 +69,7 @@ from vision_hub.vision.clip import ClipSettings
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.fleet import DeviceSpec, load_fleet
 from vision_hub.vision.manager import CameraManager, camera_worker_factory
+from vision_hub.vision.persons import PersonSettings, load_person_detector
 from vision_hub.vision.worker import EncodingSettings
 
 logger = get_logger(__name__)
@@ -210,6 +212,7 @@ async def build_container(
                 ),
                 metrics=metrics,
                 clips=_clip_settings(settings.clips),
+                persons=await _person_settings(settings.persons),
             ),
         )
         stack.push_async_callback(cameras.stop_all)
@@ -362,6 +365,21 @@ def _clip_settings(config: ClipConfig) -> ClipSettings | None:
         return None
     return ClipSettings(
         pre_roll_seconds=config.pre_roll_seconds, max_seconds=config.max_seconds, width=config.width
+    )
+
+
+async def _person_settings(config: PersonConfig) -> PersonSettings | None:
+    """One detector for every camera, loaded off the event loop (it takes a moment)."""
+    if not config.enabled:
+        logger.info("person_detection_disabled")
+        return None
+    detector = await asyncio.to_thread(load_person_detector, config.model_path)
+    if detector is None:
+        return None
+    return PersonSettings(
+        detector=detector,
+        threshold=config.threshold,
+        check_interval_seconds=config.check_interval_seconds,
     )
 
 

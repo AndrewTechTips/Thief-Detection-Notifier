@@ -40,6 +40,9 @@ class MotionEndedData(MotionStartedData):
     peak_area_ratio: float
     motion_frames: int
     boxes: list[BoundingBox]
+    person: bool | None = Field(description="A person was seen; null when nobody could check")
+    person_confidence: float | None
+    alert: bool = Field(description="Show an alert (false: people only, and none was seen)")
 
 
 class DeviceStatusData(ApiSchema):
@@ -163,6 +166,9 @@ def to_message(event: CameraEvent) -> ServerMessage:
                     peak_area_ratio=motion.peak_area_ratio,
                     motion_frames=motion.motion_frames,
                     boxes=list(event.boxes),
+                    person=motion.person,
+                    person_confidence=motion.person_confidence,
+                    alert=motion.alert,
                 ),
             )
         case _:  # pragma: no cover - mypy proves the match is exhaustive
@@ -188,5 +194,8 @@ def replayed_message(record: EventRecord) -> ServerMessage:
             peak_area_ratio=motion.peak_area_ratio,
             motion_frames=motion.motion_frames,
             boxes=list(record.boxes),
+            person=motion.person,
+            person_confidence=motion.person_confidence,
+            alert=motion.alert,
         ),
     )

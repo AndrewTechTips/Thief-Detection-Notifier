@@ -22,6 +22,7 @@ from vision_hub.vision.bridge import FramePacket
 from vision_hub.vision.clip import ClipRecorder, ClipSettings
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.frame import Frame
+from vision_hub.vision.persons import Person, PersonSettings
 from vision_hub.vision.sources import Backoff, SourceError, SyntheticSource, SyntheticSourceConfig
 from vision_hub.vision.worker import CameraWorker, EncodingSettings, encode_stream_frame
 
@@ -100,17 +101,20 @@ def make_worker(
     step: float = 0.1,
     fps: float = 10,
     clips: ClipSettings | None = None,
+    persons: PersonSettings | None = None,
+    detection: DetectionConfig = DETECTION,
 ) -> CameraWorker:
     return CameraWorker(
         device_id="cam-1",
         source=source or synthetic(),  # type: ignore[arg-type]
-        detection=DETECTION,
+        detection=detection,
         sink=sink,
         target_fps=fps,
         encoding=EncodingSettings(stream_max_width=320),
         backoff=Backoff(initial=0.001, maximum=0.001),
         clock=SteppingClock(step),
         clips=clips,
+        persons=persons,
     )
 
 
@@ -309,6 +313,21 @@ class TestClips:
         assert all(e.clip is None and e.annotated_jpeg for e in ended)
         assert any(r["event"] == "clip_failed" for r in log_records())
 
+    def test_a_clip_that_cannot_be_finished_is_dropped(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def broken(self: ClipRecorder) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(ClipRecorder, "finish", broken)
+        sink = RecordingSink(stop_after_ended=1)
+
+        run_until_done(make_worker(sink, clips=ClipSettings()), sink)
+
+        ended = next(e for e in sink.events if isinstance(e, MotionEndedEvent))
+        assert ended.clip is None
+        assert ended.annotated_jpeg
+
     def test_stopping_mid_event_keeps_the_clip(self) -> None:
         sink = RecordingSink()
         worker = make_worker(
@@ -327,6 +346,83 @@ class TestClips:
 
         [ended] = [e for e in sink.events if isinstance(e, MotionEndedEvent)]
         assert ended.clip is not None
+
+
+class ScriptedDetector:
+    """Answers each check with the next score (0 means nobody); records what it was shown."""
+
+    def __init__(self, *scores: float, fail: bool = False) -> None:
+        self.scores = list(scores)
+        self.fail = fail
+        self.calls = 0
+
+    def detect(self, frame: Frame) -> list[Person]:
+        self.calls += 1
+        if self.fail:
+            raise RuntimeError("model crashed")
+        score = self.scores.pop(0) if self.scores else 0.0
+        box = BoundingBox(x=0, y=0, width=10, height=20)
+        return [Person(box=box, confidence=score)] if score else []
+
+
+PEOPLE_ONLY = DETECTION.model_copy(update={"alert_on": "person"})
+
+
+def first_ended(
+    detector: ScriptedDetector | None, *, detection: DetectionConfig = PEOPLE_ONLY
+) -> MotionEndedEvent:
+    sink = RecordingSink(stop_after_ended=1)
+    persons = PersonSettings(detector=detector, threshold=0.5) if detector else None
+    run_until_done(make_worker(sink, persons=persons, detection=detection), sink)
+    return next(e for e in sink.events if isinstance(e, MotionEndedEvent))
+
+
+class TestPersons:
+    def test_a_person_makes_the_event_alert_and_stops_the_checks(self) -> None:
+        detector = ScriptedDetector(0.2, 0.9)
+
+        ended = first_ended(detector)
+
+        assert ended.event.person is True
+        assert ended.event.person_confidence == 0.9
+        assert ended.event.alert is True
+        assert detector.calls == 2  # found on the second check: no more after that
+
+    def test_motion_without_a_person_stays_quiet_on_a_people_only_camera(self) -> None:
+        detector = ScriptedDetector(0.3)
+
+        ended = first_ended(detector)
+
+        assert ended.event.person is False
+        assert ended.event.person_confidence == 0.3
+        assert ended.event.alert is False
+        # About one check a second during the ~1.5 s event, plus the last look at the frame
+        # with the most motion.
+        assert 2 <= detector.calls <= 4
+
+    def test_any_motion_cameras_alert_whatever_was_seen(self) -> None:
+        ended = first_ended(ScriptedDetector(), detection=DETECTION)
+
+        assert ended.event.person is False
+        assert ended.event.alert is True
+
+    def test_a_failing_model_alerts_anyway_and_stops_trying(
+        self, log_records: Callable[[], list[dict[str, Any]]]
+    ) -> None:
+        detector = ScriptedDetector(fail=True)
+
+        ended = first_ended(detector)
+
+        assert ended.event.person is None
+        assert ended.event.person_confidence is None
+        assert ended.event.alert is True  # nobody could check: fail open
+        assert detector.calls == 1
+        assert sum(r["event"] == "person_check_failed" for r in log_records()) == 1
+
+    def test_without_person_detection_people_only_cameras_alert(self) -> None:
+        ended = first_ended(None)
+
+        assert (ended.event.person, ended.event.alert) == (None, True)
 
 
 class ExplodingSource:

@@ -279,6 +279,7 @@ class WebPushNotifier:
             "device_name": alert.device_name,
             "started_at": event.started_at.isoformat(),
             "duration_seconds": duration,
+            "person": event.person,
             "image": self._snapshot_link(event.id) if self._snapshot_link else None,
         }
 

@@ -29,6 +29,9 @@ class SqlEventRepository:
             row.ended_at = event.ended_at
             row.peak_area_ratio = event.peak_area_ratio
             row.motion_frames = event.motion_frames
+            row.person = event.person
+            row.person_confidence = event.person_confidence
+            row.alert = event.alert
             row.boxes = [{"x": b.x, "y": b.y, "width": b.width, "height": b.height} for b in boxes]
             row.snapshots = [
                 SnapshotRow(kind=s.kind.value, path=s.path, size_bytes=s.size_bytes)
@@ -48,8 +51,11 @@ class SqlEventRepository:
         since: datetime | None = None,
         until: datetime | None = None,
         before: tuple[datetime, str] | None = None,
+        person: bool | None = None,
     ) -> Sequence[EventRecord]:
         query = select(MotionEventRow)
+        if person is not None:
+            query = query.where(MotionEventRow.person.is_(person))
         if device_id is not None:
             query = query.where(MotionEventRow.device_id == device_id)
         if since is not None:
@@ -126,6 +132,9 @@ def _new_row(event: MotionEvent) -> MotionEventRow:
         ended_at=event.ended_at,
         peak_area_ratio=event.peak_area_ratio,
         motion_frames=event.motion_frames,
+        person=event.person,
+        person_confidence=event.person_confidence,
+        alert=event.alert,
         boxes=[],
         snapshots=[],
     )
@@ -140,6 +149,9 @@ def _to_record(row: MotionEventRow) -> EventRecord:
             ended_at=row.ended_at,
             peak_area_ratio=row.peak_area_ratio,
             motion_frames=row.motion_frames,
+            person=row.person,
+            person_confidence=row.person_confidence,
+            alert=row.alert,
         ),
         boxes=tuple(BoundingBox(**box) for box in row.boxes),
         snapshots={
