@@ -82,6 +82,23 @@ def test_frames_keep_their_timing_when_the_camera_falls_behind() -> None:
     assert levels(clip) == [40] + [120] * 5 + [200]
 
 
+def test_a_noisy_camera_still_makes_a_small_clip() -> None:
+    # Sensor noise is what VP8 spends its bits on, and OpenCV offers no bitrate cap.
+    rng = np.random.default_rng(0)
+    pattern = rng.integers(0, 255, (480, 640, 3), dtype=np.uint8)
+    scene = np.asarray(cv2.GaussianBlur(pattern, (0, 0), 8), np.int16)
+    clips = recorder(pre_roll_seconds=0, width=640)
+    clips.start()
+
+    for i in range(30):  # 3 s
+        noise = rng.normal(0, 6, scene.shape).astype(np.int16)
+        clips.add(np.clip(scene + noise, 0, 255).astype(np.uint8), at(i))
+    clip = clips.finish()
+
+    assert clip is not None
+    assert len(clip.data) < 800_000  # about 2.3 MB without the denoising
+
+
 def test_long_events_keep_their_start() -> None:
     clips = recorder(pre_roll_seconds=0, max_seconds=1)
     clips.start()

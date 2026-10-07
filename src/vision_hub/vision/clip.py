@@ -1,6 +1,7 @@
 """Event clips: the seconds before motion was detected, then the event itself, as VP8 video in
-WebM (AD-21). Runs in the camera thread. Encoding costs about 5 ms per 640 px frame and happens
-only while an event is open; between events, frames only go into the pre-roll buffer.
+WebM (AD-21). Runs in the camera thread. Encoding costs 6-17 ms per 640 px frame, depending on
+how noisy the camera is, and happens only while an event is open; between events, frames only
+go into the pre-roll buffer (see docs/performance.md).
 
 Frames keep their real timing: the video runs at the analysis rate, and a frame is repeated
 when the camera fell behind, so a clip lasts as long as what it shows.
@@ -21,6 +22,8 @@ from vision_hub.vision.frame import Frame, resize_to_width
 
 CONTENT_TYPE = "video/webm"
 _SUFFIX = ".webm"
+# OpenCV prints one "tag 'VP80' is not supported ... webm" line to stderr per clip and then
+# writes VP8 correctly; no tag or log level avoids the message.
 _FOURCC = cv2.VideoWriter.fourcc(*"VP80")
 # A longer gap (a camera reconnecting) is not filled with a frozen frame: the clip jumps.
 _MAX_GAP = timedelta(seconds=2)
@@ -151,7 +154,10 @@ class ClipRecorder:
             small = np.asarray(
                 cv2.resize(small, self._size, interpolation=cv2.INTER_AREA), np.uint8
             )
-        return small
+        # OpenCV gives VP8 no bitrate cap, and sensor noise is what costs: a light blur cuts a
+        # noisy camera's clip from 3.4 MB to 0.6 MB per 10 s and encoding from 22 to 6 ms a frame
+        # (640 px). The snapshots keep the sharp, full-resolution evidence.
+        return np.asarray(cv2.GaussianBlur(small, (5, 5), 0), np.uint8)
 
     def _open(self) -> cv2.VideoWriter:
         if self._size is None:  # pragma: no cover - _fit sets it before any write
