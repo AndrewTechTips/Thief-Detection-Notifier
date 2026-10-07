@@ -10,7 +10,7 @@
 > - A phase is complete when all of its **exit criteria** are ticked.
 > - Work top-to-bottom inside a phase.
 > - If a decision changes, update the *Architecture Decisions* table first, then the tasks it affects.
-> - After a context reset, read *Current Status* → *Architecture Decisions* → *Target Layout* → the first unchecked task.
+> - Coming back after a break: read *Current Status* → *Architecture Decisions* → *Target Layout* → the first unchecked task.
 
 ---
 
@@ -391,7 +391,7 @@
 **Goal:** tell people from wind, shadows, rain and pets, so cameras can alert on people only. Design: AD-22.
 
 ### 6.1 Detection
-- [x] Person detector (`vision/persons.py`): YOLOX-s on onnxruntime (new dependency, approved), letterboxing and box decoding, a pinned model file checked by SHA-256, `vision-hub download-model`; settings `VISION_HUB_PERSONS__*`. Tested on a public-domain photo (Grace Hopper's Navy portrait: 0.93) and empty scenes
+- [x] Person detector (`vision/persons.py`): YOLOX-s on onnxruntime (the one new dependency), letterboxing and box decoding, a pinned model file checked by SHA-256, `vision-hub download-model`; settings `VISION_HUB_PERSONS__*`. Tested on a public-domain photo (Grace Hopper's Navy portrait: 0.93) and empty scenes
 - [x] Checks off the camera threads (`PersonChecker`): one shared background thread; checks when motion starts, every 2 s, at most 5, stopping at the first person, plus a last look at the best frame before publishing. Events record `person`, the best score and `alert`. A missing or failing model never stops detection
   - **Found by measuring in Docker:** a check costs ~280 ms on Linux (45 ms only on Apple silicon). The first design, in the camera thread, would have stalled the live view and doubled CPU. onnxruntime's telemetry (HTTPS uploads) is turned off
 
