@@ -16,9 +16,9 @@
 
 ## 📍 Current Status
 
-- **Active phase:** none. Phases 1–4 are complete (the MVP is done)
+- **Active phase:** none. Phases 1–5 are complete (MVP plus event clips)
 - **Working branch:** `main`
-- **Next task:** Phase 4 is complete. Next is the optional *Future* section, only if needed
+- **Next task:** none planned. The *Future* section lists optional work, only if needed
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -48,6 +48,7 @@
 | AD-18 | Packaging / deploy | Multi-stage **Docker** image (`opencv-python-headless`), `docker compose` with **api + postgres** only | Headless OpenCV: no `imshow` on a server. Minimal moving parts. |
 | AD-19 | Frontend | **Vite** + **vanilla JS** (ES modules, no framework) + **Tailwind CSS v4** (`@tailwindcss/vite`, tokens in `@theme`). Native `fetch` and `WebSocket`. Types from OpenAPI (`openapi-typescript`; WebSocket messages included) used through JSDoc and checked with `tsc --checkJs` (TypeScript 5.9: the generator needs the JS compiler API, which the native TS 7 lacks); ESLint + Prettier; Vitest for logic. Dev: Vite proxies `/api` (HTTP + WS) to the hub, so the browser sees one origin. Prod: FastAPI serves the built files. Routing: History API with lazy views, so the server needs an SPA fallback (4.4) | Small, fast bundle with no runtime dependencies; the API is the contract. Same-origin in dev and prod: no CORS, tickets and MJPEG `<img>` work unchanged. |
 | AD-20 | UI performance | Animate **only `transform` and `opacity`** (short colour transitions only on small controls and status lights); content never waits on an animation (hidden or throttled tabs may never finish one); blurred glass only on a few large static surfaces, cheap unblurred cards for repeated items; `backdrop-filter` on static chrome only, **never above live video** (an MJPEG frame under a blur forces a re-blur every frame); `prefers-reduced-motion` respected; streams pause when off-screen or the tab is hidden | Glass effects stay smooth on phones; idle tabs cost no bandwidth or CPU on the hub. |
+| AD-21 | Event clips | **VP8 in WebM**, written by OpenCV in the camera thread at 640 px: a pre-roll ring buffer (3 s) plus the event, capped at 120 s, with frames lightly blurred first. Stored beside the snapshots and served with byte ranges through a signed link | OpenCV's Linux wheels (the Docker image) have no H.264 encoder. VP8 is available everywhere and costs 6–17 ms/frame, only while recording (VP9: 20 ms). OpenCV offers no bitrate or speed control for it, so the blur keeps noisy cameras at 0.6–1.5 MB per 10 s instead of 3.4–7.5 MB. WebM plays in Chrome, Edge, Firefox and Safari 16+/iOS 17.4+. No new dependency, no ffmpeg process |
 
 ---
 
@@ -281,7 +282,7 @@
 - [x] `GET /api/v1/events/{id}` and `GET /api/v1/events/{id}/snapshot` (`FileResponse`; bearer token or an expiring HMAC-signed link, so `<img>` tags work)
 - [x] WS replay: client sends `{"type": "resume", "after": "<event id>"}` on reconnect and receives missed events from the DB, then `replay.done`
 - [x] Retention policy job (delete events/snapshots older than *N* days, `retention_days` per device; history of deleted cameras follows the default)
-- [ ] Optional: short MP4 clip per event (pre-roll + event) written by the worker — deferred to *Future*
+- [x] Optional: short clip per event (pre-roll + event) written by the worker — done in Phase 5 (VP8/WebM, AD-21)
 
 ### 3.3 Reliability (single node)
 - [x] Notification outbox: `notifications` table + migration; pending notifications stored there; background loop dispatches and retries, surviving restarts (cooldowns restored from the outbox; alerts older than `max_age_hours` dropped; direct send from memory if the database is down)
@@ -360,6 +361,30 @@
 
 ---
 
+## Phase 5 — Event Clips
+
+**Goal:** every motion event gets a short video, with the seconds before the motion was detected, that you can watch in the dashboard and download as evidence. Design: AD-21.
+
+### 5.1 Recording
+- [x] Clip recorder in the camera thread (`vision/clip.py`): the pre-roll buffer feeds a VP8/WebM writer opened when motion starts. Frames keep their real timing (repeated when the camera falls behind, no freeze across a reconnect), the length is capped, and the size is fixed for the whole clip. A recording failure drops the clip, never the event (tests decode the real video)
+  - **Size and CPU:** a noisy camera made 3.4–7.5 MB per 10 s at 22–40 ms a frame. OpenCV ignores bitrate and speed options for VP8, so clip frames get a 5×5 blur: 0.6–1.5 MB and 6–17 ms
+- [x] `MotionEndedEvent` carries the clip; the recorder stores it next to the snapshots (a `clip` snapshot kind, migration 0005, checked on PostgreSQL too); retention deletes it with them; settings `VISION_HUB_CLIPS__*` (on/off, pre-roll, length, width)
+
+### 5.2 Delivery
+- [x] API: `clip` link on events (signed, like snapshots), `GET /events/{id}/clip` with byte ranges (Safari needs them) and a download name. Signed links now cover the path and every other query parameter
+- [x] Dashboard: the event viewer opens on the clip (snapshot as poster, no autoplay), with a remembered Snapshot/Clip choice, a download of whichever is shown, and arrows/swipes that seek on the clip. Event rows carry a clip mark. Found by the e2e tests: the page CSP blocked all media (`media-src 'none'`)
+- [x] Verified (`docs/performance.md#event-clips`):
+  - **Playback:** e2e in Chromium on desktop and phone. The clip decodes and plays, and starts before the detection.
+  - **Docker image:** records clips on a read-only filesystem (5 fps camera: 70 frames, 640×480, Range 206) and leaves no temporary files.
+  - **CPU:** the two demo cameras, recording most of the time, took the hub from 15 % to 28 % of a core.
+  - **Also fixed:** `frontend/e2e/devices.toml` had never been committed (the `devices.toml` ignore rule hid it), and the camera stop/start test ran on desktop and phone at once on a shared camera. It now has its own camera; 114/114 passed over 3 repeats
+
+**✅ Phase 5 exit criteria**
+- [x] A motion event recorded by the Docker image plays in the dashboard, including the seconds before detection
+- [x] Recording adds no measurable delay to alerts (closing a clip: ~1 ms; alerts 229–448 ms after the event in e2e), and clips are removed by retention (tested)
+
+---
+
 ## 🔭 Future — Horizontal Scaling *(deferred, only if needed)*
 
 Not part of the MVP. The ports introduced above (`EventBus`, `SnapshotStore`, repositories) are the seams for this work.
@@ -370,7 +395,6 @@ Not part of the MVP. The ports introduced above (`EventBus`, `SnapshotStore`, re
 - [ ] Control channel: API publishes `start/stop/config` commands; owning worker applies them
 - [ ] Redis-backed rate limiting and WS ticket store (required once there is more than one API replica)
 - [ ] `S3SnapshotStore` (`aioboto3`, MinIO locally) with presigned URLs
-- [ ] Short MP4 clip per event (pre-roll ring buffer + event) written by the worker
 - [ ] Person detection (ONNX/YOLO via `onnxruntime`) to filter motion events, behind the `Detector` protocol
 - [ ] Multiple API replicas behind a reverse proxy; verify rebalancing on worker loss
 - [ ] Optional push-mode edge devices (device API keys or MQTT) alongside the pull model

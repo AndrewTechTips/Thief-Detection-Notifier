@@ -39,7 +39,8 @@
 - **Smart motion detection:** an adaptive background that ignores dusk and passing clouds, a reset instead of an alarm when the lights switch on, debounced events, per-camera regions of interest, and best-frame selection
 - **Alerts that are not lost:** email with the annotated snapshot inline and attached, and web push notifications to phones and desktops (encrypted per device, also when the dashboard is closed), with per-camera cooldowns; pending alerts are stored in the database and retried, even across restarts
 - **Real time:** WebSocket alerts with per-camera subscriptions and replay of events missed while offline, and MJPEG live streams that work in a plain `<img>` tag
-- **Event history:** every event is stored with its clean frame, annotated frame and thumbnail, browsable through the API, with signed image links and per-camera retention
+- **Event clips:** a short video of every event, starting a few seconds before the motion was detected, playable in the dashboard and downloadable (WebM)
+- **Event history:** every event is stored with its clean frame, annotated frame, thumbnail and clip, browsable through the API, with signed links and per-camera retention
 - **Device API:** add, update, start and stop cameras, hot-reload detection settings, and test a source before saving it
 - **Persistent:** PostgreSQL via async SQLAlchemy and Alembic migrations (applied on startup); camera passwords encrypted at rest with rotatable keys; an audit trail of every device and user change
 - **Observable and efficient:** Prometheus metrics for every camera (analysed fps, time per frame, frame age, status) plus alerts, HTTP and event-loop lag; about 7 % of a core per 1080p camera at 10 fps ([benchmarks](docs/performance.md))
@@ -156,6 +157,7 @@ keeps its data in the `hub-data` and `pg-data` volumes.
 | `GET /api/v1/devices/{id}/stream` | MJPEG live stream | logged in (bearer or ticket) |
 | `GET /api/v1/events` · `/events/{id}` | Event history (filter by camera and time) | logged in |
 | `GET /api/v1/events/{id}/snapshot?kind=` | Event image: `annotated`, `clean` or `thumbnail` | bearer or signed link |
+| `GET /api/v1/events/{id}/clip` | Event video (WebM), with byte ranges for seeking | bearer or signed link |
 | `GET /api/v1/audit` | Who changed which device or user, and when | admin |
 | `GET /api/v1/push` · `POST /push/subscriptions` · `DELETE /push/subscriptions/{id}` · `POST /push/test` | Web push key, subscribe or unsubscribe a browser, send yourself a test | logged in |
 | `WS /api/v1/ws/events` | Live motion and status events | ticket |
@@ -187,8 +189,8 @@ ws.onopen = () => ws.send(JSON.stringify({ type: "subscribe", devices: ["porch",
 // After a reconnect: {type: "resume", after: lastEventId} replays what was missed
 ```
 
-Event responses include ready-to-use image URLs (`snapshots[].url`), signed and valid for an
-hour, so `<img src="...">` works without a token.
+Event responses include ready-to-use image and clip URLs (`snapshots[].url`, `clip.url`), signed
+and valid for an hour, so `<img src="...">` and `<video src="...">` work without a token.
 
 ---
 
@@ -216,6 +218,10 @@ mode, wildcard CORS/hosts and unencrypted SMTP.
   Password works. Failed deliveries are retried with growing delays
   (`VISION_HUB_NOTIFICATIONS__*`) and survive restarts; an alert may arrive twice after a crash,
   but is never silently lost.
+- **Event clips** are on by default (`VISION_HUB_CLIPS__*`): 3 s before the detection plus the
+  event, up to 120 s, at 640 px. Recording costs 6–17 % of a core per camera while an event is
+  open, nothing between events; `VISION_HUB_CLIPS__WIDTH=480` halves that
+  ([measurements](docs/performance.md#event-clips)).
 - **Push notifications** are on by default: anyone signed in can turn them on per device in the
   dashboard. Browsers allow push only on secure pages, so open the dashboard over HTTPS (a
   reverse proxy or a tunnel such as Tailscale) or on `localhost`; a plain `http://192.168…`

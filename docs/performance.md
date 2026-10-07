@@ -1,7 +1,7 @@
 # Performance
 
 How much a camera costs, where the time goes, and why the hub runs one thread per camera.
-The [dashboard](#dashboard) has its own section at the end. Every number here can be reproduced:
+Event clips and the [dashboard](#dashboard) have their own sections at the end. Every number here can be reproduced:
 
 ```bash
 uv run python benchmarks/pipeline.py --opencv-threads 0   # stage costs, CPU per camera
@@ -107,6 +107,39 @@ decoding, so CPU, not the architecture, sets the limit on cameras per machine.
 `vision_hub_camera_processing_seconds` (time per frame), `vision_hub_camera_last_frame_age_seconds`
 (a stalled camera), `vision_hub_event_loop_lag_seconds`, and process CPU and memory (Linux).
 See the README for a scrape configuration.
+
+## Event clips
+
+Each motion event gets a VP8/WebM clip, written by OpenCV in the camera thread: three seconds
+of pre-roll, then the event (AD-21). Measured on the Docker image (OpenCV 5.0, Linux), 640 px,
+10 fps.
+
+**Why VP8:** OpenCV's Linux wheels have no H.264 encoder. VP9 costs 20 ms a frame. VP8 plays in
+every current browser (Safari 16+, iOS 17.4+).
+
+| Camera (10 s at 640 px) | Clip size | Encoding per frame |
+|---|---:|---:|
+| Clean picture | 0.1 MB | 5 ms |
+| Moderate sensor noise | 3.4 MB → **0.6 MB** | 22 → **6 ms** |
+| Heavy sensor noise | 7.5 MB → **1.5 MB** | 40 → **17 ms** |
+| Heavy noise at 480 px | 0.9 MB | 10 ms |
+
+The arrows show the effect of the 5×5 blur on clip frames. OpenCV gives VP8 no bitrate cap, and
+it ignores `OPENCV_FFMPEG_WRITER_OPTIONS` (bitrate, `deadline`, `cpu-used`) for this encoder, so
+sensor noise decides the size. The blur is the one lever that works. Snapshots stay
+full-resolution and unblurred.
+
+- **CPU:** encoding happens only while a camera is recording. A camera at 10 fps uses 6–17 % of
+  a core during an event and nothing between events. With the two demo cameras, which record
+  most of the time, the hub went from 15 % to 28 % of a core. With a few events a day the
+  average cost is negligible. `VISION_HUB_CLIPS__WIDTH=480` roughly halves it, and
+  `VISION_HUB_CLIPS__ENABLED=false` turns clips off.
+- **Memory:** the pre-roll keeps raw frames, about 7 MB per second of pre-roll per camera at
+  640 px and 10 fps (21 MB with the default 3 s).
+- **Alerts:** closing a clip takes about 1 ms (60 s clip: 1.2 ms) before the event is
+  published. Alert latency in the end-to-end tests stayed at 229–448 ms with clips on.
+- **Disk:** clips live beside the snapshots and are deleted with them by retention. A typical
+  10–20 s event takes 0.6–3 MB.
 
 ## Dashboard
 
