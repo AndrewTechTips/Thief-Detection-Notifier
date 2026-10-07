@@ -1,7 +1,8 @@
 # Performance
 
 How much a camera costs, where the time goes, and why the hub runs one thread per camera.
-Event clips and the [dashboard](#dashboard) have their own sections at the end. Every number here can be reproduced:
+Event clips, person detection and the [dashboard](#dashboard) have their own sections at the
+end. Every number here can be reproduced:
 
 ```bash
 uv run python benchmarks/pipeline.py --opencv-threads 0   # stage costs, CPU per camera
@@ -140,6 +141,34 @@ full-resolution and unblurred.
   published. Alert latency in the end-to-end tests stayed at 229–448 ms with clips on.
 - **Disk:** clips live beside the snapshots and are deleted with them by retention. A typical
   10–20 s event takes 0.6–3 MB.
+
+## Person detection
+
+YOLOX-s (640 px input, COCO AP 40.5) from OpenCV's model zoo, on onnxruntime (AD-22). One
+check, measured with one thread:
+
+| Where | onnxruntime | OpenCV 5 DNN |
+|---|---:|---:|
+| Apple M4, macOS | 45 ms | 277 ms |
+| Docker image (Linux arm64, same machine) | **277 ms** | n/a |
+
+Apple silicon runs it on matrix units that Linux doesn't get, so plan with ~280 ms (more on
+small CPUs). That decided the design:
+
+- **Off the camera threads:** a 280 ms check in a camera thread would freeze its live view
+  every time. All checks run on one background thread shared by every camera, so the feature
+  never takes more than one core, however many cameras there are. A camera only copies the
+  frame and moves on.
+- **Few checks per event:** one when motion starts, then every 2 s, at most 5. Checking stops
+  at the first person. The frame with the most motion gets a last look.
+- **CPU:** with the two demo cameras, which have motion most of the time, the hub went from
+  24 % to 35 % of a core with detection on. A first version checked once a second in the
+  camera threads and took it to 85 %. With a few events a day the cost is a few seconds of
+  CPU per event.
+- **Alerts:** an event is published after its last look, so an alert waits for at most one
+  check (~0.3 s), and only when no person was found earlier.
+- **Privacy:** onnxruntime 1.30's Linux build includes telemetry with HTTPS uploads. The hub
+  sets `ORT_DISABLE_TELEMETRY=1` before the library loads, and the image sets it too.
 
 ## Dashboard
 

@@ -16,7 +16,7 @@
 
 ## 📍 Current Status
 
-- **Active phase:** none. Phases 1–5 are complete (MVP plus event clips)
+- **Active phase:** none. Phases 1–6 are complete (MVP, event clips, person detection)
 - **Working branch:** `main`
 - **Next task:** none planned. The *Future* section lists optional work, only if needed
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
@@ -49,6 +49,7 @@
 | AD-19 | Frontend | **Vite** + **vanilla JS** (ES modules, no framework) + **Tailwind CSS v4** (`@tailwindcss/vite`, tokens in `@theme`). Native `fetch` and `WebSocket`. Types from OpenAPI (`openapi-typescript`; WebSocket messages included) used through JSDoc and checked with `tsc --checkJs` (TypeScript 5.9: the generator needs the JS compiler API, which the native TS 7 lacks); ESLint + Prettier; Vitest for logic. Dev: Vite proxies `/api` (HTTP + WS) to the hub, so the browser sees one origin. Prod: FastAPI serves the built files. Routing: History API with lazy views, so the server needs an SPA fallback (4.4) | Small, fast bundle with no runtime dependencies; the API is the contract. Same-origin in dev and prod: no CORS, tickets and MJPEG `<img>` work unchanged. |
 | AD-20 | UI performance | Animate **only `transform` and `opacity`** (short colour transitions only on small controls and status lights); content never waits on an animation (hidden or throttled tabs may never finish one); blurred glass only on a few large static surfaces, cheap unblurred cards for repeated items; `backdrop-filter` on static chrome only, **never above live video** (an MJPEG frame under a blur forces a re-blur every frame); `prefers-reduced-motion` respected; streams pause when off-screen or the tab is hidden | Glass effects stay smooth on phones; idle tabs cost no bandwidth or CPU on the hub. |
 | AD-21 | Event clips | **VP8 in WebM**, written by OpenCV in the camera thread at 640 px: a pre-roll ring buffer (3 s) plus the event, capped at 120 s, with frames lightly blurred first. Stored beside the snapshots and served with byte ranges through a signed link | OpenCV's Linux wheels (the Docker image) have no H.264 encoder. VP8 is available everywhere and costs 6–17 ms/frame, only while recording (VP9: 20 ms). OpenCV offers no bitrate or speed control for it, so the blur keeps noisy cameras at 0.6–1.5 MB per 10 s instead of 3.4–7.5 MB. WebM plays in Chrome, Edge, Firefox and Safari 16+/iOS 17.4+. No new dependency, no ffmpeg process |
+| AD-22 | Person detection | **YOLOX-s** (OpenCV model zoo ONNX, Apache 2.0, COCO AP 40.5) on **onnxruntime**, run on **one background thread shared by all cameras**. While an event is open: a check when it starts, then every 2 s, at most 5, plus a last look at the frame with the most motion before the event is published. Per camera, alerts go out on *any motion* (default) or *people only*; if the model can't run, alerts go out anyway. onnxruntime telemetry off | onnxruntime runs it 6× faster than OpenCV 5's DNN engine. YOLOv5/v8 are AGPL; NanoDet is cheaper but far less accurate (AP 30.4). A check costs ~280 ms of one core on a typical CPU (45 ms on Apple silicon only), so it can't run in the camera thread without stalling the live view. One shared thread caps the feature at one core. Failing open: a missed intruder costs more than a false alarm |
 
 ---
 
@@ -296,7 +297,7 @@
 - [x] Benchmark `asyncio.to_thread` vs dedicated threads vs processes per camera; document results (`benchmarks/concurrency.py`, `docs/performance.md`: threads kept)
 - [x] Reuse buffers / avoid redundant `frame.copy()`; encode JPEG once per frame and share across subscribers (live frames are downscaled before annotation and not copied without motion; one JPEG per frame was already shared by all viewers)
 - [x] Prometheus `/metrics`: FPS per camera, processing latency, event-loop lag, WS clients, queue drops, notification failures (plus camera status, frame age, restarts, alerts pending, HTTP by route, process CPU/memory; scrape token)
-- [ ] Optional detector plug-in: person detection (e.g. ONNX/YOLO) to filter motion events, behind the same `Detector` protocol — deferred to *Future*
+- [x] Optional detector plug-in: person detection — done in Phase 6 (YOLOX-s on onnxruntime, AD-22)
 
 **✅ Phase 3 exit criteria**
 - [x] Events and snapshots survive restarts and are queryable via the API
@@ -385,6 +386,29 @@
 
 ---
 
+## Phase 6 — Person Detection
+
+**Goal:** tell people from wind, shadows, rain and pets, so cameras can alert on people only. Design: AD-22.
+
+### 6.1 Detection
+- [x] Person detector (`vision/persons.py`): YOLOX-s on onnxruntime (new dependency, approved), letterboxing and box decoding, a pinned model file checked by SHA-256, `vision-hub download-model`; settings `VISION_HUB_PERSONS__*`. Tested on a public-domain photo (Grace Hopper's Navy portrait: 0.93) and empty scenes
+- [x] Checks off the camera threads (`PersonChecker`): one shared background thread; checks when motion starts, every 2 s, at most 5, stopping at the first person, plus a last look at the best frame before publishing. Events record `person`, the best score and `alert`. A missing or failing model never stops detection
+  - **Found by measuring in Docker:** a check costs ~280 ms on Linux (45 ms only on Apple silicon). The first design, in the camera thread, would have stalled the live view and doubled CPU. onnxruntime's telemetry (HTTPS uploads) is turned off
+
+### 6.2 Alerts and history
+- [x] Per-camera `alert_on`: any motion (default) or people only, failing open when the model is unavailable. Email, push and dashboard toasts follow the same decision, and alerts say "Person detected / Person at …". Quiet events skip the cooldown
+- [x] Stored and served: `person`, `person_confidence` and `alert` on events (migration 0006, checked on PostgreSQL), in the WebSocket messages and the API, with a `person` filter
+- [x] Dashboard: "Person" tag on events, a "People only" filter, the person verdict in the viewer, and "Alert on: Any motion / People" in the camera's detection settings. People-only cameras never toast for motion alone
+
+### 6.3 Delivery
+- [x] Docker image ships the model (verified at build, pinned in step with the hub by a test); CI caches the model so the real-model tests run there. Measured in the image (`docs/performance.md#person-detection`): two busy demo cameras 24 % → 35 % of a core; an alert waits for at most one check
+
+**✅ Phase 6 exit criteria**
+- [x] A camera set to people only stays quiet for motion without people and alerts for a person (real model, in tests and in the Docker image: yard 0 of 12 events alerted, door 5 of 5)
+- [x] With the model missing, every camera still alerts (and says why in the logs: `person_model_missing` with the fix)
+
+---
+
 ## 🔭 Future — Horizontal Scaling *(deferred, only if needed)*
 
 Not part of the MVP. The ports introduced above (`EventBus`, `SnapshotStore`, repositories) are the seams for this work.
@@ -395,7 +419,6 @@ Not part of the MVP. The ports introduced above (`EventBus`, `SnapshotStore`, re
 - [ ] Control channel: API publishes `start/stop/config` commands; owning worker applies them
 - [ ] Redis-backed rate limiting and WS ticket store (required once there is more than one API replica)
 - [ ] `S3SnapshotStore` (`aioboto3`, MinIO locally) with presigned URLs
-- [ ] Person detection (ONNX/YOLO via `onnxruntime`) to filter motion events, behind the `Detector` protocol
 - [ ] Multiple API replicas behind a reverse proxy; verify rebalancing on worker loss
 - [ ] Optional push-mode edge devices (device API keys or MQTT) alongside the pull model
 

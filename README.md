@@ -39,6 +39,7 @@
 - **Smart motion detection:** an adaptive background that ignores dusk and passing clouds, a reset instead of an alarm when the lights switch on, debounced events, per-camera regions of interest, and best-frame selection
 - **Alerts that are not lost:** email with the annotated snapshot inline and attached, and web push notifications to phones and desktops (encrypted per device, also when the dashboard is closed), with per-camera cooldowns; pending alerts are stored in the database and retried, even across restarts
 - **Real time:** WebSocket alerts with per-camera subscriptions and replay of events missed while offline, and MJPEG live streams that work in a plain `<img>` tag
+- **Person detection:** each motion event is checked for people (YOLOX-s, runs locally), so cameras can alert on people only, ignoring wind, shadows and animals; events carry a Person tag and can be filtered by it
 - **Event clips:** a short video of every event, starting a few seconds before the motion was detected, playable in the dashboard and downloadable (WebM)
 - **Event history:** every event is stored with its clean frame, annotated frame, thumbnail and clip, browsable through the API, with signed links and per-camera retention
 - **Device API:** add, update, start and stop cameras, hot-reload detection settings, and test a source before saving it
@@ -155,7 +156,7 @@ keeps its data in the `hub-data` and `pg-data` volumes.
 | `POST /api/v1/devices/test` | Check a source works before saving it | admin |
 | `GET /api/v1/devices/{id}/snapshot` | Latest frame as JPEG | logged in |
 | `GET /api/v1/devices/{id}/stream` | MJPEG live stream | logged in (bearer or ticket) |
-| `GET /api/v1/events` · `/events/{id}` | Event history (filter by camera and time) | logged in |
+| `GET /api/v1/events` · `/events/{id}` | Event history (filter by camera, time and `person`) | logged in |
 | `GET /api/v1/events/{id}/snapshot?kind=` | Event image: `annotated`, `clean` or `thumbnail` | bearer or signed link |
 | `GET /api/v1/events/{id}/clip` | Event video (WebM), with byte ranges for seeking | bearer or signed link |
 | `GET /api/v1/audit` | Who changed which device or user, and when | admin |
@@ -218,6 +219,11 @@ mode, wildcard CORS/hosts and unencrypted SMTP.
   Password works. Failed deliveries are retried with growing delays
   (`VISION_HUB_NOTIFICATIONS__*`) and survive restarts; an alert may arrive twice after a crash,
   but is never silently lost.
+- **Person detection** needs its model: `vision-hub download-model` fetches it (36 MB, checked
+  by SHA-256); the Docker image already contains it. Each camera chooses in its detection
+  settings whether alerts go out on any motion (the default) or on people only. Without the
+  model every event alerts. Checks run on one background thread for all cameras, about 0.3 s
+  of one core each, a few per event ([measurements](docs/performance.md#person-detection)).
 - **Event clips** are on by default (`VISION_HUB_CLIPS__*`): 3 s before the detection plus the
   event, up to 120 s, at 640 px. Recording costs 6–17 % of a core per camera while an event is
   open, nothing between events; `VISION_HUB_CLIPS__WIDTH=480` halves that
