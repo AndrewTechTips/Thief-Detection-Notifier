@@ -132,6 +132,7 @@ export default {
         attrs: { type: "button" },
         text: "Discard changes",
       });
+      const testHint = h("p", { class: "hint mb-3" });
       const testButton = h("button", {
         class: "btn btn-secondary btn-sm",
         attrs: { type: "button" },
@@ -152,10 +153,7 @@ export default {
             "section",
             { class: "card p-5" },
             h("h2", { class: "device-section-title", text: "Connection" }),
-            h("p", {
-              class: "hint mb-3",
-              text: "Opens the camera's source and reads one frame, using its saved credentials.",
-            }),
+            testHint,
             h("div", { class: "flex flex-wrap items-center gap-3" }, testButton),
             testResult,
           ),
@@ -217,8 +215,11 @@ export default {
         // A running camera is already connected, and some sources (USB cameras) can't be
         // opened twice: the test is for cameras that aren't streaming.
         testButton.disabled = device.status === "online";
-        testButton.title =
-          device.status === "online" ? "Streaming now, so the connection works." : "";
+        // Said in the text, not a tooltip: phones never show tooltips.
+        testHint.textContent =
+          device.status === "online"
+            ? "The camera is streaming, so its connection works. Stop it to test the source on its own."
+            : "Opens the camera's source and reads one frame, using its saved credentials.";
       }
 
       function renderDraft() {

@@ -260,7 +260,7 @@ export default {
           words.detail ? h("p", { class: "text-sm text-haze", text: words.detail }) : null,
         ),
         h("time", {
-          class: "flex-none text-sm text-haze tabular-nums",
+          class: "flex-none text-sm text-haze",
           attrs: {
             datetime: entry.at,
             // Matches the hub's logs for this change.

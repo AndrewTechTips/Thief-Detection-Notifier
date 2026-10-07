@@ -41,7 +41,7 @@
 
   .panel-solid {
     border-radius: var(--radius-card);
-    background: rgb(18 26 46 / 0.94);
+    background: var(--color-ink-800); /* menus over text: nothing may show through */
     border: 1px solid rgb(255 255 255 / 0.08);
     box-shadow: var(--shadow-float);
   }
@@ -529,11 +529,11 @@
     align-items: start;
     padding: 0.875rem 0.625rem 0.875rem 1rem;
     border-radius: var(--radius-card);
-    background: var(--glass-fill-strong);
-    border: 1px solid var(--glass-border);
+    /* Solid, not glass: toasts float over live video and page headers (AD-20), and must stay
+       readable on any background. */
+    background: var(--color-ink-800);
+    border: 1px solid rgb(255 255 255 / 0.1);
     box-shadow: var(--shadow-float);
-    backdrop-filter: var(--glass-blur);
-    -webkit-backdrop-filter: var(--glass-blur);
     pointer-events: auto;
 
     & .toast-lead > .dot {

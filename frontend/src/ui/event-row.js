@@ -33,7 +33,7 @@ export function eventRow(initial, { onOpen } = {}) {
   const name = h("p", { class: "truncate font-medium" });
   const facts = h("p", { class: "event-facts" });
   const tags = h("div", { class: "event-tags" });
-  const clock = h("time", { class: "text-sm tabular-nums" });
+  const clock = h("time", { class: "text-sm" });
   const ago = h("p", { class: "text-xs text-haze" });
   const element = h(
     "li",

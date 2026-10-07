@@ -9,7 +9,7 @@ import { toast } from "./toast.js";
 
 /** @type {Record<import("../push.js").PushState, string>} */
 const HINT = {
-  off: "Motion alerts on this device, even with the dashboard closed.",
+  off: "Get alerts on this device.",
   on: "On for this device.",
   denied: "Blocked in this browser's settings for the site.",
   install: "Add Vision Hub to your Home Screen to get alerts.",

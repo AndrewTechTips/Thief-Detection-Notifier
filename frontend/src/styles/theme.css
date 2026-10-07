@@ -48,7 +48,6 @@
 :root {
   /* Glass: translucent fill + blur. Only for static chrome, never above live video (AD-20). */
   --glass-fill: rgb(255 255 255 / 0.045);
-  --glass-fill-strong: rgb(20 28 48 / 0.72);
   --glass-border: rgb(255 255 255 / 0.09);
   --glass-blur: blur(22px) saturate(140%);
   /* Phones repaint large blurred areas on every scroll; a smaller radius keeps 60 fps. */

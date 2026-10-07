@@ -142,7 +142,7 @@ export function roiEditor({ surface, areas: initial, onChange }) {
     });
     if (draft.length) {
       parts.push(
-        `<polyline class="roi-draft" points="${draft.map(([x, y]) => `${x},${y}`).join(" ")}" vector-effect="non-scaling-stroke"></polyline>`,
+        `<polyline class="roi-draft" points="${draft.map(([x, y]) => `${num(x)},${num(y)}`).join(" ")}" vector-effect="non-scaling-stroke"></polyline>`,
       );
     }
     const fragment = svg(`<svg xmlns="${SVG_NS}">${parts.join("")}</svg>`);
@@ -276,7 +276,13 @@ export function roiEditor({ surface, areas: initial, onChange }) {
 
 /** @param {Polygon} area */
 function pathOf(area) {
-  return `M${area.map(([x, y]) => `${x} ${y}`).join("L")}Z`;
+  return `M${area.map(([x, y]) => `${num(x)} ${num(y)}`).join("L")}Z`;
+}
+
+/** Coordinates go into SVG markup: only ever as numbers, whatever the data says.
+ * @param {unknown} value */
+function num(value) {
+  return String(Number(value));
 }
 
 /** @param {Polygon[]} areas @returns {Polygon[]} */
