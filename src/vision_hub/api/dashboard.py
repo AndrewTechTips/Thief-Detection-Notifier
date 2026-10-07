@@ -33,7 +33,7 @@ PAGE_CSP = "; ".join(
         "connect-src 'self'",
         "manifest-src 'self'",
         "worker-src 'self'",
-        "media-src 'none'",
+        "media-src 'self'",  # event clips
         "object-src 'none'",
         "base-uri 'none'",
         "form-action 'self'",
