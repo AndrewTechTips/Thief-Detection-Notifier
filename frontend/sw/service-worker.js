@@ -114,6 +114,7 @@ async function staleWhileRevalidate(/** @type {Request} */ request) {
  *   device_name: string,
  *   started_at: string,
  *   duration_seconds: number | null,
+ *   person: boolean | null,
  *   image: string | null,
  * } | { kind: "test" }} PushAlert
  */
@@ -154,7 +155,8 @@ async function notify(alert) {
   if (windows.some((client) => client.focused && client.visibilityState === "visible")) return;
 
   const lasted = alert.duration_seconds;
-  return registration.showNotification(`Motion on ${alert.device_name}`, {
+  const what = alert.person ? `Person at ${alert.device_name}` : `Motion on ${alert.device_name}`;
+  return registration.showNotification(what, {
     body: lasted
       ? `At ${clock(alert.started_at)}, for ${duration(lasted)}.`
       : `At ${clock(alert.started_at)}.`,

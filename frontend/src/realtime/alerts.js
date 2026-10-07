@@ -1,11 +1,13 @@
 // Motion alerts: one toast per camera, from "motion now" to "ended, with a snapshot".
-// Events replayed after a reconnect are summed up in a single toast instead of one each.
+// Cameras that alert on people only toast once the event is over, and only if a person was
+// seen (the hub decides: `alert` on the ended event). Events replayed after a reconnect are
+// summed up in a single toast instead of one each.
 // In a background tab, the page title counts unseen alerts: "(2) Live – Vision Hub".
 
 import { getEvent, snapshotUrl } from "../api/events.js";
-import { deviceName } from "../state/devices.js";
+import { alertsOn, deviceName } from "../state/devices.js";
 import { formatClock, formatDuration } from "../ui/time.js";
-import { toast } from "../ui/toast.js";
+import { dismissToast, toast } from "../ui/toast.js";
 
 /** @typedef {import("../api/types.js").MessageOf<"motion.started">} MotionStarted */
 /** @typedef {import("../api/types.js").MessageOf<"motion.ended">} MotionEnded */
@@ -28,10 +30,16 @@ export function startAlerts(realtime, { navigate }) {
   const stop = realtime.listen((message) => {
     switch (message.type) {
       case "motion.started":
+        // People-only cameras: nothing to say until the hub knows whether it was a person.
+        if (alertsOn(message.device_id) === "person") return;
         if (message.replay) missed += 1;
         else started(message);
         return;
       case "motion.ended":
+        if (!message.data.alert) {
+          quiet(message);
+          return;
+        }
         // An alert still says "motion now" for this event: finish it, replayed or not.
         if (active.get(message.device_id) === message.data.event_id) ended(message);
         else if (message.replay) missed += 1;
@@ -59,6 +67,14 @@ export function startAlerts(realtime, { navigate }) {
     attention.bump();
   }
 
+  /** No alert after all (the camera's setting changed mid-event): take back "motion now".
+   * @param {MotionEnded} message */
+  function quiet(message) {
+    if (active.get(message.device_id) !== message.data.event_id) return;
+    active.delete(message.device_id);
+    dismissToast(`motion:${message.device_id}`);
+  }
+
   /** @param {MotionEnded} message */
   async function ended(message) {
     const device = message.device_id;
@@ -71,7 +87,9 @@ export function startAlerts(realtime, { navigate }) {
     toast({
       key: `motion:${device}`,
       tone: "sodium",
-      title: `Motion on ${deviceName(device)}`,
+      title: message.data.person
+        ? `Person at ${deviceName(device)}`
+        : `Motion on ${deviceName(device)}`,
       message:
         lasted === null
           ? `At ${formatClock(start)}.`

@@ -45,6 +45,16 @@ export function deviceName(id) {
   return device?.name ?? id;
 }
 
+/**
+ * What the camera alerts on: any motion, or people only (its detection settings). Unknown
+ * cameras alert on motion: better a toast too many than a missed one.
+ * @param {string} id
+ * @returns {"motion" | "person"}
+ */
+export function alertsOn(id) {
+  return devices.get().get(id)?.detection.alert_on ?? "motion";
+}
+
 /** Adds or replaces one camera (e.g. after loading or changing it).
  * @param {Device} device */
 export function rememberDevice(device) {

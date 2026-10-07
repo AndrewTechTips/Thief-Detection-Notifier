@@ -1,10 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const shown = vi.hoisted(() => /** @type {any[]} */ ([]));
+const dismissed = vi.hoisted(() => /** @type {string[]} */ ([]));
 
-vi.mock("../ui/toast.js", () => ({ toast: (/** @type {any} */ options) => shown.push(options) }));
+vi.mock("../ui/toast.js", () => ({
+  toast: (/** @type {any} */ options) => shown.push(options),
+  dismissToast: (/** @type {string} */ key) => dismissed.push(key),
+}));
 vi.mock("../state/devices.js", () => ({
-  deviceName: (/** @type {string} */ id) => ({ porch: "Front porch", garage: "Garage" })[id] ?? id,
+  deviceName: (/** @type {string} */ id) =>
+    ({ porch: "Front porch", garage: "Garage", gate: "Gate" })[id] ?? id,
+  // The gate camera alerts on people only.
+  alertsOn: (/** @type {string} */ id) => (id === "gate" ? "person" : "motion"),
 }));
 vi.mock("../api/events.js", () => ({
   getEvent: async (/** @type {string} */ id) => ({ id, snapshots: [] }),
@@ -34,7 +41,12 @@ const started = (/** @type {string} */ device, /** @type {string} */ id, replay 
   replay,
   data: { event_id: id, started_at: "2026-10-04T10:00:00Z" },
 });
-const ended = (/** @type {string} */ device, /** @type {string} */ id, replay = false) => ({
+const ended = (
+  /** @type {string} */ device,
+  /** @type {string} */ id,
+  replay = false,
+  { person = /** @type {boolean | null} */ (null), alert = true } = {},
+) => ({
   type: "motion.ended",
   device_id: device,
   replay,
@@ -45,6 +57,9 @@ const ended = (/** @type {string} */ device, /** @type {string} */ id, replay = 
     peak_area_ratio: 0.2,
     motion_frames: 30,
     boxes: [],
+    person,
+    person_confidence: person === null ? null : person ? 0.9 : 0.1,
+    alert,
   },
 });
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -54,6 +69,7 @@ let doc;
 
 beforeEach(() => {
   shown.length = 0;
+  dismissed.length = 0;
   doc = Object.assign(new EventTarget(), { hidden: false, title: "Live – Vision Hub" });
   vi.stubGlobal("document", doc);
 });
@@ -94,6 +110,43 @@ describe("motion alerts", () => {
     await settle();
 
     expect(shown.at(-1)).toMatchObject({ duration: 0, message: expect.stringMatching(/^Started/) });
+  });
+
+  it("people-only cameras toast once a person was seen, and only then", async () => {
+    const realtime = fakeRealtime();
+    startAlerts(/** @type {any} */ (realtime), { navigate: vi.fn() });
+
+    realtime.send(started("gate", "e1"));
+    realtime.send(ended("gate", "e1", false, { person: false, alert: false }));
+    realtime.send(started("gate", "e2"));
+    realtime.send(ended("gate", "e2", false, { person: true }));
+    await settle();
+
+    expect(shown).toHaveLength(1);
+    expect(shown[0]).toMatchObject({ key: "motion:gate", title: "Person at Gate" });
+  });
+
+  it("takes back 'motion now' when the event turns out not to alert", async () => {
+    // The camera was switched to people only while the motion went on.
+    const realtime = fakeRealtime();
+    startAlerts(/** @type {any} */ (realtime), { navigate: vi.fn() });
+
+    realtime.send(started("porch", "e1"));
+    realtime.send(ended("porch", "e1", false, { person: false, alert: false }));
+    await settle();
+
+    expect(shown).toHaveLength(1); // only "motion now"
+    expect(dismissed).toEqual(["motion:porch"]);
+  });
+
+  it("does not count replayed events that did not alert", () => {
+    const realtime = fakeRealtime();
+    startAlerts(/** @type {any} */ (realtime), { navigate: vi.fn() });
+
+    realtime.send(ended("gate", "e1", true, { person: false, alert: false }));
+    realtime.send({ type: "replay.done", data: { replayed: 1, truncated: false } });
+
+    expect(shown).toEqual([]);
   });
 
   it("sums up replayed events in one toast", () => {

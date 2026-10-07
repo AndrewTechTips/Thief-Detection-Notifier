@@ -58,6 +58,7 @@ export default {
       range: /** @type {Range} */ (
         RANGES.some((r) => r.value === query.get("range")) ? query.get("range") : "all"
       ),
+      people: query.get("people") === "1",
     };
     const highlight = query.get("event");
 
@@ -79,11 +80,16 @@ export default {
         ),
       ),
     );
+    // A one-option chip, styled like the time ranges.
+    const peopleOnly = h("input", {
+      attrs: { type: "checkbox", name: "people", checked: filters.people },
+    });
+    const people = h("div", { class: "segmented" }, h("label", {}, peopleOnly, "People only"));
     const list = h("div", { class: "event-days", attrs: { "aria-busy": "true" } });
     const more = h("div", { class: "event-more", attrs: { "aria-live": "polite" } });
     outlet.append(
       pageHeader({ title: "Events", description: "Motion your cameras recorded, newest first." }),
-      h("div", { class: "event-filters" }, camera, ranges),
+      h("div", { class: "event-filters" }, camera, ranges, people),
       list,
       more,
     );
@@ -136,6 +142,7 @@ export default {
           listEvents({
             deviceId: filters.device,
             since: rangeStart(filters.range),
+            person: filters.people ? true : null,
             cursor,
             limit: PAGE_SIZE,
             signal: controller.signal,
@@ -181,6 +188,7 @@ export default {
     /** @param {ListedEvent} event */
     function matches(event) {
       if (filters.device && event.device_id !== filters.device) return false;
+      if (filters.people && event.person !== true) return false; // joins once a person is seen
       const since = rangeStart(filters.range);
       return !since || Date.parse(event.started_at) >= since.getTime();
     }
@@ -248,7 +256,7 @@ export default {
     }
 
     function emptyState() {
-      const filtered = filters.device || filters.range !== "all";
+      const filtered = filters.device || filters.range !== "all" || filters.people;
       return h(
         "div",
         { class: "camera-empty card" },
@@ -260,7 +268,7 @@ export default {
         h("p", {
           class: "text-sm text-haze",
           text: filtered
-            ? "Try another camera or a longer time range."
+            ? "Try another camera, a longer time range, or all motion."
             : "Events appear here, live, as your cameras see movement.",
         }),
         filtered
@@ -268,7 +276,7 @@ export default {
               class: "btn btn-secondary btn-sm mt-3",
               attrs: { type: "button" },
               text: "Show all events",
-              on: { click: () => setFilters({ device: null, range: "all" }) },
+              on: { click: () => setFilters({ device: null, range: "all", people: false }) },
             })
           : null,
       );
@@ -290,16 +298,18 @@ export default {
       camera.value = filters.device ?? "";
     }
 
-    /** @param {{ device?: string | null, range?: Range }} next */
+    /** @param {{ device?: string | null, range?: Range, people?: boolean }} next */
     function setFilters(next) {
       Object.assign(filters, next);
       camera.value = filters.device ?? "";
+      peopleOnly.checked = filters.people;
       for (const input of ranges.querySelectorAll("input")) {
         input.checked = input.value === filters.range;
       }
       const params = new URLSearchParams();
       if (filters.device) params.set("device", filters.device);
       if (filters.range !== "all") params.set("range", filters.range);
+      if (filters.people) params.set("people", "1");
       const search = params.size ? `?${params}` : "";
       // Same page, new filters: replace the entry so Back leaves the page rather than undoing.
       history.replaceState(history.state, "", `${location.pathname}${search}`);
@@ -307,6 +317,7 @@ export default {
     }
 
     camera.addEventListener("change", () => setFilters({ device: camera.value || null }));
+    peopleOnly.addEventListener("change", () => setFilters({ people: peopleOnly.checked }));
     ranges.addEventListener("change", (event) => {
       const input = /** @type {HTMLInputElement} */ (event.target);
       setFilters({ range: /** @type {Range} */ (input.value) });

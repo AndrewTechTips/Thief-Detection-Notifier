@@ -106,7 +106,60 @@ export function detectionForm({ config: initial, onChange, disabled = false }) {
     return { element, render };
   }
 
+  /** Any motion or people only: what raises an alert (events are recorded either way). */
+  function alertChoice() {
+    const choices = /** @type {const} */ ([
+      ["motion", "Any motion"],
+      ["person", "People"],
+    ]);
+    const group = h(
+      "div",
+      {
+        class: "segmented",
+        attrs: {
+          role: "radiogroup",
+          "aria-labelledby": "detect-alert-label",
+          "aria-describedby": "detect-alert-hint",
+        },
+      },
+      choices.map(([value, label]) =>
+        h(
+          "label",
+          {},
+          h("input", { attrs: { type: "radio", name: "detect-alert", value, disabled } }),
+          label,
+        ),
+      ),
+    );
+    const hint = h("p", { class: "hint", attrs: { id: "detect-alert-hint" } });
+    const element = h(
+      "div",
+      { class: "field" },
+      h("p", { class: "label", attrs: { id: "detect-alert-label" }, text: "Alert on" }),
+      group,
+      hint,
+    );
+    function render() {
+      for (const input of group.querySelectorAll("input")) {
+        input.checked = input.value === config.alert_on;
+      }
+      hint.textContent =
+        config.alert_on === "person"
+          ? "Alerts only when someone is seen; other motion is still recorded. If the hub can't check for people, every event alerts."
+          : "Every motion event alerts. Choose People to ignore wind, shadows and animals.";
+    }
+    group.addEventListener("change", (event) => {
+      const value = /** @type {HTMLInputElement} */ (event.target).value;
+      config = { ...config, alert_on: /** @type {DetectionConfig["alert_on"]} */ (value) };
+      render();
+      onChange({ ...config });
+    });
+    render();
+    return { element, render };
+  }
+
   const controls = [
+    alertChoice(),
     slider({
       id: "detect-sensitivity",
       label: "Sensitivity",

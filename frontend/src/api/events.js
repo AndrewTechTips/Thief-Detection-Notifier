@@ -12,15 +12,16 @@ import { api } from "./client.js";
  *   deviceId?: string | null,
  *   since?: Date | null,
  *   until?: Date | null,
+ *   person?: boolean | null,
  *   cursor?: string | null,
  *   limit?: number,
  *   signal?: AbortSignal,
  * }} [options]
  * @returns {Promise<EventPage>}
  */
-export function listEvents({ deviceId, since, until, cursor, limit = 30, signal } = {}) {
+export function listEvents({ deviceId, since, until, person, cursor, limit = 30, signal } = {}) {
   return api.get("/events", {
-    query: { device_id: deviceId, since, until, cursor, limit },
+    query: { device_id: deviceId, since, until, person, cursor, limit },
     signal,
   });
 }

@@ -28,6 +28,10 @@ export VISION_HUB_SECURITY__AUTH_RATE_LIMIT=200/minute
 export VISION_HUB_PUSH__ALLOWED_HOSTS=push.e2e.invalid
 export VISION_HUB_PUSH__SUBJECT=mailto:e2e@example.com
 
+# The person model, if downloaded (`vision-hub download-model`); without it cameras alert on all
+# motion, and the tests pass either way (the synthetic visitors are not people).
+export VISION_HUB_PERSONS__MODEL_PATH="$REPO/data/models/person-yolox-s.onnx"
+
 # Relative data paths (snapshots, keys, the lock file) land in the throwaway folder.
 cd "$DATA"
 exec uv run --project "$REPO" --frozen vision-hub serve

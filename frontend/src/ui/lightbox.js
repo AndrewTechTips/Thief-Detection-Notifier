@@ -106,6 +106,7 @@ export function openLightbox({ items, index, refresh, onClose }) {
       event.peak_area_ratio > 0
         ? `up to ${Math.round(event.peak_area_ratio * 100)} % of the frame`
         : null,
+      event.person ? "a person was seen" : event.person === false ? "nobody seen" : null,
     ]
       .filter(Boolean)
       .join(", ");

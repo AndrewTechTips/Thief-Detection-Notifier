@@ -98,6 +98,7 @@ export function eventRow(initial, { onOpen } = {}) {
         !event.complete && !event.interrupted && tag("sodium", "In progress", true),
         event.interrupted &&
           tag("alarm", "Interrupted", false, "The hub stopped before this event ended."),
+        event.person && tag("signal", "Person", false, personTitle(event)),
         event.missed && tag("iris", "Missed", false, "Happened while this page was offline."),
       ].filter((item) => item instanceof HTMLElement),
     );
@@ -142,6 +143,14 @@ export function eventRow(initial, { onOpen } = {}) {
       open.focus({ preventScroll: true });
     },
   };
+}
+
+/** @param {ListedEvent} event */
+function personTitle(event) {
+  const score = event.person_confidence;
+  return score === null
+    ? "A person was seen."
+    : `A person was seen (${Math.round(score * 100)} % sure).`;
 }
 
 /**
