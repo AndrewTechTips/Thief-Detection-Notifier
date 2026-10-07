@@ -383,6 +383,7 @@ export default {
             motion_frames: 0,
             boxes: [],
             snapshots: [],
+            clip: null,
             missed: message.replay,
           });
           return;
@@ -390,7 +391,7 @@ export default {
           const { event_id: id, started_at, ended_at } = message.data;
           const known = rows.get(id)?.event;
           arrive({
-            ...(known ?? { snapshots: [], interrupted: false, missed: message.replay }),
+            ...(known ?? { snapshots: [], clip: null, interrupted: false, missed: message.replay }),
             id,
             device_id: message.device_id,
             started_at,

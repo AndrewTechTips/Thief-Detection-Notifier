@@ -1,5 +1,5 @@
-"""Events camera workers publish to the rest of the hub. Plain data (JPEG bytes, never numpy
-arrays), so they can cross from worker threads into asyncio and later onto a message bus."""
+"""Events camera workers publish to the rest of the hub. Plain data (JPEG and video bytes, never
+numpy arrays), so they can cross from worker threads into asyncio and later onto a message bus."""
 
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -22,6 +22,17 @@ class MotionStartedEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class VideoClip:
+    """A short video of an event: the seconds before it was detected, then the event."""
+
+    data: bytes = field(repr=False)
+    content_type: str  # "video/webm"
+    duration_seconds: float
+    width: int
+    height: int
+
+
+@dataclass(frozen=True, slots=True)
 class MotionEndedEvent:
     event: MotionEvent
     snapshot_jpeg: bytes = field(repr=False)  # clean evidence frame, full resolution
@@ -29,6 +40,7 @@ class MotionEndedEvent:
     thumbnail_jpeg: bytes = field(default=b"", repr=False)  # small annotated preview for lists
     boxes: tuple[BoundingBox, ...] = ()
     snapshot_at: datetime | None = None
+    clip: VideoClip | None = None
 
 
 type CameraEvent = DeviceStatusChanged | MotionStartedEvent | MotionEndedEvent

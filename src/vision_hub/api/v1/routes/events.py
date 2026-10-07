@@ -9,7 +9,7 @@ from vision_hub.api.deps import ContainerDep, EventServiceDep
 from vision_hub.api.v1 import API_V1_PREFIX
 from vision_hub.domain.storage import SnapshotKind
 from vision_hub.schemas.base import UtcDateTime
-from vision_hub.schemas.events import EventOut
+from vision_hub.schemas.events import EventOut, ImageKind
 from vision_hub.schemas.pagination import Page, PageParamsDep, encode_cursor
 from vision_hub.schemas.problem import ProblemDetail
 
@@ -58,7 +58,10 @@ async def get_event(event_id: str, events: EventServiceDep, container: Container
     return EventOut.from_record(record, container.url_signer, API_V1_PREFIX)
 
 
-# Mounted on the signed-or-bearer router: <img> tags cannot send an Authorization header.
+IMMUTABLE = "private, max-age=3600, immutable"
+
+# Mounted on the signed-or-bearer router: <img> and <video> tags cannot send an Authorization
+# header.
 snapshot_router = APIRouter(prefix="/events", tags=["events"])
 
 
@@ -74,13 +77,35 @@ snapshot_router = APIRouter(prefix="/events", tags=["events"])
 async def snapshot(
     event_id: str,
     events: EventServiceDep,
-    kind: SnapshotKind = SnapshotKind.ANNOTATED,
+    kind: ImageKind = "annotated",
 ) -> FileResponse:
     """Use the signed `url` from an event, or a bearer token. Snapshots never change, so
     browsers may cache them privately."""
-    path = await events.snapshot_file(event_id, kind)
+    path = await events.snapshot_file(event_id, SnapshotKind(kind))
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": IMMUTABLE})
+
+
+@snapshot_router.get(
+    "/{event_id}/clip",
+    summary="Event clip",
+    response_class=FileResponse,
+    responses={
+        200: {"content": {"video/webm": {}}, "description": "WebM video (VP8)"},
+        206: {"content": {"video/webm": {}}, "description": "The requested byte range"},
+        **_problems(401, 404, 416),
+    },
+)
+async def clip(event_id: str, events: EventServiceDep) -> FileResponse:
+    """Use the signed `clip.url` from an event, or a bearer token. Supports `Range` requests,
+    which browsers use to seek (Safari needs them to play at all). Saved files are named after
+    the camera and the time the event started."""
+    path, record = await events.clip_file(event_id)
+    started = record.event.started_at
+    filename = f"motion-{record.event.device_id}-{started:%Y%m%dT%H%M%SZ}.webm"
     return FileResponse(
         path,
-        media_type="image/jpeg",
-        headers={"Cache-Control": "private, max-age=3600, immutable"},
+        media_type=SnapshotKind.CLIP.content_type,
+        filename=filename,
+        content_disposition_type="inline",
+        headers={"Cache-Control": IMMUTABLE},
     )

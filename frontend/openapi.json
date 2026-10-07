@@ -2197,8 +2197,14 @@
             "in": "query",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/SnapshotKind",
-              "default": "annotated"
+              "enum": [
+                "clean",
+                "annotated",
+                "thumbnail"
+              ],
+              "type": "string",
+              "default": "annotated",
+              "title": "Kind"
             }
           },
           {
@@ -2265,6 +2271,133 @@
               }
             },
             "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events/{event_id}/clip": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Event clip",
+        "description": "Use the signed `clip.url` from an event, or a bearer token. Supports `Range` requests,\nwhich browsers use to seek (Safari needs them to play at all). Saved files are named after\nthe camera and the time the event started.",
+        "operationId": "events_clip",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Id"
+            }
+          },
+          {
+            "name": "expires",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "From a signed link",
+              "title": "Expires"
+            },
+            "description": "From a signed link"
+          },
+          {
+            "name": "signature",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "From a signed link",
+              "title": "Signature"
+            },
+            "description": "From a signed link"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "WebM video (VP8)",
+            "content": {
+              "video/webm": {}
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "206": {
+            "content": {
+              "video/webm": {}
+            },
+            "description": "The requested byte range"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "416": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Range Not Satisfiable"
           },
           "422": {
             "description": "Validation Failed",
@@ -2466,6 +2599,31 @@
           "duration_ms"
         ],
         "title": "CheckStatus"
+      },
+      "ClipLink": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Signed, expiring link: usable directly in a <video> tag"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type",
+            "description": "\"video/webm\" (VP8)"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "content_type",
+          "size_bytes"
+        ],
+        "title": "ClipLink"
       },
       "DetectionConfig": {
         "properties": {
@@ -2873,6 +3031,17 @@
             },
             "type": "array",
             "title": "Snapshots"
+          },
+          "clip": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClipLink"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Video of the event, from a few seconds before it was detected"
           }
         },
         "type": "object",
@@ -2887,7 +3056,8 @@
           "peak_area_ratio",
           "motion_frames",
           "boxes",
-          "snapshots"
+          "snapshots",
+          "clip"
         ],
         "title": "EventOut"
       },
@@ -2925,6 +3095,14 @@
         ],
         "title": "FieldError",
         "type": "object"
+      },
+      "ImageKind": {
+        "type": "string",
+        "enum": [
+          "clean",
+          "annotated",
+          "thumbnail"
+        ]
       },
       "LastEvent": {
         "properties": {
@@ -3467,19 +3645,10 @@
         "title": "RtspSourceConfig",
         "description": "Credentials live in their own fields so they stay secret; ``url`` must not embed them."
       },
-      "SnapshotKind": {
-        "type": "string",
-        "enum": [
-          "clean",
-          "annotated",
-          "thumbnail"
-        ],
-        "title": "SnapshotKind"
-      },
       "SnapshotLink": {
         "properties": {
           "kind": {
-            "$ref": "#/components/schemas/SnapshotKind"
+            "$ref": "#/components/schemas/ImageKind"
           },
           "url": {
             "type": "string",

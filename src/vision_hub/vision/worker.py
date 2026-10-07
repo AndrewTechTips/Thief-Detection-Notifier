@@ -22,10 +22,12 @@ from vision_hub.domain.events import (
     DeviceStatusChanged,
     MotionEndedEvent,
     MotionStartedEvent,
+    VideoClip,
 )
 from vision_hub.domain.motion import BoundingBox
 from vision_hub.vision.annotate import draw_boxes
 from vision_hub.vision.bridge import FramePacket
+from vision_hub.vision.clip import ClipRecorder, ClipSettings
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.detector import MotionDetector
 from vision_hub.vision.frame import Frame, resize_to_width
@@ -77,6 +79,7 @@ class CameraWorker:
         backoff: Backoff | None = None,
         clock: Callable[[], datetime] = utc_now,
         metrics: CameraMetrics | None = None,
+        clips: ClipSettings | None = None,
     ) -> None:
         self.device_id = device_id
         self._stop = threading.Event()
@@ -90,6 +93,7 @@ class CameraWorker:
         self._encoding = encoding or EncodingSettings()
         self._clock = clock
         self._metrics = metrics or Metrics(process_metrics=False).camera(device_id)
+        self._clip = ClipRecorder(clips, fps=target_fps) if clips else None
         self._thread: threading.Thread | None = None
         self._sequence = 0
         self._next_due: datetime | None = None
@@ -169,8 +173,10 @@ class CameraWorker:
         if isinstance(update, MotionStarted):
             logger.info("motion_started", event_id=update.event.id)
             self._sink.publish_event(MotionStartedEvent(event=update.event))
-        elif isinstance(update, MotionEnded):
-            self._publish_motion_ended(update)
+            self._clip_step(lambda clip: clip.start())
+        self._clip_step(lambda clip: clip.add(frame, at))
+        if isinstance(update, MotionEnded):
+            self._publish_motion_ended(update, self._finish_clip())
 
         # Encode every frame for live viewers; otherwise just keep the snapshot fresh.
         idle_due = self._last_streamed is None or at - self._last_streamed >= IDLE_SNAPSHOT_INTERVAL
@@ -191,7 +197,32 @@ class CameraWorker:
                 )
             )
 
-    def _publish_motion_ended(self, ended: MotionEnded) -> None:
+    def _clip_step(self, step: Callable[[ClipRecorder], None]) -> None:
+        """Clips are a bonus: a failure drops the clip, never the detection or the alert."""
+        if self._clip is None:
+            return
+        try:
+            step(self._clip)
+        except Exception:
+            logger.exception("clip_failed")
+            self._clip.abort()
+
+    def _finish_clip(self) -> VideoClip | None:
+        if self._clip is None:
+            return None
+        try:
+            clip = self._clip.finish()
+        except Exception:
+            logger.exception("clip_failed")
+            self._clip.abort()
+            return None
+        if clip is not None:
+            logger.info(
+                "clip_recorded", seconds=round(clip.duration_seconds, 1), bytes=len(clip.data)
+            )
+        return clip
+
+    def _publish_motion_ended(self, ended: MotionEnded, clip: VideoClip | None = None) -> None:
         quality = self._encoding.snapshot_jpeg_quality
         boxes = ended.best_detection.boxes
         logger.info(
@@ -211,6 +242,7 @@ class CameraWorker:
                 thumbnail_jpeg=_encode(thumbnail, quality),
                 boxes=boxes,
                 snapshot_at=ended.best_frame_at,
+                clip=clip,
             )
         )
 
@@ -223,9 +255,11 @@ class CameraWorker:
     def _finish(self, *, crashed: bool) -> None:
         try:
             if (ended := self._tracker.close()) is not None:
-                self._publish_motion_ended(ended)  # camera stopped mid-event
+                self._publish_motion_ended(ended, self._finish_clip())  # stopped mid-event
         except Exception:
             logger.exception("camera_worker_cleanup_failed")
+        if self._clip is not None:
+            self._clip.abort()  # temporary files of a clip that never finished
         self._source.close()
         self._publish_status(DeviceStatus.FAILED if crashed else DeviceStatus.STOPPED)
         logger.info("camera_worker_stopped", crashed=crashed)

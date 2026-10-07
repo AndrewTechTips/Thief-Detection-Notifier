@@ -1,4 +1,5 @@
-"""Snapshots as files under ``root/YYYY/MM/DD/<event-id>-<kind>.jpg``.
+"""Snapshots and clips as files under ``root/YYYY/MM/DD/<event-id>-<kind>.jpg`` (``.webm`` for
+clips).
 
 Writes are atomic (temporary file + rename), so a crash never leaves a half-written image, and
 every read is confined to the root directory.
@@ -24,7 +25,8 @@ class LocalSnapshotStore:
     async def save(
         self, event_id: str, kind: SnapshotKind, data: bytes, at: datetime
     ) -> StoredSnapshot:
-        relative = Path(f"{at:%Y}", f"{at:%m}", f"{at:%d}", f"{event_id}-{kind}.jpg")
+        name = f"{event_id}-{kind}{kind.extension}"
+        relative = Path(f"{at:%Y}", f"{at:%m}", f"{at:%d}", name)
         await asyncio.to_thread(self._write_atomically, self._root / relative, data)
         return StoredSnapshot(kind=kind, path=relative.as_posix(), size_bytes=len(data))
 
@@ -46,7 +48,7 @@ class LocalSnapshotStore:
     @staticmethod
     def _write_atomically(target: Path, data: bytes) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary = tempfile.mkstemp(dir=target.parent, prefix=".tmp-", suffix=".jpg")
+        fd, temporary = tempfile.mkstemp(dir=target.parent, prefix=".tmp-", suffix=target.suffix)
         try:
             with os.fdopen(fd, "wb") as file:
                 file.write(data)

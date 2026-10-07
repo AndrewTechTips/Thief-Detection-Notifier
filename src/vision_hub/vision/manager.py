@@ -14,6 +14,7 @@ from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import CameraEvent, DeviceStatusChanged, MotionEndedEvent
 from vision_hub.domain.motion import MotionEvent
 from vision_hub.vision.bridge import LatestFrame, LoopBridge
+from vision_hub.vision.clip import ClipSettings
 from vision_hub.vision.fleet import DeviceSpec
 from vision_hub.vision.sources import Backoff, create_source
 from vision_hub.vision.worker import CameraWorker, EncodingSettings, WorkerSink
@@ -39,6 +40,7 @@ def camera_worker_factory(
     default_fps: float,
     encoding: EncodingSettings | None = None,
     metrics: Metrics | None = None,
+    clips: ClipSettings | None = None,
 ) -> WorkerFactory:
     def build(spec: DeviceSpec, sink: WorkerSink) -> Worker:
         return CameraWorker(
@@ -49,6 +51,7 @@ def camera_worker_factory(
             target_fps=spec.target_fps or default_fps,
             encoding=encoding,
             metrics=metrics.camera(spec.id) if metrics else None,
+            clips=clips,
         )
 
     return build

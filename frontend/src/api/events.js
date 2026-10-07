@@ -4,7 +4,7 @@ import { api } from "./client.js";
 
 /** @typedef {import("./types.js").MotionEvent} MotionEvent */
 /** @typedef {import("./types.js").EventPage} EventPage */
-/** @typedef {import("./types.js").Schemas["SnapshotKind"]} SnapshotKind */
+/** @typedef {import("./types.js").SnapshotLink["kind"]} SnapshotKind */
 
 /**
  * One page of events, newest first.

@@ -3,6 +3,7 @@
 
 from collections.abc import Callable
 from typing import Annotated, cast
+from urllib.parse import urlencode
 
 from fastapi import Depends, Query
 from fastapi.security import OAuth2PasswordBearer
@@ -148,15 +149,20 @@ async def require_signature_or_bearer(
         str | None, Query(max_length=128, description="From a signed link")
     ] = None,
 ) -> None:
-    """For immutable resources linked from API responses (event snapshots): a valid signed
-    link is enough, so ``<img>`` tags work without a token or ticket."""
+    """For immutable resources linked from API responses (event snapshots and clips): a valid
+    signed link is enough, so ``<img>`` and ``<video>`` tags work without a token or ticket."""
     if token:
         principal = container.auth.authenticate(token)
         connection.state.username = principal.username
         return
     if expires is not None and signature is not None:
-        query = connection.query_params
-        resource = f"{connection.url.path}?kind={query.get('kind', 'annotated')}"
+        # The signature covers the path and every other query parameter, in order.
+        params = [
+            (key, value)
+            for key, value in connection.query_params.multi_items()
+            if key not in {"expires", "signature"}
+        ]
+        resource = connection.url.path + (f"?{urlencode(params)}" if params else "")
         if container.url_signer.verify(resource, expires, signature):
             return
         raise AuthenticationError("Signed link is invalid or has expired.")

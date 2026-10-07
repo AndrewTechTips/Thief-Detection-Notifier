@@ -15,7 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from vision_hub.api.v1 import API_V1_PREFIX
 from vision_hub.core.backoff import Backoff
-from vision_hub.core.config import NotificationsConfig, PushConfig, Settings, env_name
+from vision_hub.core.config import (
+    ClipConfig,
+    NotificationsConfig,
+    PushConfig,
+    Settings,
+    env_name,
+)
 from vision_hub.core.encryption import SecretBox
 from vision_hub.core.lifecycle import Lifecycle, ShutdownCheck
 from vision_hub.core.logging import get_logger
@@ -58,6 +64,7 @@ from vision_hub.services.devices import DeviceService
 from vision_hub.services.events import EventRecorder, EventService, RetentionService
 from vision_hub.services.notifications import NotificationService
 from vision_hub.services.push import PushService
+from vision_hub.vision.clip import ClipSettings
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.fleet import DeviceSpec, load_fleet
 from vision_hub.vision.manager import CameraManager, camera_worker_factory
@@ -202,6 +209,7 @@ async def build_container(
                     thumbnail_width=settings.storage.thumbnail_width,
                 ),
                 metrics=metrics,
+                clips=_clip_settings(settings.clips),
             ),
         )
         stack.push_async_callback(cameras.stop_all)
@@ -347,6 +355,14 @@ def _live_state(cameras: CameraManager, realtime: ConnectionManager) -> Iterator
 async def _cancel(task: asyncio.Task[None]) -> None:
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
+
+
+def _clip_settings(config: ClipConfig) -> ClipSettings | None:
+    if not config.enabled:
+        return None
+    return ClipSettings(
+        pre_roll_seconds=config.pre_roll_seconds, max_seconds=config.max_seconds, width=config.width
+    )
 
 
 def _retry_policy(config: NotificationsConfig) -> RetryPolicy:

@@ -1,7 +1,9 @@
 import itertools
 import statistics
 import threading
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import cv2
 import numpy as np
@@ -17,6 +19,7 @@ from vision_hub.domain.events import (
 )
 from vision_hub.domain.motion import BoundingBox
 from vision_hub.vision.bridge import FramePacket
+from vision_hub.vision.clip import ClipRecorder, ClipSettings
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.frame import Frame
 from vision_hub.vision.sources import Backoff, SourceError, SyntheticSource, SyntheticSourceConfig
@@ -91,7 +94,12 @@ def synthetic(**overrides: float) -> SyntheticSource:
 
 
 def make_worker(
-    sink: RecordingSink, *, source: object = None, step: float = 0.1, fps: float = 10
+    sink: RecordingSink,
+    *,
+    source: object = None,
+    step: float = 0.1,
+    fps: float = 10,
+    clips: ClipSettings | None = None,
 ) -> CameraWorker:
     return CameraWorker(
         device_id="cam-1",
@@ -102,6 +110,7 @@ def make_worker(
         encoding=EncodingSettings(stream_max_width=320),
         backoff=Backoff(initial=0.001, maximum=0.001),
         clock=SteppingClock(step),
+        clips=clips,
     )
 
 
@@ -256,6 +265,68 @@ class TestLifecycle:
 
     def test_stop_before_start_is_a_no_op(self) -> None:
         assert make_worker(RecordingSink()).stop() is True
+
+
+class TestClips:
+    def test_each_event_carries_a_clip_starting_before_the_detection(self) -> None:
+        sink = RecordingSink(stop_after_ended=2)
+        worker = make_worker(sink, clips=ClipSettings(pre_roll_seconds=1, width=320))
+
+        run_until_done(worker, sink)
+
+        ended = [e for e in sink.events if isinstance(e, MotionEndedEvent)]
+        for event in ended[:2]:
+            assert event.clip is not None
+            assert event.clip.content_type == "video/webm"
+            assert event.clip.width == 320
+            motion = event.event
+            assert motion.ended_at is not None
+            lasted = (motion.ended_at - motion.started_at).total_seconds()
+            # The pre-roll, the motion, then the quiet period that closed the event.
+            expected = 1 + lasted + DETECTION.motion_end_grace_seconds
+            assert event.clip.duration_seconds == pytest.approx(expected, abs=0.3)
+
+    def test_without_clip_settings_events_have_none(self) -> None:
+        sink = RecordingSink(stop_after_ended=1)
+
+        run_until_done(make_worker(sink), sink)
+
+        assert all(e.clip is None for e in sink.events if isinstance(e, MotionEndedEvent))
+
+    def test_a_failing_recorder_costs_the_clip_not_the_alert(
+        self, monkeypatch: pytest.MonkeyPatch, log_records: Callable[[], list[dict[str, Any]]]
+    ) -> None:
+        def broken(self: ClipRecorder, *_: object) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(ClipRecorder, "add", broken)
+        sink = RecordingSink(stop_after_ended=2)
+
+        run_until_done(make_worker(sink, clips=ClipSettings()), sink)
+
+        ended = [e for e in sink.events if isinstance(e, MotionEndedEvent)]
+        assert len(ended) >= 2
+        assert all(e.clip is None and e.annotated_jpeg for e in ended)
+        assert any(r["event"] == "clip_failed" for r in log_records())
+
+    def test_stopping_mid_event_keeps_the_clip(self) -> None:
+        sink = RecordingSink()
+        worker = make_worker(
+            sink,
+            source=synthetic(visit_every_seconds=40, visit_seconds=30),
+            clips=ClipSettings(width=320),
+        )
+        worker.start()
+        deadline = threading.Event()
+        for _ in range(200):
+            if any(isinstance(e, MotionStartedEvent) for e in sink.events):
+                break
+            deadline.wait(0.02)
+
+        assert worker.stop(timeout=5)
+
+        [ended] = [e for e in sink.events if isinstance(e, MotionEndedEvent)]
+        assert ended.clip is not None
 
 
 class ExplodingSource:

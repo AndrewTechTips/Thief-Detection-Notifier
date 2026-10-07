@@ -313,6 +313,17 @@ class VisionConfig(_Group):
         return value
 
 
+class ClipConfig(_Group):
+    """A short WebM video per motion event (VP8, recorded in the camera thread)."""
+
+    enabled: bool = True
+    # Seconds kept from before motion was detected; memory: about 7 MB per second per camera
+    # at 640 px and 10 fps (raw frames).
+    pre_roll_seconds: float = Field(default=3.0, ge=0, le=10)
+    max_seconds: float = Field(default=120.0, ge=5, le=600)  # longer events keep the start
+    width: int = Field(default=640, ge=160, le=1920)
+
+
 class RealtimeConfig(_Group):
     ping_interval_seconds: float = Field(default=20.0, gt=0, le=300)
     idle_timeout_seconds: float = Field(default=60.0, gt=0, le=3600)  # no client message -> close
@@ -342,6 +353,7 @@ class Settings(BaseSettings):
     db: DatabaseConfig = Field(default_factory=DatabaseConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     vision: VisionConfig = Field(default_factory=VisionConfig)
+    clips: ClipConfig = Field(default_factory=ClipConfig)
     realtime: RealtimeConfig = Field(default_factory=RealtimeConfig)
 
     @property

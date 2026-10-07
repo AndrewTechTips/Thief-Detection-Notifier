@@ -76,14 +76,15 @@ class EventRecorder:
             case MotionStartedEvent(event=motion):
                 await self._repository.add_started(motion)
             case MotionEndedEvent(event=motion):
-                images = {
+                files = {
                     SnapshotKind.CLEAN: event.snapshot_jpeg,
                     SnapshotKind.ANNOTATED: event.annotated_jpeg,
                     SnapshotKind.THUMBNAIL: event.thumbnail_jpeg,
+                    SnapshotKind.CLIP: event.clip.data if event.clip else b"",
                 }
                 stored = [
                     await self._store.save(motion.id, kind, data, motion.started_at)
-                    for kind, data in images.items()
+                    for kind, data in files.items()
                     if data
                 ]
                 await self._repository.complete(motion, event.boxes, stored)
@@ -121,6 +122,15 @@ class EventService:
         if path is None or not path.is_file():
             raise NotFoundError(f"Event '{event_id}' has no {kind} snapshot.", event_id=event_id)
         return path
+
+    async def clip_file(self, event_id: str) -> tuple[Path, EventRecord]:
+        """The event's clip, and the event (for naming the download)."""
+        record = await self.get(event_id)
+        clip = record.snapshots.get(SnapshotKind.CLIP)
+        path = self._store.resolve(clip.path) if clip else None
+        if path is None or not path.is_file():
+            raise NotFoundError(f"Event '{event_id}' has no clip.", event_id=event_id)
+        return path, record
 
     async def after(self, event_id: str, *, limit: int) -> Sequence[EventRecord]:
         return await self._repository.after(event_id, limit=limit)

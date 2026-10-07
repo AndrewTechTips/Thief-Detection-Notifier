@@ -11,6 +11,7 @@ from vision_hub.domain.events import (
     DeviceStatusChanged,
     MotionEndedEvent,
     MotionStartedEvent,
+    VideoClip,
 )
 from vision_hub.domain.history import EventRecord
 from vision_hub.domain.motion import BoundingBox, MotionEvent
@@ -64,9 +65,16 @@ class FakeRepository:
         return 0
 
 
-def ended() -> MotionEndedEvent:
+CLIP = VideoClip(data=b"webm", content_type="video/webm", duration_seconds=5, width=640, height=360)
+
+
+def ended(clip: VideoClip | None = CLIP) -> MotionEndedEvent:
     return MotionEndedEvent(
-        event=MOTION, snapshot_jpeg=b"clean", annotated_jpeg=b"boxes", thumbnail_jpeg=b"small"
+        event=MOTION,
+        snapshot_jpeg=b"clean",
+        annotated_jpeg=b"boxes",
+        thumbnail_jpeg=b"small",
+        clip=clip,
     )
 
 
@@ -100,6 +108,21 @@ async def test_persists_before_publishing(tmp_path: Path, log: list[str]) -> Non
     [(_, snapshots)] = repository.completed
     assert {s.kind for s in snapshots} == set(SnapshotKind)
     assert (tmp_path / snapshots[0].path).is_file()
+    [clip] = [s for s in snapshots if s.kind is SnapshotKind.CLIP]
+    assert clip.path.endswith("evt-1-clip.webm")
+    assert (tmp_path / clip.path).read_bytes() == b"webm"
+
+
+async def test_events_without_a_clip_store_only_images(tmp_path: Path, log: list[str]) -> None:
+    repository = FakeRepository(log)
+    events = recorder(repository, tmp_path, log)
+    events.start()
+
+    events.submit(ended(clip=None))
+    await events.stop()
+
+    [(_, snapshots)] = repository.completed
+    assert SnapshotKind.CLIP not in {s.kind for s in snapshots}
 
 
 async def test_still_publishes_when_recording_fails(

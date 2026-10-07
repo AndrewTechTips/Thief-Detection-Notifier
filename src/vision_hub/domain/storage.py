@@ -1,4 +1,5 @@
-"""Where event snapshots live. Local disk for the single-node MVP; S3 later (same port)."""
+"""Where event snapshots and clips live. Local disk for the single-node MVP; S3 later (same
+port)."""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,9 +9,23 @@ from typing import Protocol
 
 
 class SnapshotKind(StrEnum):
+    """What a stored file of an event is."""
+
     CLEAN = "clean"  # evidence: the frame exactly as captured
     ANNOTATED = "annotated"  # the same frame with motion boxes drawn
     THUMBNAIL = "thumbnail"  # small annotated preview for lists
+    CLIP = "clip"  # video: the seconds before detection, then the event (WebM)
+
+    @property
+    def extension(self) -> str:
+        return ".webm" if self is SnapshotKind.CLIP else ".jpg"
+
+    @property
+    def content_type(self) -> str:
+        return "video/webm" if self is SnapshotKind.CLIP else "image/jpeg"
+
+
+IMAGE_KINDS = (SnapshotKind.CLEAN, SnapshotKind.ANNOTATED, SnapshotKind.THUMBNAIL)
 
 
 @dataclass(frozen=True, slots=True)

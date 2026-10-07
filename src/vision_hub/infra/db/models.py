@@ -92,9 +92,11 @@ class MotionEventRow(Base):
 
 
 class SnapshotRow(Base):
+    """A stored file of an event: one of its images, or its clip."""
+
     __tablename__ = "snapshots"
     __table_args__ = (
-        CheckConstraint("kind IN ('clean', 'annotated', 'thumbnail')", name="kind"),
+        CheckConstraint("kind IN ('clean', 'annotated', 'thumbnail', 'clip')", name="kind"),
         UniqueConstraint("event_id", "kind"),
     )
 

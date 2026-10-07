@@ -491,6 +491,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/events/{event_id}/clip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Event clip
+         * @description Use the signed `clip.url` from an event, or a bearer token. Supports `Range` requests,
+         *     which browsers use to seek (Safari needs them to play at all). Saved files are named after
+         *     the camera and the time the event started.
+         */
+        get: operations["events_clip"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -569,6 +591,21 @@ export interface components {
             healthy: boolean;
             /** Duration Ms */
             duration_ms: number;
+        };
+        /** ClipLink */
+        ClipLink: {
+            /**
+             * Url
+             * @description Signed, expiring link: usable directly in a <video> tag
+             */
+            url: string;
+            /**
+             * Content Type
+             * @description "video/webm" (VP8)
+             */
+            content_type: string;
+            /** Size Bytes */
+            size_bytes: number;
         };
         /** DetectionConfig */
         DetectionConfig: {
@@ -735,6 +772,8 @@ export interface components {
             boxes: components["schemas"]["BoundingBox"][];
             /** Snapshots */
             snapshots: components["schemas"]["SnapshotLink"][];
+            /** @description Video of the event, from a few seconds before it was detected */
+            clip: components["schemas"]["ClipLink"] | null;
         };
         /**
          * FieldError
@@ -751,6 +790,8 @@ export interface components {
             /** Type */
             type: string;
         };
+        /** @enum {string} */
+        ImageKind: "clean" | "annotated" | "thumbnail";
         /** LastEvent */
         LastEvent: {
             /** Id */
@@ -987,14 +1028,9 @@ export interface components {
             /** Has Password */
             readonly has_password: boolean;
         };
-        /**
-         * SnapshotKind
-         * @enum {string}
-         */
-        SnapshotKind: "clean" | "annotated" | "thumbnail";
         /** SnapshotLink */
         SnapshotLink: {
-            kind: components["schemas"]["SnapshotKind"];
+            kind: components["schemas"]["ImageKind"];
             /**
              * Url
              * @description Signed, expiring link: usable directly in an <img> tag
@@ -2991,7 +3027,7 @@ export interface operations {
     events_snapshot: {
         parameters: {
             query?: {
-                kind?: components["schemas"]["SnapshotKind"];
+                kind?: "clean" | "annotated" | "thumbnail";
                 /** @description From a signed link */
                 expires?: number | null;
                 /** @description From a signed link */
@@ -3025,6 +3061,87 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    events_clip: {
+        parameters: {
+            query?: {
+                /** @description From a signed link */
+                expires?: number | null;
+                /** @description From a signed link */
+                signature?: string | null;
+            };
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description WebM video (VP8) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "video/webm": unknown;
+                };
+            };
+            /** @description The requested byte range */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "video/webm": unknown;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Range Not Satisfiable */
+            416: {
                 headers: {
                     [name: string]: unknown;
                 };

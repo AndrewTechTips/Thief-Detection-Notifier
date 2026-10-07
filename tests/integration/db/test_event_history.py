@@ -112,8 +112,9 @@ class TestRetention:
         for n, (device, days) in enumerate(ages.items(), start=1):
             device_id = device.removesuffix("-new")
             started = now - timedelta(days=days)
-            stored = await store.save(event(n).id, SnapshotKind.CLEAN, b"jpeg", started)
-            await repository.complete(event(n, device_id, started=started), [], [stored])
+            image = await store.save(event(n).id, SnapshotKind.CLEAN, b"jpeg", started)
+            clip = await store.save(event(n).id, SnapshotKind.CLIP, b"webm", started)
+            await repository.complete(event(n, device_id, started=started), [], [image, clip])
 
         retention = RetentionService(
             repository,
@@ -129,8 +130,9 @@ class TestRetention:
         assert deleted == 2  # porch (35 d > 30 d) and the deleted camera's history
         assert remaining == {"gate", "porch"}  # gate: 35 d < 90 d; porch: the 5-day-old event
         assert len(list((tmp_path / "snapshots").rglob("*.jpg"))) == 2
+        assert len(list((tmp_path / "snapshots").rglob("*.webm"))) == 2  # clips go with them
         async with sessions() as session:
-            assert await session.scalar(select(func.count()).select_from(SnapshotRow)) == 2
+            assert await session.scalar(select(func.count()).select_from(SnapshotRow)) == 4
 
     async def test_nothing_to_delete(self, sessions: Sessions, tmp_path: Path) -> None:
         retention = RetentionService(
