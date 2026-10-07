@@ -1,0 +1,34 @@
+# Cameras for the end-to-end tests: someone walks past every few seconds, so tests see motion
+# alerts quickly. A stopped camera covers the "not live" states. The gate camera belongs to the
+# test that stops and starts a camera, so no other test sees it change.
+
+[[devices]]
+id = "e2e-porch"
+name = "E2E porch"
+
+[devices.source]
+kind = "synthetic"
+seed = 7
+visit_every_seconds = 9
+visit_seconds = 3
+
+[devices.detection]
+motion_end_grace_seconds = 1.0
+
+[[devices]]
+id = "e2e-shed"
+name = "E2E shed"
+enabled = false
+
+[devices.source]
+kind = "synthetic"
+
+[[devices]]
+id = "e2e-gate"
+name = "E2E gate"
+
+[devices.source]
+kind = "synthetic"
+seed = 11
+visit_every_seconds = 3600
+visit_seconds = 1

@@ -48,7 +48,7 @@ test("animations stay smooth on a slow CPU", async ({ page }, info) => {
   const results = {};
 
   // Two live streams decoding and painting, plus whatever alerts arrive meanwhile.
-  await expect(page.locator(".camera-tile[data-state=playing]")).toHaveCount(1);
+  await expect(page.locator(".camera-tile[data-state=playing]")).toHaveCount(2);
   await record(page);
   await page.waitForTimeout(6000);
   results.liveGrid = await summary(page);

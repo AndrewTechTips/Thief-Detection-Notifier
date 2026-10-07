@@ -224,6 +224,8 @@ snapshots/
 data/
 # Real camera fleet definitions may contain camera passwords
 devices.toml
+# ...except the end-to-end tests' synthetic cameras
+!frontend/e2e/devices.toml
 
 # JetBrains IDE settings
 .idea/

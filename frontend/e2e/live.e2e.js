@@ -11,7 +11,8 @@ test("live view shows each camera with its state and real frames", async ({ page
   await expect(porch).toHaveAttribute("data-state", "playing");
   await expect(shed.locator(".camera-chip").first()).toHaveText("Stopped");
   await expect(shed).toContainText("This camera is stopped.");
-  await expect(page.getByText(/1 of 2 cameras live/)).toBeVisible();
+  // The gate camera may be mid stop-and-start in another test: count around it.
+  await expect(page.getByText(/[12] of 3 cameras live/)).toBeVisible();
 
   // The picture is real video, not a blank: its pixels vary.
   const picture = porch.getByRole("img", { name: "Live view of E2E porch" });
@@ -73,9 +74,11 @@ test("motion raises an alert within a second of the hub closing the event", asyn
 });
 
 test("a camera page streams at full rate and an admin can stop and start it", async ({ page }) => {
-  await signedIn(page, "/devices/e2e-porch");
+  // One browser at a time: the phone run would stop the same camera under this one.
+  test.skip(isPhone(page), "covered on desktop");
+  await signedIn(page, "/devices/e2e-gate");
 
-  await expect(page.getByRole("heading", { name: "E2E porch" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "E2E gate" })).toBeVisible();
   const stage = page.locator(".device-stage");
   await expect(stage).toHaveAttribute("data-state", "playing");
 
