@@ -332,8 +332,11 @@ class PersonConfig(_Group):
     model_path: Path = Path("data/models/person-yolox-s.onnx")
     # Score from which an event counts as having a person in it
     threshold: float = Field(default=0.5, gt=0, lt=1)
-    # How often a camera checks while an event is open (each check takes about 45 ms)
-    check_interval_seconds: float = Field(default=1.0, ge=0.1, le=30)
+    # While an event is open: a check when it starts, then every this often, at most max_checks
+    # times, plus a last look at the frame with the most motion. A check takes about 280 ms of
+    # one core on a typical CPU; all cameras share one background thread.
+    check_interval_seconds: float = Field(default=2.0, ge=0.1, le=60)
+    max_checks: int = Field(default=5, ge=1, le=100)
 
 
 class RealtimeConfig(_Group):

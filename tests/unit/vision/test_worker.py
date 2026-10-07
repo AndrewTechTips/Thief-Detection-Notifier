@@ -22,7 +22,7 @@ from vision_hub.vision.bridge import FramePacket
 from vision_hub.vision.clip import ClipRecorder, ClipSettings
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.frame import Frame
-from vision_hub.vision.persons import Person, PersonSettings
+from vision_hub.vision.persons import Person, PersonChecker
 from vision_hub.vision.sources import Backoff, SourceError, SyntheticSource, SyntheticSourceConfig
 from vision_hub.vision.worker import CameraWorker, EncodingSettings, encode_stream_frame
 
@@ -101,7 +101,7 @@ def make_worker(
     step: float = 0.1,
     fps: float = 10,
     clips: ClipSettings | None = None,
-    persons: PersonSettings | None = None,
+    persons: PersonChecker | None = None,
     detection: DetectionConfig = DETECTION,
 ) -> CameraWorker:
     return CameraWorker(
@@ -372,8 +372,14 @@ def first_ended(
     detector: ScriptedDetector | None, *, detection: DetectionConfig = PEOPLE_ONLY
 ) -> MotionEndedEvent:
     sink = RecordingSink(stop_after_ended=1)
-    persons = PersonSettings(detector=detector, threshold=0.5) if detector else None
-    run_until_done(make_worker(sink, persons=persons, detection=detection), sink)
+    checker = (
+        PersonChecker(detector, threshold=0.5, check_interval_seconds=1, max_checks=5)
+        if detector
+        else None
+    )
+    run_until_done(make_worker(sink, persons=checker, detection=detection), sink)
+    if checker:
+        checker.close()
     return next(e for e in sink.events if isinstance(e, MotionEndedEvent))
 
 

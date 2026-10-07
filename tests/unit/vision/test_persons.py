@@ -2,7 +2,11 @@
 (when the model has been downloaded) the real thing on a photo of a person."""
 
 import hashlib
+import os
+import threading
+import time
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +19,9 @@ from vision_hub.domain.motion import BoundingBox
 from vision_hub.vision.persons import (
     INPUT_SIZE,
     ModelError,
+    Person,
+    PersonChecker,
+    PersonVerdict,
     YoloxPersonDetector,
     _grids,
     decode,
@@ -113,6 +120,91 @@ def test_alert_decision(alert_on: str, confidence: float | None, expected: bool)
     assert should_alert(alert_on, confidence, 0.5) is expected  # type: ignore[arg-type]
 
 
+class GatedDetector:
+    """Scores 0.9 (or ``score``) once let through; counts calls and the threads they ran on."""
+
+    def __init__(self, score: float = 0.9) -> None:
+        self.gate = threading.Event()
+        self.score = score
+        self.calls = 0
+        self.threads: set[str] = set()
+
+    def detect(self, frame: object) -> list[Person]:
+        self.gate.wait(5)
+        self.calls += 1
+        self.threads.add(threading.current_thread().name)
+        box = BoundingBox(x=0, y=0, width=1, height=1)
+        return [Person(box=box, confidence=self.score)] if self.score else []
+
+
+FRAME = np.zeros((48, 64, 3), np.uint8)
+T0 = datetime(2026, 10, 7, tzinfo=UTC)
+
+
+def at(seconds: float) -> datetime:
+    return T0 + timedelta(seconds=seconds)
+
+
+class TestEventChecks:
+    def test_the_camera_thread_never_waits_for_a_check(self) -> None:
+        detector = GatedDetector()  # blocked: a slow CPU
+        checker = PersonChecker(detector, check_interval_seconds=1)
+        check = checker.event(T0)
+
+        started = time.perf_counter()
+        for i in range(30):  # 3 s of frames at 10 fps
+            check.offer(FRAME, at(i / 10))
+        elapsed = time.perf_counter() - started
+        detector.gate.set()
+        checker.close()
+
+        assert elapsed < 0.1
+        assert detector.calls == 1  # the next ones were skipped while it was still running
+        assert detector.threads == {"persons_0"}
+
+    def test_checks_are_spaced_and_capped(self) -> None:
+        detector = GatedDetector(score=0)  # nobody, ever
+        detector.gate.set()
+        checker = PersonChecker(detector, check_interval_seconds=2, max_checks=3)
+        check = checker.event(T0)
+
+        for i in range(200):  # 20 s
+            check.offer(FRAME, at(i / 10))
+            time.sleep(0.0005)  # lets each check finish before the next is due
+        checker.close()
+
+        assert detector.calls == 3
+
+    def test_the_verdict_comes_after_the_last_look(self) -> None:
+        detector = GatedDetector(score=0.3)
+        checker = PersonChecker(detector, threshold=0.5)
+        check = checker.event(T0)
+        check.offer(FRAME, at(0))
+        verdicts: list[PersonVerdict] = []
+
+        check.finish(FRAME, verdicts.append)  # while the first check is still blocked
+        assert verdicts == []
+        detector.gate.set()
+        checker.close()
+
+        assert verdicts == [PersonVerdict(confidence=0.3, person=False)]
+        assert detector.calls == 2  # the running check, then the last look
+
+    def test_no_last_look_once_someone_was_found(self) -> None:
+        detector = GatedDetector(score=0.8)
+        detector.gate.set()
+        checker = PersonChecker(detector)
+        check = checker.event(T0)
+        check.offer(FRAME, at(0))
+        verdicts: list[PersonVerdict] = []
+
+        check.finish(FRAME, verdicts.append)
+        checker.close()
+
+        assert verdicts == [PersonVerdict(confidence=0.8, person=True)]
+        assert detector.calls == 1
+
+
 class TestModelFile:
     def test_a_missing_model_means_no_detector(
         self, tmp_path: Path, log_records: LogRecords
@@ -153,6 +245,9 @@ def detector() -> YoloxPersonDetector:
 
 @pytest.mark.skipif(not MODEL.is_file(), reason="run `vision-hub download-model` first")
 class TestRealModel:
+    def test_onnxruntime_telemetry_is_off(self, detector: YoloxPersonDetector) -> None:
+        assert os.environ["ORT_DISABLE_TELEMETRY"] == "1"
+
     def test_finds_the_person_in_a_photo(self, detector: YoloxPersonDetector) -> None:
         photo = cv2.imread(str(ASSETS / "person.jpg"))
         assert photo is not None

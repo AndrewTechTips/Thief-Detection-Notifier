@@ -31,7 +31,7 @@ from vision_hub.vision.clip import ClipRecorder, ClipSettings
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.detector import MotionDetector
 from vision_hub.vision.frame import Frame, resize_to_width
-from vision_hub.vision.persons import PersonSettings, should_alert
+from vision_hub.vision.persons import EventCheck, PersonChecker, PersonVerdict, should_alert
 from vision_hub.vision.sources import (
     Backoff,
     FrameSource,
@@ -81,7 +81,7 @@ class CameraWorker:
         clock: Callable[[], datetime] = utc_now,
         metrics: CameraMetrics | None = None,
         clips: ClipSettings | None = None,
-        persons: PersonSettings | None = None,
+        persons: PersonChecker | None = None,
     ) -> None:
         self.device_id = device_id
         self._stop = threading.Event()
@@ -98,11 +98,7 @@ class CameraWorker:
         self._clip = ClipRecorder(clips, fps=target_fps) if clips else None
         self._persons = persons
         self._alert_on = detection.alert_on
-        # Person checks of the open event: the best score so far (None until a check worked),
-        # when the next check is due (None outside events), and whether the model failed.
-        self._person_best: float | None = None
-        self._person_due: datetime | None = None
-        self._person_failed = False
+        self._person_check: EventCheck | None = None  # of the open event
         self._thread: threading.Thread | None = None
         self._sequence = 0
         self._next_due: datetime | None = None
@@ -183,11 +179,10 @@ class CameraWorker:
             logger.info("motion_started", event_id=update.event.id)
             self._sink.publish_event(MotionStartedEvent(event=update.event))
             self._clip_step(lambda clip: clip.start())
-            self._person_best, self._person_due, self._person_failed = None, at, False
+            self._person_check = self._persons.event(at) if self._persons else None
         self._clip_step(lambda clip: clip.add(frame, at))
-        if self._person_due is not None and at >= self._person_due:
-            self._check_person(frame)
-            self._person_due = None if self._person_found() else at + self._person_interval()
+        if self._person_check is not None:
+            self._person_check.offer(frame, at)
         if isinstance(update, MotionEnded):
             self._publish_motion_ended(update, self._finish_clip())
 
@@ -210,45 +205,14 @@ class CameraWorker:
                 )
             )
 
-    def _person_interval(self) -> timedelta:
-        seconds = self._persons.check_interval_seconds if self._persons else 1.0
-        return timedelta(seconds=seconds)
-
-    def _person_found(self) -> bool:
-        persons = self._persons
-        return (
-            persons is not None
-            and self._person_best is not None
-            and self._person_best >= persons.threshold
-        )
-
-    def _check_person(self, frame: Frame) -> None:
-        """One look for a person. A failing model is logged once per event and stops the
-        checks; the event then alerts as if there were no person detection."""
-        if self._persons is None or self._person_failed:
-            return
-        try:
-            people = self._persons.detector.detect(frame)
-        except Exception:
-            logger.exception("person_check_failed")
-            self._person_failed = True
-            return
-        score = people[0].confidence if people else 0.0
-        self._person_best = max(self._person_best or 0.0, score)
-
-    def _judge(self, ended: MotionEnded) -> MotionEvent:
-        """The finished event with its person verdict and whether it alerts. The frame with the
-        most motion gets a last look, in case the person passed between two checks."""
-        if self._persons is not None and not self._person_found():
-            self._check_person(ended.best_frame)
-        confidence = None if self._person_failed else self._person_best
+    def _judged(self, event: MotionEvent, verdict: PersonVerdict) -> MotionEvent:
+        """The finished event with its person verdict and whether it alerts."""
         threshold = self._persons.threshold if self._persons else 1.0
-        self._person_due = None
         return replace(
-            ended.event,
-            person=None if confidence is None else confidence >= threshold,
-            person_confidence=confidence,
-            alert=should_alert(self._alert_on, confidence, threshold),
+            event,
+            person=verdict.person,
+            person_confidence=verdict.confidence,
+            alert=should_alert(self._alert_on, verdict.confidence, threshold),
         )
 
     def _clip_step(self, step: Callable[[ClipRecorder], None]) -> None:
@@ -277,31 +241,41 @@ class CameraWorker:
         return clip
 
     def _publish_motion_ended(self, ended: MotionEnded, clip: VideoClip | None = None) -> None:
+        """Encodes the evidence here, then publishes once the person verdict is in: at once
+        without person detection, else from the checker's thread after its last look."""
         quality = self._encoding.snapshot_jpeg_quality
         boxes = ended.best_detection.boxes
-        event = self._judge(ended)
-        logger.info(
-            "motion_ended",
-            event_id=event.id,
-            motion_frames=event.motion_frames,
-            peak_area_ratio=round(event.peak_area_ratio, 4),
-            person_confidence=event.person_confidence,
-            alert=event.alert,
-        )
         self._metrics.motion_events.inc()
         annotated = draw_boxes(ended.best_frame, boxes)
         thumbnail, _ = resize_to_width(annotated, self._encoding.thumbnail_width)
-        self._sink.publish_event(
-            MotionEndedEvent(
-                event=event,
-                snapshot_jpeg=_encode(ended.best_frame, quality),
-                annotated_jpeg=_encode(annotated, quality),
-                thumbnail_jpeg=_encode(thumbnail, quality),
-                boxes=boxes,
-                snapshot_at=ended.best_frame_at,
-                clip=clip,
-            )
+        message = MotionEndedEvent(
+            event=ended.event,
+            snapshot_jpeg=_encode(ended.best_frame, quality),
+            annotated_jpeg=_encode(annotated, quality),
+            thumbnail_jpeg=_encode(thumbnail, quality),
+            boxes=boxes,
+            snapshot_at=ended.best_frame_at,
+            clip=clip,
         )
+
+        def publish(verdict: PersonVerdict) -> None:
+            event = self._judged(ended.event, verdict)
+            logger.info(
+                "motion_ended",
+                device_id=self.device_id,  # may run on the checker's thread
+                event_id=event.id,
+                motion_frames=event.motion_frames,
+                peak_area_ratio=round(event.peak_area_ratio, 4),
+                person_confidence=event.person_confidence,
+                alert=event.alert,
+            )
+            self._sink.publish_event(replace(message, event=event))
+
+        check, self._person_check = self._person_check, None
+        if check is None:
+            publish(PersonVerdict(confidence=None, person=None))
+        else:
+            check.finish(ended.best_frame, publish)
 
     def _publish_status(self, status: DeviceStatus) -> None:
         logger.info("camera_status", status=status)

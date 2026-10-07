@@ -69,7 +69,7 @@ from vision_hub.vision.clip import ClipSettings
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.fleet import DeviceSpec, load_fleet
 from vision_hub.vision.manager import CameraManager, camera_worker_factory
-from vision_hub.vision.persons import PersonSettings, load_person_detector
+from vision_hub.vision.persons import PersonChecker, load_person_detector
 from vision_hub.vision.worker import EncodingSettings
 
 logger = get_logger(__name__)
@@ -199,6 +199,11 @@ async def build_container(
         stack.push_async_callback(recorder.stop)
 
         cv2.setNumThreads(settings.vision.opencv_threads)
+        persons = await _person_checker(settings.persons)
+        if persons is not None:
+            # Runs after the cameras have stopped (callbacks run in reverse): their last events
+            # still get their person verdict and reach the recorder.
+            stack.push_async_callback(asyncio.to_thread, persons.close)
         cameras = CameraManager(
             on_event=recorder.submit,
             metrics=metrics,
@@ -212,7 +217,7 @@ async def build_container(
                 ),
                 metrics=metrics,
                 clips=_clip_settings(settings.clips),
-                persons=await _person_settings(settings.persons),
+                persons=persons,
             ),
         )
         stack.push_async_callback(cameras.stop_all)
@@ -368,18 +373,19 @@ def _clip_settings(config: ClipConfig) -> ClipSettings | None:
     )
 
 
-async def _person_settings(config: PersonConfig) -> PersonSettings | None:
-    """One detector for every camera, loaded off the event loop (it takes a moment)."""
+async def _person_checker(config: PersonConfig) -> PersonChecker | None:
+    """One detector and one background thread for every camera, loaded off the event loop."""
     if not config.enabled:
         logger.info("person_detection_disabled")
         return None
     detector = await asyncio.to_thread(load_person_detector, config.model_path)
     if detector is None:
         return None
-    return PersonSettings(
-        detector=detector,
+    return PersonChecker(
+        detector,
         threshold=config.threshold,
         check_interval_seconds=config.check_interval_seconds,
+        max_checks=config.max_checks,
     )
 
 
