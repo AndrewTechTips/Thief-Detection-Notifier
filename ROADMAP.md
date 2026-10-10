@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 7 — Showcase (Phases 1–6 are complete: MVP, event clips, person detection)
 - **Working branch:** `main`
-- **Next task:** 7.2 Realistic demo cameras (needs the footage first)
+- **Next task:** 7.3 Richer history
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -52,6 +52,7 @@
 | AD-22 | Person detection | **YOLOX-s** (OpenCV model zoo ONNX, Apache 2.0, COCO AP 40.5) on **onnxruntime**, run on **one background thread shared by all cameras**. While an event is open: a check when it starts, then every 2 s, at most 5, plus a last look at the frame with the most motion before the event is published. Per camera, alerts go out on *any motion* (default) or *people only*; if the model can't run, alerts go out anyway. onnxruntime telemetry off | onnxruntime runs it 6× faster than OpenCV 5's DNN engine. YOLOv5/v8 are AGPL; NanoDet is cheaper but far less accurate (AP 30.4). A check costs ~280 ms of one core on a typical CPU (45 ms on Apple silicon only), so it can't run in the camera thread without stalling the live view. One shared thread caps the feature at one core. Failing open: a missed intruder costs more than a false alarm |
 | AD-23 | Live overlays | The hub sends **detections as data** and the **dashboard draws them** over the video. They ride in each MJPEG part's `X-Detections` header (boxes as fractions of the picture, plus the person score once the open event found one), so the JPEG stays clean. Snapshots and clips are unchanged | A header ties the boxes to the exact frame: a separate WebSocket message would arrive early or late and the boxes would trail the person. Styled boxes (motion vs person) that can be switched off, with no re-encoding. An `<img>` ignores the header, so plain MJPEG clients keep working. One code path for the live view and the public demo |
 | AD-24 | Public demo | **GitHub Pages** hosts the real dashboard built in a **demo mode**: a fake hub in the browser answers the API client and the WebSocket from recorded data, typed against the OpenAPI schema. The data (events, snapshots, clips) is recorded from a real hub running the demo cameras | Pages only serves static files. Visitors try the actual app in seconds, with no server to run or pay for, and the typed fixtures can't drift from the API |
+| AD-25 | Demo footage | Four free Pexels clips, **fetched from Pexels at run time** (pinned URLs and SHA-256, `vision-hub demo-footage`) and turned into camera loops on the machine: trimmed, 640 px 16:9 at 15 fps, a crossfade from the last frame to the first, then the empty scene played back and forth. VP8 WebM written by OpenCV | Real people make person detection visible (YOLOX scores the synthetic figure 0.0). Fetching instead of re-hosting keeps the repository small and stays well inside the Pexels licence. A hard cut at the loop point would look like motion; the crossfade and idle scene give one event per visit. No new dependency |
 
 ---
 
@@ -424,11 +425,13 @@ dashboard, richer history, and a public demo anyone can open. Designs: AD-23, AD
 - [x] Tests: header format and fractions, boxes in stream pixels, the person score on live frames (pytest); header parsing and box layout (Vitest); boxes on the grid and the camera page, switched off and remembered (e2e)
 
 ### 7.2 Realistic demo cameras
-- [ ] Footage: 3–4 fixed-camera clips (someone walking past, a pet or a car, an empty scene with moving shadows or changing light), own recordings or free-licence stock; source and licence of each in `docs/demo-footage.md`
-- [ ] Clips trimmed and shrunk (640 px, short loops), published as a GitHub Release asset; `vision-hub download-demo` fetches them and checks SHA-256, like the person model
-- [ ] `devices.demo.toml` and a `demo` Docker Compose profile using them; the synthetic source stays for tests and CI
-- [ ] People-only mode shown working: the walker alerts, the shadows and the pet don't
-- [ ] README screenshots retaken with the new cameras
+- [x] Footage: four fixed-camera Pexels clips (front door, lobby, driveway, patio), chosen from 18 by measuring how still each camera is and running each through the motion detector and YOLOX twice; sources, credits, licence and the selection in `docs/demo-footage.md` (AD-25)
+- [x] `vision-hub demo-footage`: fetches the pinned clips (SHA-256, through a shared `fetch_verified` that the model download uses too) and makes the loops in `data/demo/` in ~20 s. Nothing is re-hosted, so no Release asset
+  - **Found while building it:** Pexels' CDN refuses urllib's default agent (403); downloads now say `vision-hub/<version>`. Its "sd" file names don't match their sizes (a "640×338" file is 426×226), so two clips come from their HD files
+- [x] `devices.demo.toml` (every camera people-only) and `docker-compose.demo.yml`, an override rather than a profile: it changes the hub's command and fleet. Checked in the Docker image with compose's hardening: the first start makes the loops, a restart reuses them. The synthetic source stays for tests and CI
+- [x] People-only mode shown working, on the running hub: per loop one person alert at the front door and one in the lobby (0.88–0.96), while the driveway (garage door, car) and the patio (shadows) only record quiet events
+- [x] README screenshots retaken with the demo cameras; evidence snapshots now use the overlay's look (amber corner brackets) instead of green rectangles
+  - **Found while taking them:** a camera page opened in the middle of an event showed red boxes but no motion chip, because the hub reports an event only once it ends. The live view now also counts motion from frames that carry detections
 
 ### 7.3 Richer history
 - [ ] Activity heatmap (hour × weekday) per camera, from an aggregate endpoint (no rows shipped to the browser)
@@ -456,7 +459,7 @@ dashboard, richer history, and a public demo anyone can open. Designs: AD-23, AD
 
 **✅ Phase 7 exit criteria**
 - [x] The live view draws detections from data, and the stream has no burnt-in boxes
-- [ ] The demo cameras show real scenes, and people-only mode visibly ignores non-people
+- [x] The demo cameras show real scenes, and people-only mode visibly ignores non-people
 - [ ] A public demo link works on desktop and phone, deep links included, with no backend
 
 ---
