@@ -1,0 +1,54 @@
+# Demo cameras: real footage, no hardware. Two scenes with people, two without.
+#   uv run vision-hub demo-footage        # fetches the clips (Pexels) and makes the loops
+#   VISION_HUB_VISION__DEVICES_FILE=devices.demo.toml uv run vision-hub serve
+# With Docker: docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build --wait
+# Sources and credits: docs/demo-footage.md. Paths are relative to the working directory.
+#
+# Every camera alerts on people only: the front door and the lobby alert, while the car in the
+# driveway and the shadows on the patio are recorded as events without an alert.
+
+[[devices]]
+id = "front-door"
+name = "Front door"
+
+[devices.source]
+kind = "video_file"
+path = "data/demo/front-door.webm"
+
+[devices.detection]
+alert_on = "person"
+# He stops moving at the door for a moment: keep the walk up and the ring as one event.
+motion_end_grace_seconds = 4.0
+
+[[devices]]
+id = "lobby"
+name = "Lobby"
+
+[devices.source]
+kind = "video_file"
+path = "data/demo/lobby.webm"
+
+[devices.detection]
+alert_on = "person"
+
+[[devices]]
+id = "driveway"
+name = "Driveway"
+
+[devices.source]
+kind = "video_file"
+path = "data/demo/driveway.webm"
+
+[devices.detection]
+alert_on = "person"
+
+[[devices]]
+id = "patio"
+name = "Patio"
+
+[devices.source]
+kind = "video_file"
+path = "data/demo/patio.webm"
+
+[devices.detection]
+alert_on = "person"

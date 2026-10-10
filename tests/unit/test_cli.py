@@ -11,7 +11,9 @@ from pydantic import SecretStr
 
 from vision_hub import __main__ as cli
 from vision_hub.core.config import PushConfig
+from vision_hub.core.downloads import ChecksumError
 from vision_hub.infra.notifiers.webpush import VapidKey
+from vision_hub.vision.demo import CLIPS, DemoClip
 from vision_hub.vision.persons import ModelError
 
 
@@ -184,3 +186,37 @@ def test_download_model_fails_with_a_message(
 
     assert exited.value.code == 1
     assert "SHA-256" in capsys.readouterr().err
+
+
+def test_demo_footage_reports_each_loop(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    calls: list[tuple[Path, bool]] = []
+
+    def prepare(directory: Path, *, fetch: bool) -> list[tuple[DemoClip, bool]]:
+        calls.append((directory, fetch))
+        return [(CLIPS[0], True), (CLIPS[1], False)]
+
+    monkeypatch.setattr(cli, "prepare_footage", prepare)
+
+    cli.main(["demo-footage", "--directory", str(tmp_path), "--no-fetch"])
+
+    out = capsys.readouterr().out
+    assert calls == [(tmp_path, False)]
+    assert f"{CLIPS[0].name}.webm: made" in out
+    assert f"{CLIPS[1].name}.webm: already there" in out
+
+
+def test_demo_footage_fails_with_a_message(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def broken(directory: Path, *, fetch: bool) -> list[tuple[DemoClip, bool]]:
+        raise ChecksumError("abc", "def")
+
+    monkeypatch.setattr(cli, "prepare_footage", broken)
+
+    with pytest.raises(SystemExit) as exited:
+        cli.main(["demo-footage"])
+
+    assert exited.value.code == 1
+    assert "SHA-256 abc, expected def" in capsys.readouterr().err

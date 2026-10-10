@@ -1,0 +1,13 @@
+# The demo cameras (devices.demo.toml): real footage, no hardware.
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build --wait
+# The first start fetches the clips from Pexels (~12 MB) into the data volume and makes the
+# loops (about 20 s); later starts reuse them. Sources and credits: docs/demo-footage.md.
+services:
+  api:
+    command: ["sh", "-c", "vision-hub demo-footage && exec vision-hub serve"]
+    environment:
+      VISION_HUB_VISION__DEVICES_FILE: /app/devices.demo.toml
+    volumes:
+      - ./devices.demo.toml:/app/devices.demo.toml:ro
+    healthcheck:
+      start_period: 90s # the first start makes the loops before serving

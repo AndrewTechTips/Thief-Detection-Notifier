@@ -1,5 +1,5 @@
 """Command-line entrypoint:
-``vision-hub [serve|hash-password|create-user|openapi|vapid-key|download-model]``."""
+``vision-hub [serve|hash-password|create-user|openapi|vapid-key|download-model|demo-footage]``."""
 
 import argparse
 import asyncio
@@ -14,6 +14,7 @@ import uvicorn
 
 from vision_hub.api.openapi import openapi_document
 from vision_hub.core.config import env_name, get_settings
+from vision_hub.core.downloads import ChecksumError
 from vision_hub.core.security import PasswordHasher
 from vision_hub.domain.audit import AuditAction, AuditTarget
 from vision_hub.domain.auth import Role
@@ -24,6 +25,7 @@ from vision_hub.infra.db.repositories.users import SqlUserRepository
 from vision_hub.infra.notifiers.webpush import VapidKey
 from vision_hub.main import create_app
 from vision_hub.services.audit import Auditor
+from vision_hub.vision.demo import prepare_footage
 from vision_hub.vision.persons import MODEL_BYTES, ModelError, download_model
 
 MIN_PASSWORD_LENGTH = 12
@@ -69,9 +71,25 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     download.set_defaults(command="download-model")
 
+    demo = commands.add_parser(
+        "demo-footage",
+        help="fetch the demo cameras' footage and make their loops (see devices.demo.toml)",
+    )
+    demo.add_argument(
+        "-d", "--directory", type=Path, default=Path("data/demo"), help="default: data/demo"
+    )
+    demo.add_argument(
+        "--no-fetch",
+        action="store_true",
+        help="use sources already in DIRECTORY/sources instead of downloading them",
+    )
+    demo.set_defaults(command="demo-footage")
+
     args = parser.parse_args(argv)
     if args.command == "download-model":
         _download_model()
+    elif args.command == "demo-footage":
+        _demo_footage(args.directory, fetch=not args.no_fetch)
     elif args.command == "vapid-key":
         sys.stdout.write(VapidKey.generate().to_text() + "\n")
     elif args.command == "openapi":
@@ -94,6 +112,17 @@ def _download_model() -> None:
         sys.stderr.write(f"Download failed: {exc}\n")
         raise SystemExit(1) from exc
     sys.stdout.write("Downloaded and verified.\n" if fetched else "Already there and verified.\n")
+
+
+def _demo_footage(directory: Path, *, fetch: bool) -> None:
+    sys.stdout.write(f"Demo footage (Pexels, see docs/demo-footage.md): {directory}\n")
+    try:
+        made = prepare_footage(directory, fetch=fetch)
+    except (OSError, ChecksumError, ValueError) as exc:
+        sys.stderr.write(f"Demo footage failed: {exc}\n")
+        raise SystemExit(1) from exc
+    for clip, now in made:
+        sys.stdout.write(f"  {clip.name}.webm: {'made' if now else 'already there'}\n")
 
 
 class GracefulServer(uvicorn.Server):

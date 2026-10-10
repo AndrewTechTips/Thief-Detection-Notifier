@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from vision_hub.vision.config import DetectionConfig
+from vision_hub.vision.demo import CLIPS
 from vision_hub.vision.fleet import FleetError, load_fleet
 from vision_hub.vision.sources import RtspSourceConfig, SyntheticSourceConfig
 
@@ -65,6 +66,16 @@ def test_example_file_is_valid() -> None:
 
     assert [d.id for d in fleet] == ["demo-porch", "demo-garage", "driveway", "desk"]
     assert [d.enabled for d in fleet] == [True, True, False, False]
+
+
+def test_demo_file_plays_every_demo_clip() -> None:
+    fleet = load_fleet(PROJECT_ROOT / "devices.demo.toml", defaults=DEFAULTS)
+
+    assert [d.id for d in fleet] == [clip.name for clip in CLIPS]
+    for camera in fleet:
+        assert camera.source.kind == "video_file"
+        assert str(camera.source.path) == f"data/demo/{camera.id}.webm"
+        assert camera.detection.alert_on == "person"
 
 
 @pytest.mark.parametrize(
