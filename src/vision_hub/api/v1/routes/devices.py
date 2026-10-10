@@ -193,7 +193,13 @@ async def stream(
     settings: SettingsDep,
     fps: Annotated[float | None, Query(gt=0, le=60, description="Frame rate cap")] = None,
 ) -> StreamingResponse:
-    """Use directly as `<img src=".../stream?ticket=...">`. Ends when the camera stops."""
+    """Use directly as `<img src=".../stream?ticket=...">`. Ends when the camera stops.
+
+    Frames are clean. A part showing motion carries what was detected on it in an
+    `X-Detections` header: `{"boxes": [[x, y, width, height], ...], "person": 0.87}`, boxes in
+    fractions of the picture, `person` the score once the open event found a person (else
+    null). Read the parts yourself to draw them; an `<img>` ignores the header.
+    """
     frames = await devices.live_frames(device_id)
     max_fps = min(fps or settings.realtime.stream_max_fps, settings.realtime.stream_max_fps)
     return StreamingResponse(

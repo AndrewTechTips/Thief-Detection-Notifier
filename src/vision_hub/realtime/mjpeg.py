@@ -2,23 +2,52 @@
 
 Works in a plain ``<img src>`` tag. The stream counts as a viewer, so the camera worker
 encodes every analysed frame while it is open.
+
+Frames are clean; a part showing motion carries what was detected on it in an
+``X-Detections`` header (AD-23), so a viewer that reads the parts itself can draw boxes that
+match the picture exactly. An ``<img>`` ignores it.
 """
 
 import asyncio
+import json
 import time
 from collections.abc import AsyncGenerator, Callable
 
-from vision_hub.vision.bridge import FramesClosedError, LatestFrame
+from vision_hub.vision.bridge import FramePacket, FramesClosedError, LatestFrame
 
 BOUNDARY = "frame"
 MEDIA_TYPE = f"multipart/x-mixed-replace; boundary={BOUNDARY}"
+DETECTIONS_HEADER = "X-Detections"
 
 
-def part(jpeg: bytes) -> bytes:
+def part(jpeg: bytes, detections: str | None = None) -> bytes:
+    extra = f"{DETECTIONS_HEADER}: {detections}\r\n" if detections else ""
     header = (
-        f"--{BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: {len(jpeg)}\r\n\r\n"
+        f"--{BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: {len(jpeg)}\r\n{extra}\r\n"
     ).encode()
     return header + jpeg + b"\r\n"
+
+
+def detections(packet: FramePacket) -> str | None:
+    """Compact JSON of a frame's detections, or None when there is nothing to draw.
+
+    ``{"boxes": [[x, y, width, height], ...], "person": 0.87}``: boxes in fractions of the
+    picture (0..1), ``person`` the score once a person was found in the open event, else null.
+    """
+    if not packet.boxes and packet.person is None:
+        return None
+    width, height = packet.width, packet.height
+    boxes = [
+        [
+            round(box.x / width, 4),
+            round(box.y / height, 4),
+            round(box.width / width, 4),
+            round(box.height / height, 4),
+        ]
+        for box in packet.boxes
+    ]
+    person = None if packet.person is None else round(packet.person, 2)
+    return json.dumps({"boxes": boxes, "person": person}, separators=(",", ":"))
 
 
 async def mjpeg_stream(
@@ -45,6 +74,6 @@ async def mjpeg_stream(
             except FramesClosedError:
                 return
             last_sequence = packet.sequence
-            yield part(packet.jpeg)
+            yield part(packet.jpeg, detections(packet))
             if (wait := interval - (time.monotonic() - started)) > 0:
                 await asyncio.sleep(wait)

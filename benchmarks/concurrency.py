@@ -64,8 +64,8 @@ class Camera:
         return np.asarray(cv2.imdecode(encoded, cv2.IMREAD_COLOR), np.uint8)
 
     def analyse(self, frame: Frame) -> bytes:
-        boxes = self._detector.process(frame).boxes
-        return encode_stream_frame(frame, boxes, STREAM)[0]
+        self._detector.process(frame)
+        return encode_stream_frame(frame, STREAM)[0]
 
     def step(self) -> bytes:
         return self.analyse(self.next_frame())

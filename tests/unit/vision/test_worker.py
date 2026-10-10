@@ -131,22 +131,18 @@ def run_until_done(worker: CameraWorker, sink: RecordingSink, timeout: float = 1
 
 
 class TestLiveFrames:
-    def test_boxes_are_drawn_on_the_downscaled_image(self) -> None:
+    def test_frames_are_downscaled_to_the_stream_width(self) -> None:
         frame = np.zeros((1080, 1920, 3), np.uint8)
 
-        jpeg, width, height = encode_stream_frame(
-            frame, [BoundingBox(x=960, y=540, width=400, height=200)], EncodingSettings()
-        )
+        jpeg, width, height = encode_stream_frame(frame, EncodingSettings())
 
         image = decode(jpeg)
         assert (width, height) == (960, 540) == (image.shape[1], image.shape[0])
-        assert image[270:370, 480:680].max() > 100  # the box, at half the coordinates
-        assert image[:200, :400].max() < 30  # untouched elsewhere
 
-    def test_frames_without_motion_are_encoded_as_they_are(self) -> None:
+    def test_frames_are_encoded_as_they_are(self) -> None:
         frame = np.full((480, 640, 3), 128, np.uint8)
 
-        jpeg, width, _ = encode_stream_frame(frame, (), EncodingSettings())
+        jpeg, width, _ = encode_stream_frame(frame, EncodingSettings())
 
         assert width == 640
         assert abs(int(decode(jpeg).mean()) - 128) <= 1
@@ -208,6 +204,21 @@ class TestLifecycle:
         assert decode(sink.frames[0].jpeg).shape == (240, 320, 3)
         assert (sink.frames[0].width, sink.frames[0].height) == (320, 240)
         assert any(f.motion for f in sink.frames)
+
+    def test_live_frames_carry_their_motion_boxes_in_stream_pixels(self) -> None:
+        sink = RecordingSink(viewers=True, stop_after_ended=1)
+
+        run_until_done(make_worker(sink), sink)
+
+        moving = [f for f in sink.frames if f.motion]
+        assert moving
+        assert all(f.boxes for f in moving)
+        assert not any(f.boxes for f in sink.frames if not f.motion)
+        boxes = [box for f in moving for box in f.boxes]  # 640x480 source, 320 px stream
+        assert min(min(box.x, box.y) for box in boxes) >= 0
+        assert max(box.x + box.width for box in boxes) <= 320
+        assert max(box.y + box.height for box in boxes) <= 240
+        assert max(box.height for box in boxes) > 60  # the figure, halved
 
     def test_without_viewers_frames_are_encoded_about_once_a_second(self) -> None:
         sink = RecordingSink(viewers=False, stop_after_ended=2)
@@ -429,6 +440,26 @@ class TestPersons:
         ended = first_ended(None)
 
         assert (ended.event.person, ended.event.alert) == (None, True)
+
+    def test_live_frames_show_the_person_once_found(self) -> None:
+        # Paced: the event lasts about a second of real time, so the check (on its own thread)
+        # finishes while the event is still open.
+        source = SyntheticSource(
+            SyntheticSourceConfig(fps=50, visit_every_seconds=2, visit_seconds=1, seed=3)
+        )
+        checker = PersonChecker(
+            ScriptedDetector(0.9), threshold=0.5, check_interval_seconds=1, max_checks=5
+        )
+        sink = RecordingSink(viewers=True, stop_after_ended=1)
+
+        run_until_done(make_worker(sink, source=source, persons=checker), sink)
+        checker.close()
+
+        scores = [f.person for f in sink.frames]
+        assert 0.9 in scores
+        first = scores.index(0.9)
+        assert all(score is None for score in scores[: first - 50])  # before the event
+        assert scores[-1] is None  # the event ended
 
 
 class ExplodingSource:

@@ -41,8 +41,8 @@ Median / 95th percentile in milliseconds, one thread:
 | Resize to 960 px, `INTER_AREA` | 5.93 / 7.66 | 0.07 / 0.07 |
 | Resize to 960 px, `INTER_LINEAR` | 0.17 / 0.18 | 0.20 / 0.21 |
 | Live frame: annotate, downscale, encode (before) | 6.52 / 6.87 | 0.73 / 0.77 |
-| **Live frame: downscale, annotate, encode (now)** | 0.76 / 0.78 | 0.65 / 0.66 |
-| Live frame without motion (now) | 0.74 / 0.94 | 0.62 / 0.64 |
+| Live frame: downscale, annotate, encode (Phase 3) | 0.76 / 0.78 | 0.65 / 0.66 |
+| **Live frame: downscale, encode (now: viewers draw the boxes)** | 0.74 / 0.94 | 0.62 / 0.64 |
 
 Detection at 640 px keeps the cost nearly independent of the camera's resolution; decoding is
 what grows with it. `processing_width` (per device) trades sensitivity to small, distant

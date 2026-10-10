@@ -23,7 +23,7 @@ from vision_hub.vision.annotate import draw_boxes
 from vision_hub.vision.bridge import FramePacket
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.detector import MotionDetector
-from vision_hub.vision.frame import Frame
+from vision_hub.vision.frame import Frame, resize_to_width
 from vision_hub.vision.sources import Pacer, SyntheticSource, SyntheticSourceConfig
 from vision_hub.vision.worker import CameraWorker, EncodingSettings, encode_stream_frame
 
@@ -98,6 +98,15 @@ def annotate_then_downscale(frame: Frame, boxes: Sequence[BoundingBox]) -> bytes
     ].tobytes()
 
 
+def downscale_then_annotate(frame: Frame, boxes: Sequence[BoundingBox]) -> bytes:
+    """The Phase 3 live-frame path (boxes burnt in after downscaling), kept for comparison."""
+    small, scale = resize_to_width(frame, STREAM.stream_max_width)
+    annotated = draw_boxes(small, [box.scaled(1 / scale) for box in boxes])
+    return cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, STREAM.stream_jpeg_quality])[
+        1
+    ].tobytes()
+
+
 def stage_rows(width: int, height: int, repeats: int) -> dict[str, str]:
     clip = generate(width, height, 40)
     moving = clip[-1]
@@ -127,11 +136,11 @@ def stage_rows(width: int, height: int, repeats: int) -> dict[str, str]:
     rows["Live frame: annotate, downscale, encode (before)"] = timed(
         lambda: annotate_then_downscale(moving, boxes), repeats
     )
-    rows["Live frame: downscale, annotate, encode (after)"] = timed(
-        lambda: encode_stream_frame(moving, boxes, STREAM), repeats
+    rows["Live frame: downscale, annotate, encode (Phase 3)"] = timed(
+        lambda: downscale_then_annotate(moving, boxes), repeats
     )
-    rows["Live frame without motion (after)"] = timed(
-        lambda: encode_stream_frame(moving, (), STREAM), repeats
+    rows["Live frame: downscale, encode (now: viewers draw the boxes)"] = timed(
+        lambda: encode_stream_frame(moving, STREAM), repeats
     )
     return rows
 

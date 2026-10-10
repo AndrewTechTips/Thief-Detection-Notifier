@@ -1,12 +1,14 @@
 import asyncio
 import time
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from vision_hub.domain.auth import Principal, Role
+from vision_hub.domain.motion import BoundingBox
 from vision_hub.infra.auth import InMemoryTicketStore
-from vision_hub.realtime.mjpeg import BOUNDARY, MEDIA_TYPE, mjpeg_stream, part
+from vision_hub.realtime.mjpeg import BOUNDARY, MEDIA_TYPE, detections, mjpeg_stream, part
 from vision_hub.vision.bridge import FramePacket, LatestFrame
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
@@ -31,6 +33,40 @@ class TestMjpeg:
             b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: 3\r\n\r\nabc\r\n"
         )
         assert f"multipart/x-mixed-replace; boundary={BOUNDARY}" == MEDIA_TYPE
+
+    def test_parts_with_detections_carry_them_in_a_header(self) -> None:
+        assert part(b"abc", '{"boxes":[]}') == (
+            b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: 3\r\n"
+            b'X-Detections: {"boxes":[]}\r\n\r\nabc\r\n'
+        )
+
+    def test_detections_are_fractions_of_the_picture(self) -> None:
+        moving = replace(
+            packet(1),
+            width=640,
+            height=480,
+            boxes=(BoundingBox(x=320, y=120, width=64, height=240),),
+            person=0.8731,
+        )
+
+        assert detections(moving) == '{"boxes":[[0.5,0.25,0.1,0.5]],"person":0.87}'
+        assert detections(replace(moving, person=None)) == (
+            '{"boxes":[[0.5,0.25,0.1,0.5]],"person":null}'
+        )
+        assert detections(replace(moving, boxes=())) == '{"boxes":[],"person":0.87}'
+
+    def test_frames_without_detections_have_no_header(self) -> None:
+        assert detections(packet(1)) is None
+
+    async def test_stream_parts_carry_the_detections(self) -> None:
+        frames = LatestFrame()
+        frames.publish(replace(packet(1), boxes=(BoundingBox(x=0, y=0, width=1, height=1),)))
+        stream = mjpeg_stream(frames, max_fps=100, still_running=lambda: True)
+
+        first = await anext(stream)
+        await stream.aclose()
+
+        assert b'X-Detections: {"boxes":[[0.0,0.0,0.5,0.5]],"person":null}\r\n' in first
 
     async def test_stream_ends_when_frames_are_closed(self) -> None:
         frames = LatestFrame()

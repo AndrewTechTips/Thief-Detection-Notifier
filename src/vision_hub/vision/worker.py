@@ -5,7 +5,7 @@ event loop (AD-7). OpenCV releases the GIL inside its C++ calls, so cameras run 
 """
 
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Protocol
@@ -24,7 +24,7 @@ from vision_hub.domain.events import (
     MotionStartedEvent,
     VideoClip,
 )
-from vision_hub.domain.motion import BoundingBox, MotionEvent
+from vision_hub.domain.motion import MotionEvent
 from vision_hub.vision.annotate import draw_boxes
 from vision_hub.vision.bridge import FramePacket
 from vision_hub.vision.clip import ClipRecorder, ClipSettings
@@ -190,9 +190,10 @@ class CameraWorker:
         idle_due = self._last_streamed is None or at - self._last_streamed >= IDLE_SNAPSHOT_INTERVAL
         if self._sink.has_viewers or idle_due:
             self._last_streamed = at
-            jpeg, width, height = encode_stream_frame(frame, detection.boxes, self._encoding)
+            jpeg, width, height = encode_stream_frame(frame, self._encoding)
             self._metrics.frames_streamed.inc()
             self._sequence += 1
+            scale = width / frame.shape[1]
             self._sink.publish_frame(
                 FramePacket(
                     device_id=self.device_id,
@@ -202,8 +203,17 @@ class CameraWorker:
                     height=height,
                     motion=detection.motion,
                     jpeg=jpeg,
+                    boxes=tuple(box.scaled(scale) for box in detection.boxes),
+                    person=self._person_found(),
                 )
             )
+
+    def _person_found(self) -> float | None:
+        """The open event's best person score, once it counts as a person."""
+        if self._person_check is None:
+            return None
+        verdict = self._person_check.verdict()
+        return verdict.confidence if verdict.person else None
 
     def _judged(self, event: MotionEvent, verdict: PersonVerdict) -> MotionEvent:
         """The finished event with its person verdict and whether it alerts."""
@@ -297,14 +307,10 @@ class CameraWorker:
         self._sink.worker_exited(crashed=crashed)
 
 
-def encode_stream_frame(
-    frame: Frame, boxes: Sequence[BoundingBox], settings: EncodingSettings
-) -> tuple[bytes, int, int]:
-    """Live-view JPEG and its size. Downscales *before* drawing, so boxes are drawn on the
-    small image, and a frame without motion is encoded without any copy."""
-    small, scale = resize_to_width(frame, settings.stream_max_width)
-    if boxes:
-        small = draw_boxes(small, [box.scaled(1 / scale) for box in boxes])
+def encode_stream_frame(frame: Frame, settings: EncodingSettings) -> tuple[bytes, int, int]:
+    """Live-view JPEG and its size: the frame as it is, downscaled to the stream width. The
+    boxes travel beside it (``FramePacket.boxes``); viewers draw them."""
+    small, _ = resize_to_width(frame, settings.stream_max_width)
     return _encode(small, settings.stream_jpeg_quality), small.shape[1], small.shape[0]
 
 

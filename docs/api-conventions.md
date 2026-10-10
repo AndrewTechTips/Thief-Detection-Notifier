@@ -125,7 +125,10 @@ GET /api/v1/events?limit=50&cursor=eyJhZnRlcl9pZCI6NDJ9
   `resume`), `1011` internal error.
 - **MJPEG:** `GET /api/v1/devices/{id}/stream` returns `multipart/x-mixed-replace` with one JPEG
   per part, newest frame first and capped by `?fps=`. It accepts a bearer token or a ticket, and
-  ends when the camera stops or the server shuts down (reconnect with a new ticket).
+  ends when the camera stops or the server shuts down (reconnect with a new ticket). Frames are
+  clean: a part showing motion carries `X-Detections: {"boxes": [[x, y, w, h], ...], "person":
+  0.87}` (fractions of the picture; `person` is null until the open event found a person), and
+  the dashboard draws the boxes from it.
 
 - **Signed links:** event responses carry snapshot URLs with `expires` and `signature`
   query parameters (HMAC-SHA256, valid for `SECURITY__SIGNED_URL_TTL_SECONDS`, default 1 h).

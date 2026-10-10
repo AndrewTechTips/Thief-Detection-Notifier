@@ -17,11 +17,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from vision_hub.domain.events import CameraEvent
+from vision_hub.domain.motion import BoundingBox
 
 
 @dataclass(frozen=True, slots=True)
 class FramePacket:
-    """One encoded live-view frame."""
+    """One encoded live-view frame and what was detected on it. The JPEG is clean: viewers
+    draw the boxes themselves (AD-23)."""
 
     device_id: str
     sequence: int
@@ -30,6 +32,8 @@ class FramePacket:
     height: int
     motion: bool
     jpeg: bytes = field(repr=False)
+    boxes: tuple[BoundingBox, ...] = ()  # moving regions, in this JPEG's pixels
+    person: float | None = None  # score, once the open event's checks found a person
 
 
 class FramesClosedError(Exception):
