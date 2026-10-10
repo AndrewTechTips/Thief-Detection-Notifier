@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 7 — Showcase (Phases 1–6 are complete: MVP, event clips, person detection)
 - **Working branch:** `main`
-- **Next task:** 7.1 Live overlays (7.2 waits for the demo footage)
+- **Next task:** 7.2 Realistic demo cameras (needs the footage first)
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -50,7 +50,7 @@
 | AD-20 | UI performance | Animate **only `transform` and `opacity`** (short colour transitions only on small controls and status lights); content never waits on an animation (hidden or throttled tabs may never finish one); blurred glass only on a few large static surfaces, cheap unblurred cards for repeated items; `backdrop-filter` on static chrome only, **never above live video** (an MJPEG frame under a blur forces a re-blur every frame); `prefers-reduced-motion` respected; streams pause when off-screen or the tab is hidden | Glass effects stay smooth on phones; idle tabs cost no bandwidth or CPU on the hub. |
 | AD-21 | Event clips | **VP8 in WebM**, written by OpenCV in the camera thread at 640 px: a pre-roll ring buffer (3 s) plus the event, capped at 120 s, with frames lightly blurred first. Stored beside the snapshots and served with byte ranges through a signed link | OpenCV's Linux wheels (the Docker image) have no H.264 encoder. VP8 is available everywhere and costs 6–17 ms/frame, only while recording (VP9: 20 ms). OpenCV offers no bitrate or speed control for it, so the blur keeps noisy cameras at 0.6–1.5 MB per 10 s instead of 3.4–7.5 MB. WebM plays in Chrome, Edge, Firefox and Safari 16+/iOS 17.4+. No new dependency, no ffmpeg process |
 | AD-22 | Person detection | **YOLOX-s** (OpenCV model zoo ONNX, Apache 2.0, COCO AP 40.5) on **onnxruntime**, run on **one background thread shared by all cameras**. While an event is open: a check when it starts, then every 2 s, at most 5, plus a last look at the frame with the most motion before the event is published. Per camera, alerts go out on *any motion* (default) or *people only*; if the model can't run, alerts go out anyway. onnxruntime telemetry off | onnxruntime runs it 6× faster than OpenCV 5's DNN engine. YOLOv5/v8 are AGPL; NanoDet is cheaper but far less accurate (AP 30.4). A check costs ~280 ms of one core on a typical CPU (45 ms on Apple silicon only), so it can't run in the camera thread without stalling the live view. One shared thread caps the feature at one core. Failing open: a missed intruder costs more than a false alarm |
-| AD-23 | Live overlays | The hub sends **detections as data** (WebSocket, normalised boxes, at most ~4 per second per camera, latest wins) and the **dashboard draws them** on a canvas above the video. The live MJPEG stream carries no boxes; snapshots and clips stay as they are | Styled, labelled boxes (motion vs person, score) that can be switched off, without re-encoding frames. One code path for the live view and the public demo |
+| AD-23 | Live overlays | The hub sends **detections as data** and the **dashboard draws them** over the video. They ride in each MJPEG part's `X-Detections` header (boxes as fractions of the picture, plus the person score once the open event found one), so the JPEG stays clean. Snapshots and clips are unchanged | A header ties the boxes to the exact frame: a separate WebSocket message would arrive early or late and the boxes would trail the person. Styled boxes (motion vs person) that can be switched off, with no re-encoding. An `<img>` ignores the header, so plain MJPEG clients keep working. One code path for the live view and the public demo |
 | AD-24 | Public demo | **GitHub Pages** hosts the real dashboard built in a **demo mode**: a fake hub in the browser answers the API client and the WebSocket from recorded data, typed against the OpenAPI schema. The data (events, snapshots, clips) is recorded from a real hub running the demo cameras | Pages only serves static files. Visitors try the actual app in seconds, with no server to run or pay for, and the typed fixtures can't drift from the API |
 
 ---
@@ -417,10 +417,11 @@
 dashboard, richer history, and a public demo anyone can open. Designs: AD-23, AD-24.
 
 ### 7.1 Live overlays
-- [ ] Detections over the WebSocket: per camera, while motion is open, normalised motion boxes (plus people and their scores when a check found some), throttled to ~4 per second, latest wins, only to clients watching that camera
-- [ ] Live MJPEG without burnt-in boxes (snapshots keep their annotated copy, clips stay clean)
-- [ ] Canvas overlay on live tiles and the camera page: corner-bracket boxes, "Person 87 %" / "Motion" labels in distinct colours, the watched areas (ROI) outlined, boxes fading out when motion ends; a per-camera switch, remembered. AD-20 holds (no blur over video, reduced motion respected)
-- [ ] Tests: message throttling and shape (pytest), overlay geometry (Vitest), overlay visible and switchable (e2e)
+- [x] Detections travel with each live frame (`X-Detections` part header, AD-23): motion boxes as fractions of the picture, and the person score once the open event found a person
+- [x] Live MJPEG without burnt-in boxes (snapshots keep their annotated copy, clips stay clean). Encoding a live frame no longer draws anything (`docs/performance.md`)
+- [x] Dashboard overlay on live tiles and the camera page: corner-bracket boxes, amber for motion and red once a person is found, fading out when motion ends; the motion chip reads "Person 87 %". One "Motion boxes" switch on the camera page, shared with the event viewer and remembered. AD-20 holds (only opacity animates, no blur over video). Watch areas were already drawn by the camera page
+  - **Found while testing live:** YOLOX scores the synthetic figure 0.0, so the demo cameras can't show people-only mode: 7.2 fixes that. Labelling *which* box is the person needs tracking (7.5): person checks run every 2 s, and motion boxes split and merge between frames
+- [x] Tests: header format and fractions, boxes in stream pixels, the person score on live frames (pytest); header parsing and box layout (Vitest); boxes on the grid and the camera page, switched off and remembered (e2e)
 
 ### 7.2 Realistic demo cameras
 - [ ] Footage: 3–4 fixed-camera clips (someone walking past, a pet or a car, an empty scene with moving shadows or changing light), own recordings or free-licence stock; source and licence of each in `docs/demo-footage.md`
@@ -454,7 +455,7 @@ dashboard, richer history, and a public demo anyone can open. Designs: AD-23, AD
 - [ ] Grafana dashboard for the Prometheus metrics, in an optional Compose profile
 
 **✅ Phase 7 exit criteria**
-- [ ] The live view draws labelled detections from data, and the stream has no burnt-in boxes
+- [x] The live view draws detections from data, and the stream has no burnt-in boxes
 - [ ] The demo cameras show real scenes, and people-only mode visibly ignores non-people
 - [ ] A public demo link works on desktop and phone, deep links included, with no backend
 
