@@ -16,9 +16,9 @@
 
 ## 📍 Current Status
 
-- **Active phase:** none. Phases 1–6 are complete (MVP, event clips, person detection)
+- **Active phase:** Phase 7 — Showcase (Phases 1–6 are complete: MVP, event clips, person detection)
 - **Working branch:** `main`
-- **Next task:** none planned. The *Future* section lists optional work, only if needed
+- **Next task:** 7.1 Live overlays (7.2 waits for the demo footage)
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -50,6 +50,8 @@
 | AD-20 | UI performance | Animate **only `transform` and `opacity`** (short colour transitions only on small controls and status lights); content never waits on an animation (hidden or throttled tabs may never finish one); blurred glass only on a few large static surfaces, cheap unblurred cards for repeated items; `backdrop-filter` on static chrome only, **never above live video** (an MJPEG frame under a blur forces a re-blur every frame); `prefers-reduced-motion` respected; streams pause when off-screen or the tab is hidden | Glass effects stay smooth on phones; idle tabs cost no bandwidth or CPU on the hub. |
 | AD-21 | Event clips | **VP8 in WebM**, written by OpenCV in the camera thread at 640 px: a pre-roll ring buffer (3 s) plus the event, capped at 120 s, with frames lightly blurred first. Stored beside the snapshots and served with byte ranges through a signed link | OpenCV's Linux wheels (the Docker image) have no H.264 encoder. VP8 is available everywhere and costs 6–17 ms/frame, only while recording (VP9: 20 ms). OpenCV offers no bitrate or speed control for it, so the blur keeps noisy cameras at 0.6–1.5 MB per 10 s instead of 3.4–7.5 MB. WebM plays in Chrome, Edge, Firefox and Safari 16+/iOS 17.4+. No new dependency, no ffmpeg process |
 | AD-22 | Person detection | **YOLOX-s** (OpenCV model zoo ONNX, Apache 2.0, COCO AP 40.5) on **onnxruntime**, run on **one background thread shared by all cameras**. While an event is open: a check when it starts, then every 2 s, at most 5, plus a last look at the frame with the most motion before the event is published. Per camera, alerts go out on *any motion* (default) or *people only*; if the model can't run, alerts go out anyway. onnxruntime telemetry off | onnxruntime runs it 6× faster than OpenCV 5's DNN engine. YOLOv5/v8 are AGPL; NanoDet is cheaper but far less accurate (AP 30.4). A check costs ~280 ms of one core on a typical CPU (45 ms on Apple silicon only), so it can't run in the camera thread without stalling the live view. One shared thread caps the feature at one core. Failing open: a missed intruder costs more than a false alarm |
+| AD-23 | Live overlays | The hub sends **detections as data** (WebSocket, normalised boxes, at most ~4 per second per camera, latest wins) and the **dashboard draws them** on a canvas above the video. The live MJPEG stream carries no boxes; snapshots and clips stay as they are | Styled, labelled boxes (motion vs person, score) that can be switched off, without re-encoding frames. One code path for the live view and the public demo |
+| AD-24 | Public demo | **GitHub Pages** hosts the real dashboard built in a **demo mode**: a fake hub in the browser answers the API client and the WebSocket from recorded data, typed against the OpenAPI schema. The data (events, snapshots, clips) is recorded from a real hub running the demo cameras | Pages only serves static files. Visitors try the actual app in seconds, with no server to run or pay for, and the typed fixtures can't drift from the API |
 
 ---
 
@@ -406,6 +408,55 @@
 **✅ Phase 6 exit criteria**
 - [x] A camera set to people only stays quiet for motion without people and alerts for a person (real model, in tests and in the Docker image: yard 0 of 12 events alerted, door 5 of 5)
 - [x] With the model missing, every camera still alerts (and says why in the logs: `person_model_missing` with the fix)
+
+---
+
+## Phase 7 — Showcase
+
+**Goal:** make the project look as good as it is built: realistic demo cameras, detections drawn by the
+dashboard, richer history, and a public demo anyone can open. Designs: AD-23, AD-24.
+
+### 7.1 Live overlays
+- [ ] Detections over the WebSocket: per camera, while motion is open, normalised motion boxes (plus people and their scores when a check found some), throttled to ~4 per second, latest wins, only to clients watching that camera
+- [ ] Live MJPEG without burnt-in boxes (snapshots keep their annotated copy, clips stay clean)
+- [ ] Canvas overlay on live tiles and the camera page: corner-bracket boxes, "Person 87 %" / "Motion" labels in distinct colours, the watched areas (ROI) outlined, boxes fading out when motion ends; a per-camera switch, remembered. AD-20 holds (no blur over video, reduced motion respected)
+- [ ] Tests: message throttling and shape (pytest), overlay geometry (Vitest), overlay visible and switchable (e2e)
+
+### 7.2 Realistic demo cameras
+- [ ] Footage: 3–4 fixed-camera clips (someone walking past, a pet or a car, an empty scene with moving shadows or changing light), own recordings or free-licence stock; source and licence of each in `docs/demo-footage.md`
+- [ ] Clips trimmed and shrunk (640 px, short loops), published as a GitHub Release asset; `vision-hub download-demo` fetches them and checks SHA-256, like the person model
+- [ ] `devices.demo.toml` and a `demo` Docker Compose profile using them; the synthetic source stays for tests and CI
+- [ ] People-only mode shown working: the walker alerts, the shadows and the pet don't
+- [ ] README screenshots retaken with the new cameras
+
+### 7.3 Richer history
+- [ ] Activity heatmap (hour × weekday) per camera, from an aggregate endpoint (no rows shipped to the browser)
+- [ ] Clip timeline with markers (motion start, person found) so the viewer can jump to the moment
+- [ ] Events-per-day sparkline on each live tile
+
+### 7.4 Public demo (GitHub Pages)
+- [ ] Repository renamed to `iot-vision-hub`; badges, links and docs updated
+- [ ] Demo build (`vite build --mode demo`): a fake hub in the browser behind the API client and the socket, fixtures typed against `schema.d.ts`, automatic sign-in, a "simulated data, run it yourself" banner; push and the service worker off
+- [ ] `vision-hub export-demo`: records events, snapshots and clips from a hub running the demo cameras into the demo's data; live tiles loop recorded footage with its detections
+- [ ] Served under the repository path (router base path, `404.html` fallback for deep links)
+- [ ] GitHub Actions workflow builds and deploys it; demo link and a short GIF at the top of the README
+- [ ] e2e and accessibility checks run against the demo build too
+
+### 7.5 Smarter detection *(pick what is worth it)*
+- [ ] Tamper detection: covered, moved or blurred camera raises its own alert (brightness, sharpness, background shift)
+- [ ] Object tracking (IoU matching, numpy only) and zone rules: someone staying in a zone for N seconds, crossing a line
+
+### 7.6 Integrations & deployment *(pick what is worth it)*
+- [ ] Multi-arch image (amd64, arm64) on GHCR, and a Raspberry Pi guide
+- [ ] Privacy masks: areas blurred in the live view, snapshots and clips
+- [ ] MQTT with Home Assistant discovery (new dependency: decide first)
+- [ ] Telegram or webhook notifier behind the existing `Notifier` port
+- [ ] Grafana dashboard for the Prometheus metrics, in an optional Compose profile
+
+**✅ Phase 7 exit criteria**
+- [ ] The live view draws labelled detections from data, and the stream has no burnt-in boxes
+- [ ] The demo cameras show real scenes, and people-only mode visibly ignores non-people
+- [ ] A public demo link works on desktop and phone, deep links included, with no backend
 
 ---
 
