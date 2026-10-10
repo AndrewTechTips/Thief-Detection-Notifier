@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 7 — Showcase (Phases 1–6 are complete: MVP, event clips, person detection)
 - **Working branch:** `main`
-- **Next task:** 7.3 Richer history
+- **Next task:** 7.3 Richer history (7.4, the public demo, is done)
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -51,7 +51,7 @@
 | AD-21 | Event clips | **VP8 in WebM**, written by OpenCV in the camera thread at 640 px: a pre-roll ring buffer (3 s) plus the event, capped at 120 s, with frames lightly blurred first. Stored beside the snapshots and served with byte ranges through a signed link | OpenCV's Linux wheels (the Docker image) have no H.264 encoder. VP8 is available everywhere and costs 6–17 ms/frame, only while recording (VP9: 20 ms). OpenCV offers no bitrate or speed control for it, so the blur keeps noisy cameras at 0.6–1.5 MB per 10 s instead of 3.4–7.5 MB. WebM plays in Chrome, Edge, Firefox and Safari 16+/iOS 17.4+. No new dependency, no ffmpeg process |
 | AD-22 | Person detection | **YOLOX-s** (OpenCV model zoo ONNX, Apache 2.0, COCO AP 40.5) on **onnxruntime**, run on **one background thread shared by all cameras**. While an event is open: a check when it starts, then every 2 s, at most 5, plus a last look at the frame with the most motion before the event is published. Per camera, alerts go out on *any motion* (default) or *people only*; if the model can't run, alerts go out anyway. onnxruntime telemetry off | onnxruntime runs it 6× faster than OpenCV 5's DNN engine. YOLOv5/v8 are AGPL; NanoDet is cheaper but far less accurate (AP 30.4). A check costs ~280 ms of one core on a typical CPU (45 ms on Apple silicon only), so it can't run in the camera thread without stalling the live view. One shared thread caps the feature at one core. Failing open: a missed intruder costs more than a false alarm |
 | AD-23 | Live overlays | The hub sends **detections as data** and the **dashboard draws them** over the video. They ride in each MJPEG part's `X-Detections` header (boxes as fractions of the picture, plus the person score once the open event found one), so the JPEG stays clean. Snapshots and clips are unchanged | A header ties the boxes to the exact frame: a separate WebSocket message would arrive early or late and the boxes would trail the person. Styled boxes (motion vs person) that can be switched off, with no re-encoding. An `<img>` ignores the header, so plain MJPEG clients keep working. One code path for the live view and the public demo |
-| AD-24 | Public demo | **GitHub Pages** hosts the real dashboard built in a **demo mode**: a fake hub in the browser answers the API client and the WebSocket from recorded data, typed against the OpenAPI schema. The data (events, snapshots, clips) is recorded from a real hub running the demo cameras | Pages only serves static files. Visitors try the actual app in seconds, with no server to run or pay for, and the typed fixtures can't drift from the API |
+| AD-24 | Public demo | **GitHub Pages** hosts the real dashboard, unchanged, built in a **demo mode** that adds a hub living in the tab: it replaces `fetch` and `WebSocket` for `/api/v1` and answers the API, the realtime protocol and the MJPEG streams (frames drawn from looping videos, with the detections recorded for that moment). Its data is recorded from the real camera worker (`vision-hub export-demo`) and its responses are typed against the OpenAPI schema. Served under the repository path, deep links through `404.html` | Pages only serves static files. Visitors try the actual app in seconds, with no server to run or pay for. Faking the network rather than the app keeps the demo honest: every view, the router and the realtime client run as in production, and the type check catches drift from the API |
 | AD-25 | Demo footage | Four free Pexels clips, **fetched from Pexels at run time** (pinned URLs and SHA-256, `vision-hub demo-footage`) and turned into camera loops on the machine: trimmed, 640 px 16:9 at 15 fps, a crossfade from the last frame to the first, then the empty scene played back and forth. VP8 WebM written by OpenCV | Real people make person detection visible (YOLOX scores the synthetic figure 0.0). Fetching instead of re-hosting keeps the repository small and stays well inside the Pexels licence. A hard cut at the loop point would look like motion; the crossfade and idle scene give one event per visit. No new dependency |
 
 ---
@@ -439,12 +439,13 @@ dashboard, richer history, and a public demo anyone can open. Designs: AD-23, AD
 - [ ] Events-per-day sparkline on each live tile
 
 ### 7.4 Public demo (GitHub Pages)
-- [ ] Repository renamed to `iot-vision-hub`; badges, links and docs updated
-- [ ] Demo build (`vite build --mode demo`): a fake hub in the browser behind the API client and the socket, fixtures typed against `schema.d.ts`, automatic sign-in, a "simulated data, run it yourself" banner; push and the service worker off
-- [ ] `vision-hub export-demo`: records events, snapshots and clips from a hub running the demo cameras into the demo's data; live tiles loop recorded footage with its detections
-- [ ] Served under the repository path (router base path, `404.html` fallback for deep links)
-- [ ] GitHub Actions workflow builds and deploys it; demo link and a short GIF at the top of the README
-- [ ] e2e and accessibility checks run against the demo build too
+- [x] Repository renamed to `iot-vision-hub`; badges, links and the git remote updated
+- [x] Demo build (`npm run build:demo`, AD-24): `frontend/src/demo/` replaces `fetch` and `WebSocket` for `/api/v1` with a hub in the tab (API, realtime protocol with replay, MJPEG with `X-Detections`), typed against `schema.d.ts`; first visit signed in, any sign-in works; settings and camera starts and stops work in memory; a dismissible "run it yourself" note; push and the service worker off. Normal builds contain none of it
+  - **Found while building it:** the realtime client kept the `WebSocket` constructor from module load, before the demo could swap it; it is now looked up per connection
+- [x] `vision-hub export-demo`: the real `CameraWorker` over each loop (three passes, the middle one kept), clock from frames read and person checks inline, so the recording is deterministic: per-frame detections, events with snapshots and clips (36 s for all four)
+- [x] Served under the repository path: `paths.js` (`href`, `appPath`) for links and the router, `404.html` for deep links
+- [x] `.github/workflows/demo.yml`: footage, recording, VP9 re-encode (35 MB → 3 MB, same frames), build, Playwright, deploy to Pages; the demo link and an animated preview at the top of the README (WebP, 0.9 MB: GIF was 4 MB, over the 1 MB large-file guard)
+- [x] e2e and accessibility checks against the demo build (`npm run e2e:demo`, desktop and phone): no request reaches a server, a person alert opens its clip, boxes on the camera page, filters and deep links, in-memory controls
 
 ### 7.5 Smarter detection *(pick what is worth it)*
 - [ ] Tamper detection: covered, moved or blurred camera raises its own alert (brightness, sharpness, background shift)
@@ -460,7 +461,7 @@ dashboard, richer history, and a public demo anyone can open. Designs: AD-23, AD
 **✅ Phase 7 exit criteria**
 - [x] The live view draws detections from data, and the stream has no burnt-in boxes
 - [x] The demo cameras show real scenes, and people-only mode visibly ignores non-people
-- [ ] A public demo link works on desktop and phone, deep links included, with no backend
+- [x] A public demo link works on desktop and phone, deep links included, with no backend (checked on the built site locally; live once Pages is switched on)
 
 ---
 
