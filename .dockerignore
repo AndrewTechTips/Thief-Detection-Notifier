@@ -30,6 +30,8 @@ htmlcov/
 # The dashboard is built in its own stage from sources only
 frontend/node_modules/
 frontend/dist/
+frontend/dist-demo/
+frontend/.demo/
 frontend/.e2e-data/
 frontend/test-results/
 frontend/playwright-report/

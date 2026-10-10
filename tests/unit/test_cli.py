@@ -14,6 +14,7 @@ from vision_hub.core.config import PushConfig
 from vision_hub.core.downloads import ChecksumError
 from vision_hub.infra.notifiers.webpush import VapidKey
 from vision_hub.vision.demo import CLIPS, DemoClip
+from vision_hub.vision.demo_export import CameraExport
 from vision_hub.vision.persons import ModelError
 
 
@@ -220,3 +221,36 @@ def test_demo_footage_fails_with_a_message(
 
     assert exited.value.code == 1
     assert "SHA-256 abc, expected def" in capsys.readouterr().err
+
+
+def test_export_demo_needs_the_person_model(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "load_person_detector", lambda path: None)
+
+    with pytest.raises(SystemExit) as exited:
+        cli.main(["export-demo"])
+
+    assert exited.value.code == 1
+    assert "download-model" in capsys.readouterr().err
+
+
+def test_export_demo_reports_each_camera(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    calls: list[tuple[list[str], Path]] = []
+
+    def export(cameras: list[Any], detector: object, output: Path, *, threshold: float) -> Any:
+        calls.append(([c.id for c in cameras], output))
+        return [CameraExport(camera="front-door", frames=316, events=1, people=1)]
+
+    monkeypatch.setattr(cli, "load_person_detector", lambda path: object())
+    monkeypatch.setattr(cli, "export_demo", export)
+
+    devices = Path(__file__).parents[2] / "devices.demo.toml"
+    cli.main(["export-demo", "--devices", str(devices), "--output", str(tmp_path)])
+
+    assert calls == [([clip.name for clip in CLIPS], tmp_path)]
+    assert "front-door: 1 events per loop (1 with a person), 316 analysed frames" in (
+        capsys.readouterr().out
+    )
