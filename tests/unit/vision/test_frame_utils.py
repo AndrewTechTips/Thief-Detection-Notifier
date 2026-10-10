@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from vision_hub.domain.motion import BoundingBox
-from vision_hub.vision.annotate import draw_boxes
+from vision_hub.vision.annotate import AMBER, AMBER_DIM, draw_boxes
 from vision_hub.vision.buffer import PreRollBuffer
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.frame import resize_to_width
@@ -103,7 +103,9 @@ class TestDrawBoxes:
         annotated = draw_boxes(frame, [BoundingBox(10, 10, 30, 30)])
 
         assert int(frame.max()) == 0  # evidence frame untouched
-        assert tuple(annotated[10, 20]) == (0, 255, 0)
+        assert tuple(annotated[10, 12]) == AMBER  # a corner bracket
+        assert tuple(annotated[10, 25]) == AMBER_DIM  # the outline between corners
+        assert int(annotated[25, 25].max()) == 0  # inside stays clean
 
     def test_grayscale_input_becomes_color(self) -> None:
         annotated = draw_boxes(np.zeros((50, 50), dtype=np.uint8), [BoundingBox(5, 5, 10, 10)])
