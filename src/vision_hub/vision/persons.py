@@ -12,11 +12,8 @@ onnxruntime's telemetry (HTTPS uploads on Linux) is switched off before the libr
 home security hub should not contact anyone.
 """
 
-import hashlib
 import os
-import tempfile
 import threading
-import urllib.request
 from collections.abc import Callable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -28,6 +25,7 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
+from vision_hub.core.downloads import ChecksumError, fetch_verified
 from vision_hub.core.logging import get_logger
 from vision_hub.domain.motion import BoundingBox
 from vision_hub.vision.frame import Frame
@@ -279,27 +277,8 @@ def load_person_detector(path: Path, *, threads: int = 1) -> PersonDetector | No
 def download_model(path: Path, *, url: str = MODEL_URL, sha256: str = MODEL_SHA256) -> bool:
     """Fetches the pinned model and checks its SHA-256. Returns False if it was already there.
     The file appears only once complete and verified."""
-    if path.is_file() and _sha256(path) == sha256:
-        return False
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, name = tempfile.mkstemp(dir=path.parent, prefix=".download-", suffix=".onnx")
-    temporary = Path(name)
     try:
-        with os.fdopen(fd, "wb") as file, urllib.request.urlopen(url, timeout=60) as response:  # noqa: S310 - fixed https URL
-            while chunk := response.read(1 << 20):
-                file.write(chunk)
-        if (actual := _sha256(temporary)) != sha256:
-            msg = f"downloaded model has SHA-256 {actual}, expected {sha256}"
-            raise ModelError(msg)
-        temporary.replace(path)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return True
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        while chunk := file.read(1 << 20):
-            digest.update(chunk)
-    return digest.hexdigest()
+        return fetch_verified(path, url=url, sha256=sha256)
+    except ChecksumError as exc:
+        msg = f"downloaded model has SHA-256 {exc.actual}, expected {exc.expected}"
+        raise ModelError(msg) from exc
