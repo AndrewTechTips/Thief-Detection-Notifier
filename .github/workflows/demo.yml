@@ -1,0 +1,119 @@
+name: Demo
+
+# The public demo on GitHub Pages (AD-24): the real dashboard with a hub that runs in the
+# visitor's browser, replaying what the real hub records on the demo cameras. Everything is
+# made here from the source: the footage (fetched from Pexels, never stored in the repository),
+# the recording, the build. Needs Settings → Pages → Source: "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One deployment at a time; a newer push replaces a queued one, never a running one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.12.22"
+
+jobs:
+  build:
+    name: Record and build the demo
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Install the hub
+        run: uv sync --frozen
+
+      # Both are pinned by SHA-256 in the code, so their cache keys follow the code.
+      - name: Cache the person model and the demo footage
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            data/models
+            data/demo/sources
+          key: demo-inputs-${{ hashFiles('src/vision_hub/vision/persons.py', 'src/vision_hub/vision/demo.py') }}
+
+      - name: Fetch the model and the footage, make the camera loops
+        run: |
+          uv run --frozen vision-hub download-model
+          uv run --frozen vision-hub demo-footage
+
+      - name: Record what the hub sees on each camera
+        run: uv run --frozen vision-hub export-demo
+
+      # OpenCV writes VP8 without rate control; for the web, VP9 at the same frames and timing
+      # is several times smaller. The recording's timings stay valid: frames are not changed.
+      - name: Shrink the videos for the web
+        run: |
+          command -v ffmpeg || { sudo apt-get update && sudo apt-get install -y ffmpeg; }
+          du -sh frontend/.demo
+          for video in frontend/.demo/*/*.webm; do
+            ffmpeg -loglevel error -i "$video" -c:v libvpx-vp9 -crf 38 -b:v 0 -row-mt 1 -an -y "$video.vp9.webm"
+            mv "$video.vp9.webm" "$video"
+          done
+          du -sh frontend/.demo
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build the demo
+        working-directory: frontend
+        env:
+          DEMO_BASE: /${{ github.event.repository.name }}/
+        run: |
+          npm ci
+          npm run build:demo
+
+      - name: Test it as visitors will see it (desktop and phone)
+        working-directory: frontend
+        run: |
+          npx playwright install --with-deps chromium
+          npm run e2e:demo
+
+      - name: Upload the report on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: demo-playwright-report
+          path: frontend/test-results/
+          retention-days: 7
+
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: frontend/dist-demo
+
+  deploy:
+    name: Publish to GitHub Pages
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
