@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ── Dashboard: build the static frontend (served by the hub at /) ────────────
-FROM node:22-alpine AS dashboard
+FROM node:25-alpine AS dashboard
 
 WORKDIR /dashboard
 
