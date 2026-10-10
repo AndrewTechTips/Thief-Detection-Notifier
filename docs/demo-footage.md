@@ -42,3 +42,12 @@ Measured on the finished loops, each played twice: one person event per visit on
 and the lobby, two quiet events per loop on the driveway (the door, then the car), small quiet
 events from the shadow on the patio. The lobby's loop point gives one 0.1 s event without a
 person, which a people-only camera ignores.
+
+## The public demo
+
+The [live demo](https://andrewtechtips.github.io/iot-vision-hub/) plays these loops in the
+browser. `vision-hub export-demo` runs each one three times through the real camera worker (the
+first pass warms the background model up) and keeps the middle pass: what was detected on every
+analysed frame, and each event with its snapshots and clip. Its clock is the frames read and
+its person checks run inline, so the recording is the same on every run. The workflow then
+re-encodes the videos to VP9 with ffmpeg: the same frames at the same times, 35 MB down to 3 MB.

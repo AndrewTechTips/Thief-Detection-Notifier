@@ -8,7 +8,12 @@
   </p>
 
   <p>
-    <a href="https://github.com/AndrewTechTips/Thief-Detection-Notifier/actions/workflows/ci.yml"><img src="https://github.com/AndrewTechTips/Thief-Detection-Notifier/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+    <a href="https://andrewtechtips.github.io/iot-vision-hub/"><strong>▶ Try the live demo</strong></a>: the real dashboard, in your browser, nothing to install.
+  </p>
+
+  <p>
+    <a href="https://github.com/AndrewTechTips/iot-vision-hub/actions/workflows/ci.yml"><img src="https://github.com/AndrewTechTips/iot-vision-hub/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+    <a href="https://github.com/AndrewTechTips/iot-vision-hub/actions/workflows/demo.yml"><img src="https://github.com/AndrewTechTips/iot-vision-hub/actions/workflows/demo.yml/badge.svg" alt="Demo" /></a>
   </p>
 
   <p>
@@ -28,8 +33,31 @@
 </div>
 
 <p align="center">
-  <img src="docs/assets/screens/desktop-live.jpg" width="900" alt="The live view on a desktop: camera tiles with their status and a motion alert" />
+  <a href="https://andrewtechtips.github.io/iot-vision-hub/"><img src="docs/assets/demo.webp" width="900" alt="The demo's live view: a man walks up to the front door and another down the lobby, boxed in red with their person scores, while the garage door's motion is boxed in amber; then the front door's camera page as he rings the bell, and a 'Person at Lobby' alert" /></a>
 </p>
+
+---
+
+## ▶ Live demo
+
+**[andrewtechtips.github.io/iot-vision-hub/](https://andrewtechtips.github.io/iot-vision-hub/)** runs the real dashboard, unchanged, against a hub
+that lives in your browser tab. Four cameras play real footage, people get boxed in red and
+alert, the car and the swaying shadow don't, and every page works: events, clips, settings,
+stopping a camera.
+
+How it is made, on every push to `main` ([`demo.yml`](.github/workflows/demo.yml)):
+
+1. `vision-hub demo-footage` fetches the four clips from Pexels and turns them into camera loops
+   ([docs/demo-footage.md](docs/demo-footage.md)).
+2. `vision-hub export-demo` runs each loop through the real camera worker, motion detector and
+   person model, and records what the hub saw: the boxes on every analysed frame, each event
+   with its snapshots and clip.
+3. The dashboard is built with `--mode demo`: a small hub in [`frontend/src/demo/`](frontend/src/demo)
+   answers the API, the WebSocket and the MJPEG streams from that recording, typed against the
+   OpenAPI schema so it can't drift from the real API. Live frames are drawn from the looping
+   video with their recorded detections, exactly as the hub sends them.
+4. Playwright checks it on desktop and phone (alerts, history, deep links, accessibility), and
+   GitHub Pages serves it: 4 MB in all, with the videos re-encoded to VP9.
 
 ---
 
@@ -192,8 +220,8 @@ endpoint follows in [`docs/api-conventions.md`](docs/api-conventions.md).
 **With Docker** (hub, dashboard and PostgreSQL):
 
 ```bash
-git clone https://github.com/AndrewTechTips/Thief-Detection-Notifier.git
-cd Thief-Detection-Notifier
+git clone https://github.com/AndrewTechTips/iot-vision-hub.git
+cd iot-vision-hub
 docker compose up --build --wait
 docker compose exec api vision-hub create-user admin --role admin
 ```
@@ -373,6 +401,7 @@ uv run mypy                                       # strict type checking
 uv run pytest                                     # 870+ tests, 99 % branch coverage
 cd frontend && npm run check                      # ESLint, Prettier, types, 100+ unit tests
 npm run build && npm run e2e                      # Playwright on desktop and phone
+npm run build:demo && npm run e2e:demo            # the public demo (after export-demo)
 ```
 
 - **Backend:** unit and integration tests run against SQLite and, with
@@ -382,12 +411,14 @@ npm run build && npm run e2e                      # Playwright on desktop and ph
 - **Dashboard:** end-to-end tests start a throwaway hub with simulated cameras and go through
   sign-in, live video, alerts (measured: on screen 0.2 to 0.5 s after the hub closes an event),
   clips, notifications, offline start, keyboard-only use and an accessibility audit (axe, WCAG
-  2.2 AA) of every page, on a desktop and a phone.
+  2.2 AA) of every page, on a desktop and a phone. The public demo has its own run: signed in
+  with no server behind it, a person alert opening its clip, deep links, the same audit.
 - **Load:** a smoke test runs 5 cameras, 20 WebSocket clients, 2 video viewers and steady API
   traffic; event-loop lag stays at p99 2 ms. `LOAD_SMOKE_SECONDS=60` makes it a longer soak.
 - **Lighthouse (mobile):** performance 95 to 100, accessibility 100, best practices 100.
 
-GitHub Actions runs all of it on every push, plus the Docker image and the Compose stack.
+GitHub Actions runs all of it on every push, plus the Docker image and the Compose stack, and
+publishes the demo.
 
 ---
 
