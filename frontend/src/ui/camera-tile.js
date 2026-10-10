@@ -1,6 +1,7 @@
 // A camera in the live grid: its live view, a link to the camera page and when it last saw
 // motion.
 
+import { href } from "../paths.js";
 import { liveView } from "./live-view.js";
 import { h } from "./dom.js";
 import { timeAgo } from "./time.js";
@@ -21,7 +22,7 @@ export function cameraTile(initial) {
 
   const name = h("a", {
     class: "camera-link",
-    attrs: { href: `/devices/${encodeURIComponent(device.id)}` },
+    attrs: { href: href(`/devices/${encodeURIComponent(device.id)}`) },
   });
   const detail = h("p", { class: "text-sm text-haze" });
   const element = h("article", { class: "camera-tile card" });

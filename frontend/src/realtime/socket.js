@@ -48,7 +48,7 @@ const SEEN_LIMIT = 512;
 export function createRealtime({
   client,
   url,
-  WebSocket: Socket = globalThis.WebSocket,
+  WebSocket: Socket,
   isOnline = () => globalThis.navigator?.onLine ?? true,
   staleAfterMs = STALE_AFTER_MS,
   random = Math.random,
@@ -135,7 +135,8 @@ export function createRealtime({
     }
     if (current !== generation || !running) return;
 
-    const ws = new Socket(url(ticket.ticket));
+    // Looked up per connection, not once: the public demo swaps in its own (demo/hub.js).
+    const ws = new (Socket ?? globalThis.WebSocket)(url(ticket.ticket));
     socket = ws;
     ws.addEventListener("open", () => {
       if (current !== generation) return;

@@ -1,3 +1,4 @@
+import { href } from "../paths.js";
 import { h } from "../ui/dom.js";
 
 /** @type {import("../router.js").View} */
@@ -20,7 +21,11 @@ export default {
           h("span", { class: "code-chip", text: location.pathname }),
           ". Check the link, or go back to your cameras.",
         ),
-        h("a", { class: "btn btn-primary mt-6", attrs: { href: "/" }, text: "Go to live view" }),
+        h("a", {
+          class: "btn btn-primary mt-6",
+          attrs: { href: href("/") },
+          text: "Go to live view",
+        }),
       ),
     );
   },

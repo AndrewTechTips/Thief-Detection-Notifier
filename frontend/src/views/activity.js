@@ -1,6 +1,7 @@
 // Activity: who changed which camera or account, and when (admins only). The hub records
 // field names, never values, so entries say what changed, not what it changed to.
 
+import { href } from "../paths.js";
 import { api } from "../api/client.js";
 import { ApiError, describeError } from "../api/errors.js";
 import { session } from "../state/auth.js";
@@ -241,7 +242,11 @@ export default {
     function row(entry) {
       const words = describeEntry(entry);
       const target = words.link
-        ? h("a", { class: "activity-target", attrs: { href: words.link }, text: words.target })
+        ? h("a", {
+            class: "activity-target",
+            attrs: { href: href(words.link) },
+            text: words.target,
+          })
         : h("span", { class: "activity-target", text: words.target });
       return h(
         "li",

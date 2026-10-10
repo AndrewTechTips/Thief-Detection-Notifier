@@ -17,6 +17,7 @@
  * @typedef {{ route: Route | null, params: Params }} Match
  */
 
+import { appPath, href } from "./paths.js";
 import { h } from "./ui/dom.js";
 
 const APP_NAME = "Vision Hub";
@@ -89,6 +90,7 @@ export function isInternalClick(event, link) {
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
   if (link.target && link.target !== "_self") return false;
   if (link.hasAttribute("download") || link.origin !== location.origin) return false;
+  if (appPath(link.pathname) === null) return false; // another site on this origin
   // A jump within this page (e.g. the skip link to #main) is the browser's job.
   if (link.hash && link.pathname === location.pathname && link.search === location.search) {
     return false;
@@ -115,12 +117,12 @@ export function createRouter({ routes, notFound, outlet, guard, onChange, enter 
 
   async function render() {
     const current = ++token;
-    let { route, params } = match(routes, location.pathname);
+    let { route, params } = match(routes, here());
     // A guard may send this page elsewhere (e.g. to sign-in); the address bar follows.
     const redirect = guard?.(route, new URL(location.href));
     if (redirect) {
-      history.replaceState({ scrollY: 0 }, "", redirect);
-      ({ route, params } = match(routes, location.pathname));
+      history.replaceState({ scrollY: 0 }, "", href(redirect));
+      ({ route, params } = match(routes, here()));
     }
     /** @type {View} */
     let view;
@@ -137,7 +139,7 @@ export function createRouter({ routes, notFound, outlet, guard, onChange, enter 
     cleanup = view.mount(target, params);
     const title = typeof view.title === "function" ? view.title(params) : view.title;
     document.title = title ? `${title} – ${APP_NAME}` : APP_NAME;
-    onChange?.(location.pathname);
+    onChange?.(here());
 
     const scrollY = /** @type {{ scrollY?: number } | null} */ (history.state)?.scrollY ?? 0;
     window.scrollTo(0, scrollY);
@@ -150,14 +152,14 @@ export function createRouter({ routes, notFound, outlet, guard, onChange, enter 
   }
 
   /**
-   * @param {string} path
+   * @param {string} path an app path, e.g. "/events?device=porch"
    * @param {{ replace?: boolean }} [options]
    */
   function navigate(path, { replace = false } = {}) {
-    const url = new URL(path, location.origin);
-    if (url.pathname === location.pathname && url.search === location.search) return;
+    const target = new URL(href(path), location.origin);
+    if (target.pathname === location.pathname && target.search === location.search) return;
     rememberScroll();
-    history[replace ? "replaceState" : "pushState"]({ scrollY: 0 }, "", url);
+    history[replace ? "replaceState" : "pushState"]({ scrollY: 0 }, "", target);
     render();
   }
 
@@ -182,7 +184,7 @@ export function createRouter({ routes, notFound, outlet, guard, onChange, enter 
       const link = /** @type {Element} */ (event.target).closest?.("a[href]");
       if (!(link instanceof HTMLAnchorElement) || !isInternalClick(event, link)) return;
       event.preventDefault();
-      navigate(link.pathname + link.search + link.hash);
+      navigate((appPath(link.pathname) ?? "/") + link.search + link.hash);
     });
     window.addEventListener("popstate", render);
     window.addEventListener("pagehide", rememberScroll);
@@ -195,6 +197,11 @@ export function createRouter({ routes, notFound, outlet, guard, onChange, enter 
   }
 
   return { start, navigate, refresh };
+}
+
+/** The current page's app path (outside the dashboard: "/", which then redirects as usual). */
+function here() {
+  return appPath(location.pathname) ?? "/";
 }
 
 /** @type {View} */

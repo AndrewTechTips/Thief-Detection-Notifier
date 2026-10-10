@@ -29,7 +29,9 @@ export async function install() {
 /** Registers the service worker and offers a reload when a new version has been downloaded. */
 export function registerServiceWorker() {
   // The dev server never gets one: a stale cached app is the last thing to debug.
-  if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
+  // Nor does the public demo: its hub lives in the page, there is nothing to work offline for.
+  if (!import.meta.env.PROD || import.meta.env.MODE === "demo") return;
+  if (!("serviceWorker" in navigator)) return;
   const container = navigator.serviceWorker;
   // A first install takes control of the page too; only an update should reload it.
   const updating = Boolean(container.controller);

@@ -8,8 +8,11 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:demo": "vite --mode demo",
     "build": "vite build && node scripts/compress.mjs",
+    "build:demo": "vite build --mode demo",
     "preview": "vite preview",
+    "preview:demo": "vite preview --mode demo",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -20,7 +23,8 @@
     "api:types": "openapi-typescript openapi.json --output src/api/schema.d.ts",
     "api:sync": "npm run api:schema && npm run api:types",
     "api:check": "openapi-typescript openapi.json --output src/api/schema.d.ts --check",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "e2e:demo": "playwright test --config playwright.demo.config.js"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",

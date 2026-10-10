@@ -5,6 +5,7 @@ import { registerServiceWorker } from "./app-install.js";
 import { syncPush } from "./push.js";
 import { startAlerts } from "./realtime/alerts.js";
 import { realtime } from "./realtime/live.js";
+import { appPath } from "./paths.js";
 import { createRouter, match, safeRedirect } from "./router.js";
 import { session } from "./state/auth.js";
 import { loadDevices } from "./state/devices.js";
@@ -35,13 +36,16 @@ const routes = [
 const app = $(document, "#app");
 const bootScreen = $(app, "[data-boot-screen]");
 
+// The public demo build brings its own hub, running in this tab (AD-24). Other builds drop this.
+if (import.meta.env.MODE === "demo") await (await import("./demo/index.js")).startDemo();
+
 startHubMonitor();
 registerServiceWorker();
 // Neither needs the health check's answer: on a slow network, starting them now saves two
 // round trips before the first page shows. A hub that is away fails the restore, which then
 // waits for it to come back.
 const restoring = restoreSession();
-preload(session.hasStoredSession() ? location.pathname : LOGIN);
+preload(session.hasStoredSession() ? (appPath(location.pathname) ?? "/") : LOGIN);
 const stopBoot = mountBoot($(bootScreen, "[data-boot]"));
 const reveal = window.setTimeout(() => bootScreen.removeAttribute("data-pending"), BOOT_DELAY_MS);
 
@@ -156,13 +160,14 @@ function connectRealtime() {
  */
 function guardRoute(route, url) {
   const signedIn = session.state.get().status === "signed-in";
+  const path = appPath(url.pathname) ?? "/";
   if (route?.public) {
-    return signedIn && url.pathname === LOGIN
+    return signedIn && path === LOGIN
       ? safeRedirect(url.searchParams.get("next"), location.origin, [LOGIN])
       : null;
   }
   if (signedIn) return null;
-  const here = url.pathname + url.search;
+  const here = path + url.search;
   return here === "/" ? LOGIN : `${LOGIN}?next=${encodeURIComponent(here)}`;
 }
 

@@ -1,6 +1,7 @@
 // App shell: sidebar on wide screens, top bar + bottom tab bar on phones. Pages render into the
 // outlet; the router tells the shell which page is active.
 
+import { appPath, href } from "../paths.js";
 import { session } from "../state/auth.js";
 import { accountMenu, accountRow } from "../ui/account.js";
 import { connectionPill } from "../ui/connection.js";
@@ -62,7 +63,7 @@ function skipLink() {
 function brand() {
   return h(
     "a",
-    { class: "brand", attrs: { href: "/", "aria-label": "Vision Hub, live view" } },
+    { class: "brand", attrs: { href: href("/"), "aria-label": "Vision Hub, live view" } },
     h("span", { class: "brand-mark" }, logo()),
     h("span", { class: "brand-name", text: "Vision Hub" }),
   );
@@ -76,7 +77,7 @@ function navigation(kind, label) {
   const links = NAV.map((item) =>
     h(
       "a",
-      { class: `${kind}-link`, attrs: { href: item.path } },
+      { class: `${kind}-link`, attrs: { href: href(item.path) } },
       icon(item.icon),
       h("span", { text: item.label }),
     ),
@@ -94,7 +95,7 @@ export function createShell() {
   const side = navigation("side", "Main");
   const tabs = navigation("tab", "Main");
   const outlet = h("div", { class: "shell-outlet" });
-  let pathname = location.pathname;
+  let pathname = appPath(location.pathname) ?? "/";
 
   const element = h(
     "div",

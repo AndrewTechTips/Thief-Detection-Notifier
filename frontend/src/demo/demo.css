@@ -1,0 +1,53 @@
+/* The demo's note: a small opaque pill, out of the way of the app's own controls. Wide screens:
+   bottom left, just past the sidebar, never reaching the toasts (bottom right, 24rem wide).
+   Phones: above the tab bar (toasts drop in from the top there). */
+.demo-note {
+  --tone: var(--color-iris);
+  position: fixed;
+  left: 17.5rem;
+  bottom: 1rem;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: max(16rem, min(40rem, calc(100vw - 17.5rem - 27rem)));
+  padding: 0.5rem 0.875rem;
+  border-radius: 1rem;
+  font-size: 0.8125rem;
+  color: var(--color-haze);
+  & strong {
+    color: var(--color-moon);
+    font-weight: 600;
+  }
+  & a {
+    color: var(--color-iris);
+    font-weight: 550;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  & .demo-note-close {
+    flex: none;
+    margin: -0.25rem -0.5rem -0.25rem 0;
+  }
+  & .dot {
+    flex: none;
+    width: 0.4375rem;
+    height: 0.4375rem;
+  }
+}
+
+@media (width < 48rem) {
+  .demo-note {
+    left: auto;
+    right: 50%;
+    max-width: calc(100vw - 2rem);
+    border-radius: 9999px;
+    bottom: calc(var(--tabbar-height, 4rem) + env(safe-area-inset-bottom) + 0.75rem);
+    transform: translateX(50%);
+    width: max-content;
+  }
+  .demo-note-more,
+  .demo-note p > span:not(.demo-note-more) {
+    display: none;
+  }
+}

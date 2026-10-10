@@ -3,7 +3,9 @@ import { defineConfig } from "eslint/config";
 import globals from "globals";
 
 export default defineConfig([
-  { ignores: ["dist/", ".e2e-data/", "test-results/", "playwright-report/"] },
+  {
+    ignores: ["dist/", "dist-demo/", ".demo/", ".e2e-data/", "test-results/", "playwright-report/"],
+  },
   js.configs.recommended,
   {
     languageOptions: { globals: globals.browser },

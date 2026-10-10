@@ -1,7 +1,8 @@
 /// <reference types="node" />
 
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { cp, readFile, stat, writeFile } from "node:fs/promises";
+import { join, normalize } from "node:path";
 
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, loadEnv } from "vite";
@@ -44,6 +45,51 @@ function serviceWorker() {
   };
 }
 
+/**
+ * The public demo (AD-24): serves and publishes the hub's recording (`vision-hub export-demo`,
+ * in .demo/) at <base>/demo/, and adds a 404.html copy of the app, so GitHub Pages answers deep
+ * links ("/iot-vision-hub/events") with the dashboard instead of an error.
+ * @returns {import("vite").Plugin}
+ */
+function demoRecording() {
+  const source = new URL("./.demo/", import.meta.url).pathname;
+  /** @type {import("vite").ResolvedConfig} */
+  let config;
+  return {
+    name: "vision-hub:demo-recording",
+    configResolved(resolved) {
+      config = resolved;
+    },
+    configureServer(server) {
+      const prefix = `${server.config.base}demo/`;
+      server.middlewares.use(async (request, response, next) => {
+        const path = request.url?.split("?")[0] ?? "";
+        if (!path.startsWith(prefix)) return next();
+        const file = normalize(join(source, decodeURIComponent(path.slice(prefix.length))));
+        if (!file.startsWith(source) || !(await stat(file).catch(() => null))?.isFile())
+          return next();
+        response.setHeader(
+          "Content-Type",
+          file.endsWith(".json")
+            ? "application/json"
+            : file.endsWith(".jpg")
+              ? "image/jpeg"
+              : "video/webm",
+        );
+        response.end(await readFile(file));
+      });
+    },
+    async writeBundle() {
+      const out = config.build.outDir;
+      if (!(await stat(join(source, "manifest.json")).catch(() => null))) {
+        this.error("no demo recording: run `uv run vision-hub export-demo` first");
+      }
+      await cp(source, join(out, "demo"), { recursive: true });
+      await writeFile(join(out, "404.html"), await readFile(join(out, "index.html")));
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   // Where the hub runs in development. The browser only ever talks to Vite, so the dashboard
   // and the API share one origin: no CORS, and stream tickets work exactly as in production.
@@ -51,6 +97,17 @@ export default defineConfig(({ mode }) => {
   const proxy = {
     "/api": { target: hub, changeOrigin: true, ws: true },
   };
+
+  if (mode === "demo") {
+    // Served from a subdirectory (GitHub Pages: /<repository>/), with no hub behind it.
+    return {
+      base: process.env.DEMO_BASE || "/iot-vision-hub/",
+      plugins: [tailwindcss(), demoRecording()],
+      server: { port: 5174, strictPort: true },
+      preview: { port: 4174, strictPort: true },
+      build: { target: "es2022", outDir: "dist-demo", sourcemap: true },
+    };
+  }
 
   return {
     plugins: [tailwindcss(), serviceWorker()],

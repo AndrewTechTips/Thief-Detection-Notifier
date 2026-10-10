@@ -1,6 +1,7 @@
 // Sign-in page: full screen, the same lens as the boot screen. The lens breathes while signing
 // in and turns rose on an error. After sign-in, main.js takes you back to where you were going.
 
+import { href } from "../paths.js";
 import { ApiError, describeError, formatWait } from "../api/errors.js";
 import { session } from "../state/auth.js";
 import { connectionPill } from "../ui/connection.js";
@@ -64,7 +65,7 @@ export default {
         class: "mt-6 grid gap-4",
         attrs: {
           method: "post",
-          action: "/login",
+          action: href("/login"),
           novalidate: true,
           "aria-describedby": "login-error",
         },

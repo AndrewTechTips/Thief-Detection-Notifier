@@ -2,6 +2,7 @@
 // motion. Admins also start and stop it, test its connection and tune detection: sensitivity
 // and the areas of the picture it watches. Saved settings reload the running camera.
 
+import { href } from "../paths.js";
 import { api } from "../api/client.js";
 import { describeError } from "../api/errors.js";
 import { listEvents, snapshotUrl } from "../api/events.js";
@@ -196,7 +197,7 @@ export default {
             h("h2", { class: "device-section-title mb-0", text: "Latest motion" }),
             h("a", {
               class: "btn btn-ghost btn-sm",
-              attrs: { href: `/events?device=${encodeURIComponent(id)}` },
+              attrs: { href: href(`/events?device=${encodeURIComponent(id)}`) },
               text: "See all",
             }),
           ),
@@ -281,7 +282,9 @@ export default {
                   {
                     class: "device-recent-item",
                     attrs: {
-                      href: `/events?device=${encodeURIComponent(id)}&event=${encodeURIComponent(event.id)}`,
+                      href: href(
+                        `/events?device=${encodeURIComponent(id)}&event=${encodeURIComponent(event.id)}`,
+                      ),
                       "aria-label": `Snapshot at ${formatClock(event.started_at)}`,
                     },
                   },
@@ -499,7 +502,7 @@ function describeSource(device) {
 function backLink() {
   return h(
     "a",
-    { class: "btn btn-ghost btn-sm -ml-2 mb-3", attrs: { href: "/" } },
+    { class: "btn btn-ghost btn-sm -ml-2 mb-3", attrs: { href: href("/") } },
     icon("back"),
     "All cameras",
   );

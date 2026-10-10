@@ -1,4 +1,6 @@
 dist/
+dist-demo/
+.demo/
 package-lock.json
 # Generated: npm run api:sync
 openapi.json
