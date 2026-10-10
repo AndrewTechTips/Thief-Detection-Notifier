@@ -3,7 +3,9 @@
 // tab is visible; everything else costs the hub nothing.
 //
 // The host element (a tile, the camera page) receives data-state and data-motion, so styles can
-// dim a stalled picture or light up a motion ring around whatever contains the view.
+// dim a stalled picture or light up a motion ring around whatever contains the view. Motion is
+// what the realtime events say, or what the frames show: a view opened in the middle of an event
+// never got its "motion.started", but its frames carry detections.
 
 import { streamUrl } from "../api/devices.js";
 import { createPlayer } from "../realtime/mjpeg.js";
@@ -35,6 +37,9 @@ const STATUS = {
   stopped: { label: "Stopped", note: "This camera is stopped." },
 };
 
+/** How long motion shown by the frames lasts after the last frame with detections. */
+const SEEING_MS = 2_000;
+
 /**
  * @param {{
  *   device: Device,
@@ -48,6 +53,10 @@ export function liveView({ device: initial, host, fps, onFrameSize }) {
   let device = initial;
   let visible = false;
   let motion = false;
+  /** Detections on a frame within SEEING_MS: motion on screen, whatever the events said. */
+  let seeing = false;
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let seeingTimer;
   let hasFrame = false;
   /** @type {PlayerState} */
   let playerState = "idle";
@@ -112,6 +121,17 @@ export function liveView({ device: initial, host, fps, onFrameSize }) {
     onFrame(width, height, detections) {
       overlay.render(detections);
       showPerson(detections?.person ?? null);
+      if (detections) {
+        clearTimeout(seeingTimer);
+        seeingTimer = setTimeout(() => {
+          seeing = false;
+          render();
+        }, SEEING_MS);
+        if (!seeing) {
+          seeing = true;
+          render();
+        }
+      }
       if (!hasFrame) {
         hasFrame = true;
         element.style.aspectRatio = `${width} / ${height}`;
@@ -145,7 +165,7 @@ export function liveView({ device: initial, host, fps, onFrameSize }) {
     chipLabel.textContent = look.label;
 
     canvas.setAttribute("aria-label", `Live view of ${device.name}`);
-    host.toggleAttribute("data-motion", motion);
+    host.toggleAttribute("data-motion", motion || seeing);
     // loading: shimmer until the first frame. retrying: the last frame, dimmed.
     host.dataset.state =
       device.status !== "online" ? device.status : hasFrame ? playerState : "loading";
@@ -181,7 +201,7 @@ export function liveView({ device: initial, host, fps, onFrameSize }) {
     /** @param {boolean} active */
     setMotion(active) {
       motion = active;
-      if (!active) showPerson(null);
+      if (!active && !seeing) showPerson(null);
       render();
     },
     /** @param {boolean} onScreen */
@@ -193,6 +213,7 @@ export function liveView({ device: initial, host, fps, onFrameSize }) {
     sync,
     destroy() {
       clearTimeout(restart);
+      clearTimeout(seeingTimer);
       player.pause();
       overlay.destroy();
     },
