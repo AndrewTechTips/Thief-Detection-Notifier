@@ -33,6 +33,27 @@ test("live view shows each camera with its state and real frames", async ({ page
   await expect(isPhone(page) ? navigation.last() : navigation.first()).toBeVisible();
 });
 
+test("motion is boxed over the picture, and the boxes can be switched off", async ({ page }) => {
+  await signedIn(page);
+  // Boxes come with the frames they belong to; a visit comes every 9 s.
+  const boxed = (/** @type {import("@playwright/test").Locator} */ host) =>
+    host.locator(".detection-layer:not([data-idle]) .detection-box:not([hidden])").first();
+  const porch = page.locator(".camera-tile", { hasText: "E2E porch" });
+  await expect(boxed(porch)).toBeVisible({ timeout: 20_000 });
+
+  await page.goto("/devices/e2e-porch");
+  const stage = page.locator(".device-stage");
+  await expect(boxed(stage)).toBeVisible({ timeout: 20_000 });
+  const toggle = page.getByRole("switch", { name: "Motion boxes" });
+  await expect(toggle).toBeChecked();
+
+  await toggle.uncheck();
+  await expect(stage.locator(".detection-layer")).toBeHidden();
+  await page.reload(); // remembered
+  await expect(page.getByRole("switch", { name: "Motion boxes" })).not.toBeChecked();
+  await expect(page.locator(".device-stage .detection-layer")).toBeHidden();
+});
+
 test("motion raises an alert within a second of the hub closing the event", async ({ page }) => {
   /** @type {{ ts: number, id: string } | null} */
   let ended = null;

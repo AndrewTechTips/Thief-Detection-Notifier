@@ -8,6 +8,7 @@ import { listEvents, snapshotUrl } from "../api/events.js";
 import { realtime } from "../realtime/live.js";
 import { session } from "../state/auth.js";
 import { devices as directory, rememberDevice } from "../state/devices.js";
+import { boxesShown, onBoxesChange, showBoxes } from "../ui/boxes.js";
 import { detectionForm } from "../ui/detection-form.js";
 import { h } from "../ui/dom.js";
 import { icon } from "../ui/icons.js";
@@ -81,6 +82,12 @@ export default {
         attrs: { type: "button", "aria-pressed": "false" },
         text: "Edit areas",
       });
+      const boxesSwitch = h("input", {
+        class: "switch",
+        attrs: { type: "checkbox", role: "switch", id: "device-boxes" },
+        on: { change: () => showBoxes(boxesSwitch.checked) },
+      });
+      boxesSwitch.checked = boxesShown();
       const roi = roiEditor({
         surface: view.element,
         areas: device.detection.roi,
@@ -98,7 +105,20 @@ export default {
             "div",
             { class: "flex flex-wrap items-center justify-between gap-3" },
             areasText,
-            admin ? editAreas : null,
+            h(
+              "div",
+              { class: "flex flex-wrap items-center gap-4" },
+              h(
+                "label",
+                {
+                  class: "flex cursor-pointer items-center gap-2 text-sm",
+                  attrs: { for: "device-boxes" },
+                },
+                boxesSwitch,
+                "Motion boxes",
+              ),
+              admin ? editAreas : null,
+            ),
           ),
           admin ? roi.toolbar : null,
         ),
@@ -413,6 +433,7 @@ export default {
         () => clearTimeout(refreshRecent),
         () => roi.destroy(),
         () => view.destroy(),
+        onBoxesChange((shown) => (boxesSwitch.checked = shown)),
       );
       // Status changes are not replayed after a reconnect: refetch the camera.
       let realtimeStatus = realtime.state.get().status;

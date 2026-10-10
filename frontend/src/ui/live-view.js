@@ -1,5 +1,5 @@
-// A camera's live picture with its status chip and motion chip. Used by grid tiles and the
-// camera page. The stream only runs while the camera is online, the view is on screen and the
+// A camera's live picture with its status chip, its motion chip ("Person 87 %" once the hub
+// found a person) and the motion boxes drawn over it. Used by grid tiles and the camera page. The stream only runs while the camera is online, the view is on screen and the
 // tab is visible; everything else costs the hub nothing.
 //
 // The host element (a tile, the camera page) receives data-state and data-motion, so styles can
@@ -7,6 +7,7 @@
 
 import { streamUrl } from "../api/devices.js";
 import { createPlayer } from "../realtime/mjpeg.js";
+import { detectionOverlay } from "./detection-overlay.js";
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
 
@@ -64,13 +65,32 @@ export function liveView({ device: initial, host, fps, onFrameSize }) {
   const chipLight = h("span", { class: "dot", attrs: { "aria-hidden": "true" } });
   const chipLabel = h("span");
   const chip = h("span", { class: "camera-chip panel-solid" }, chipLight, chipLabel);
+  const motionLabel = h("span", { text: "Motion" });
   const motionChip = h(
     "span",
     { class: "camera-chip camera-motion panel-solid", attrs: { "data-tone": "sodium" } },
     h("span", { class: "dot", attrs: { "aria-hidden": "true", "data-pulse": "" } }),
-    "Motion",
+    motionLabel,
   );
-  const element = h("div", { class: "camera-view" }, poster, canvas, placeholder, chip, motionChip);
+  const overlay = detectionOverlay();
+  const element = h(
+    "div",
+    { class: "camera-view" },
+    poster,
+    canvas,
+    overlay.element,
+    placeholder,
+    chip,
+    motionChip,
+  );
+
+  /** @param {number | null} score the open event's person score, once it found one */
+  function showPerson(score) {
+    const label = score === null ? "Motion" : `Person ${Math.round(score * 100)} %`;
+    if (motionLabel.textContent === label) return;
+    motionLabel.textContent = label;
+    motionChip.dataset.tone = score === null ? "sodium" : "alarm";
+  }
 
   // Start at the camera's real shape when the hub knows it, so the first frame doesn't resize
   // the view and push the page around (layout shift).
@@ -83,12 +103,15 @@ export function liveView({ device: initial, host, fps, onFrameSize }) {
     source: () => streamUrl(device.id, { fps }),
     onState(state) {
       playerState = state;
+      if (state !== "playing") overlay.idle();
       // The hub ends a stream when the camera stops. If it is still meant to be online, the
       // status update is on its way, or the stream will come back: check again shortly.
       if (state === "ended") restart = setTimeout(sync, 2_000);
       render();
     },
-    onFrame(width, height) {
+    onFrame(width, height, detections) {
+      overlay.render(detections);
+      showPerson(detections?.person ?? null);
       if (!hasFrame) {
         hasFrame = true;
         element.style.aspectRatio = `${width} / ${height}`;
@@ -158,6 +181,7 @@ export function liveView({ device: initial, host, fps, onFrameSize }) {
     /** @param {boolean} active */
     setMotion(active) {
       motion = active;
+      if (!active) showPerson(null);
       render();
     },
     /** @param {boolean} onScreen */
@@ -170,6 +194,7 @@ export function liveView({ device: initial, host, fps, onFrameSize }) {
     destroy() {
       clearTimeout(restart);
       player.pause();
+      overlay.destroy();
     },
   };
 }

@@ -5,12 +5,21 @@
 // The very first frame also goes into a poster <img> under the canvas, like a <video> poster:
 // Largest Contentful Paint ignores canvases, and an <img> whose source keeps changing would
 // count every frame as a new "largest paint". The poster marks when the picture first appeared.
+//
+// Frames are clean. A part showing motion says what was detected on it in an X-Detections
+// header, handed out with the frame it belongs to, so boxes drawn over the picture match it.
 
 /**
  * idle: not playing. loading: connecting, no frame yet. playing: frames arriving.
  * retrying: the stream failed or stalled; trying again. ended: the hub ended the stream
  * (the camera stopped).
  * @typedef {"idle" | "loading" | "playing" | "retrying" | "ended"} PlayerState
+ */
+
+/**
+ * What the hub detected on one frame: boxes as fractions of the picture, and the person score
+ * once the open event found a person (else null).
+ * @typedef {{ boxes: [x: number, y: number, width: number, height: number][], person: number | null }} Detections
  */
 
 const CRLF2 = [13, 10, 13, 10];
@@ -21,12 +30,14 @@ const RETRY_MAX_MS = 15_000;
 /**
  * Splits an MJPEG byte stream into JPEG parts. Each part header must carry Content-Length
  * (the hub's always does), so no scanning for the boundary inside image data.
- * @param {(jpeg: Uint8Array) => void} onPart
+ * @param {(jpeg: Uint8Array, detections: Detections | null) => void} onPart
  */
 export function createPartParser(onPart) {
   let buffer = /** @type {Uint8Array} */ (new Uint8Array(0));
   /** @type {number | null} */
   let expected = null;
+  /** @type {Detections | null} */
+  let detections = null;
   const decoder = new TextDecoder();
 
   /** @param {Uint8Array} chunk */
@@ -43,14 +54,36 @@ export function createPartParser(onPart) {
         const length = /content-length:\s*(\d+)/i.exec(header);
         if (!length) throw new Error("MJPEG part without Content-Length");
         expected = Number(length[1]);
+        detections = parseDetections(header);
         buffer = buffer.subarray(end + CRLF2.length);
       }
       if (buffer.length < expected) return;
-      onPart(buffer.slice(0, expected));
+      onPart(buffer.slice(0, expected), detections);
       buffer = buffer.subarray(expected);
       expected = null;
     }
   };
+}
+
+/**
+ * A part's detections, or null when it has none (or they are malformed: the picture matters
+ * more than the boxes).
+ * @param {string} header the part's header lines
+ * @returns {Detections | null}
+ */
+export function parseDetections(header) {
+  const line = /^x-detections:[ \t]*(.+)$/im.exec(header);
+  if (!line) return null;
+  try {
+    const { boxes, person } = JSON.parse(line[1]);
+    const isBox = (/** @type {unknown} */ box) =>
+      Array.isArray(box) && box.length === 4 && box.every(Number.isFinite);
+    if (!Array.isArray(boxes) || !boxes.every(isBox)) return null;
+    if (person !== null && !Number.isFinite(person)) return null;
+    return { boxes, person };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -59,10 +92,11 @@ export function createPartParser(onPart) {
  *   poster?: HTMLImageElement,
  *   source: () => Promise<string>,
  *   onState?: (state: PlayerState) => void,
- *   onFrame?: (width: number, height: number) => void,
+ *   onFrame?: (width: number, height: number, detections: Detections | null) => void,
  *   stallMs?: number,
  * }} options
- * `source` returns a fresh stream URL (with a new ticket) for every connection.
+ * `source` returns a fresh stream URL (with a new ticket) for every connection. `onFrame` runs
+ * once a frame is on the canvas, with what was detected on that frame.
  */
 export function createPlayer({ canvas, poster, source, onState, onFrame, stallMs = 8_000 }) {
   const context = canvas.getContext("2d");
@@ -73,7 +107,7 @@ export function createPlayer({ canvas, poster, source, onState, onFrame, stallMs
   let controller = null;
   /** @type {AbortController | null} the wait between retries, so pause() can cut it short */
   let resting = null;
-  /** @type {Uint8Array | null} */
+  /** @type {{ jpeg: Uint8Array, detections: Detections | null } | null} */
   let pending = null;
   let decoding = false;
   let framesThisConnection = 0;
@@ -89,7 +123,7 @@ export function createPlayer({ canvas, poster, source, onState, onFrame, stallMs
   async function paint() {
     decoding = true;
     while (pending) {
-      const jpeg = pending;
+      const { jpeg, detections } = pending;
       pending = null;
       const blob = new Blob([/** @type {BlobPart} */ (jpeg)], { type: "image/jpeg" });
       if (poster && !poster.src) poster.src = URL.createObjectURL(blob);
@@ -101,7 +135,7 @@ export function createPlayer({ canvas, poster, source, onState, onFrame, stallMs
         }
         context?.drawImage(bitmap, 0, 0);
         bitmap.close();
-        onFrame?.(canvas.width, canvas.height);
+        onFrame?.(canvas.width, canvas.height, detections);
         if (running) setState("playing");
       } catch {
         // a corrupt frame: skip it, the next one replaces it anyway
@@ -132,10 +166,10 @@ export function createPlayer({ canvas, poster, source, onState, onFrame, stallMs
           credentials: "omit",
         });
         if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
-        const push = createPartParser((jpeg) => {
+        const push = createPartParser((jpeg, detections) => {
           watch();
           framesThisConnection += 1;
-          pending = jpeg;
+          pending = { jpeg, detections };
           if (!decoding) paint();
         });
         const reader = response.body.getReader();

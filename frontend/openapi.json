@@ -2070,7 +2070,7 @@
           "devices"
         ],
         "summary": "Live MJPEG stream",
-        "description": "Use directly as `<img src=\".../stream?ticket=...\">`. Ends when the camera stops.",
+        "description": "Use directly as `<img src=\".../stream?ticket=...\">`. Ends when the camera stops.\n\nFrames are clean. A part showing motion carries what was detected on it in an\n`X-Detections` header: `{\"boxes\": [[x, y, width, height], ...], \"person\": 0.87}`, boxes in\nfractions of the picture, `person` the score once the open event found a person (else\nnull). Read the parts yourself to draw them; an `<img>` ignores the header.",
         "operationId": "devices_stream",
         "security": [
           {

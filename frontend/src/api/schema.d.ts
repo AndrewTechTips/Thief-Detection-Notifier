@@ -460,6 +460,11 @@ export interface paths {
         /**
          * Live MJPEG stream
          * @description Use directly as `<img src=".../stream?ticket=...">`. Ends when the camera stops.
+         *
+         *     Frames are clean. A part showing motion carries what was detected on it in an
+         *     `X-Detections` header: `{"boxes": [[x, y, width, height], ...], "person": 0.87}`, boxes in
+         *     fractions of the picture, `person` the score once the open event found a person (else
+         *     null). Read the parts yourself to draw them; an `<img>` ignores the header.
          */
         get: operations["devices_stream"];
         put?: never;

@@ -62,6 +62,48 @@
     transition: opacity var(--duration-enter) var(--ease-out-soft);
   }
 
+  /* Motion boxes, drawn from the detections of each frame (detection-overlay.js): corner
+     brackets over a faint tint, amber for motion and red once a person was found. Positions
+     jump with the picture; only opacity animates (AD-20). */
+  .detection-layer {
+    --box: var(--color-sodium);
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    transition: opacity 120ms linear;
+    &[data-person] {
+      --box: var(--color-alarm);
+    }
+    &[data-idle] {
+      opacity: 0;
+      transition-duration: 600ms;
+    }
+  }
+  .live-host:not([data-state="playing"]) .detection-layer {
+    opacity: 0;
+  }
+
+  .detection-box {
+    --corner: min(1.125rem, 35%);
+    --line: 2px;
+    position: absolute;
+    border-radius: 2px;
+    background:
+      linear-gradient(var(--box) 0 0) top left / var(--corner) var(--line),
+      linear-gradient(var(--box) 0 0) top left / var(--line) var(--corner),
+      linear-gradient(var(--box) 0 0) top right / var(--corner) var(--line),
+      linear-gradient(var(--box) 0 0) top right / var(--line) var(--corner),
+      linear-gradient(var(--box) 0 0) bottom left / var(--corner) var(--line),
+      linear-gradient(var(--box) 0 0) bottom left / var(--line) var(--corner),
+      linear-gradient(var(--box) 0 0) bottom right / var(--corner) var(--line),
+      linear-gradient(var(--box) 0 0) bottom right / var(--line) var(--corner),
+      color-mix(in srgb, var(--box) 10%, transparent);
+    background-repeat: no-repeat;
+    outline: 1px solid color-mix(in srgb, var(--box) 45%, transparent);
+    /* Keeps the brackets readable on bright scenes. */
+    filter: drop-shadow(0 0 1px rgb(0 0 0 / 0.6));
+  }
+
   /* Before the first frame: a shimmer. A stalled stream keeps its last frame, dimmed. */
   .live-host[data-state="loading"] .camera-view::before {
     content: "";
@@ -122,7 +164,7 @@
   .camera-motion {
     left: auto;
     right: 0.75rem;
-    color: var(--color-sodium);
+    color: var(--tone);
     opacity: 0;
     transform: translateY(-4px);
     transition:

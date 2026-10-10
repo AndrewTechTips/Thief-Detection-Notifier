@@ -5,6 +5,7 @@
 
 import { snapshotUrl } from "../api/events.js";
 import { deviceName } from "../state/devices.js";
+import { boxesShown, showBoxes } from "./boxes.js";
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
 import { enter, exit } from "./motion.js";
@@ -12,7 +13,6 @@ import { formatClock, formatDay, formatDuration } from "./time.js";
 
 /** @typedef {import("./event-row.js").ListedEvent} ListedEvent */
 
-const BOXES_KEY = "vision-hub.snapshot-boxes";
 const MODE_KEY = "vision-hub.viewer-mode";
 const SWIPE_PX = 60;
 
@@ -28,7 +28,7 @@ const SWIPE_PX = 60;
  */
 export function openLightbox({ items, index, refresh, onClose }) {
   let current = index;
-  let boxes = readBoxes();
+  let boxes = boxesShown();
   let mode = readMode();
   /** @type {Set<string>} events whose links were already refreshed once */
   const refreshed = new Set();
@@ -238,7 +238,7 @@ export function openLightbox({ items, index, refresh, onClose }) {
 
   boxesSwitch.addEventListener("change", () => {
     boxes = boxesSwitch.checked;
-    writeBoxes(boxes);
+    showBoxes(boxes);
     show();
   });
 
@@ -335,23 +335,6 @@ function readMode() {
 function writeMode(value) {
   try {
     localStorage.setItem(MODE_KEY, value);
-  } catch {
-    // preference not remembered
-  }
-}
-
-function readBoxes() {
-  try {
-    return localStorage.getItem(BOXES_KEY) !== "false";
-  } catch {
-    return true;
-  }
-}
-
-/** @param {boolean} value */
-function writeBoxes(value) {
-  try {
-    localStorage.setItem(BOXES_KEY, String(value));
   } catch {
     // preference not remembered
   }
