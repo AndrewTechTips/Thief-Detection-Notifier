@@ -55,8 +55,8 @@ shaped most of the design.
 </p>
 
 <p align="center">
-  <img src="docs/assets/screens/desktop-camera.jpg" width="900" alt="A camera page: the live picture with the moving person boxed, details and detection settings" /><br />
-  <sub>A camera page: live video with the motion boxed, and settings that apply without a restart.</sub>
+  <img src="docs/assets/screens/desktop-camera.jpg" width="900" alt="A camera page: a man walking up a hallway, boxed in red with a Person 88 % label, beside the camera's details and detection settings" /><br />
+  <sub>A camera page: the dashboard draws what the hub detected on each frame (red once it is a person), and settings apply without a restart.</sub>
 </p>
 
 <p align="center">
@@ -69,8 +69,10 @@ shaped most of the design.
   <sub>The same dashboard on a phone, installable as an app.</sub>
 </p>
 
-<sub>The cameras in the screenshots are the built-in simulator: someone walks past every half
-minute, so everything can be tried without hardware.</sub>
+<sub>The cameras in the screenshots are the demo cameras: real footage of a front door, a lobby,
+a driveway and a patio (free clips from Pexels, see [docs/demo-footage.md](docs/demo-footage.md)).
+All four alert on people only, so the car and the swaying shadow are recorded without an alert.
+They run anywhere, no hardware needed.</sub>
 
 ---
 
@@ -78,7 +80,8 @@ minute, so everything can be tried without hardware.</sub>
 
 ### Watching
 - **Any camera:** USB webcams, RTSP cameras (reconnecting on their own), video files and a
-  built-in simulator, each on its own thread so nothing blocks the API.
+  built-in simulator, each on its own thread so nothing blocks the API. Four demo cameras with
+  real footage are one command away.
 - **Motion detection that holds up outdoors:** a background that adapts to dusk and passing
   clouds, a reset instead of an alarm when the lights switch on, regions to watch drawn on the
   picture, and one event per visit instead of one per flicker.
@@ -105,6 +108,9 @@ minute, so everything can be tried without hardware.</sub>
 - **Installable app** that opens instantly and still starts (and says so) when the hub is down.
 - **Real time without polling:** a WebSocket for events, MJPEG for video, and a replay of
   everything missed while the connection was down.
+- **Detections drawn by the dashboard:** each video frame carries what was found on it, so the
+  boxes match the picture exactly, turn red once a person is seen, and can be switched off. The
+  video itself stays clean.
 
 ### Running it
 - **One Docker image:** the hub, the dashboard and the person model, as a non-root user on a
@@ -192,10 +198,17 @@ docker compose up --build --wait
 docker compose exec api vision-hub create-user admin --role admin
 ```
 
-Open **http://localhost:8000** and sign in. To try it without cameras, mount
-[`devices.example.toml`](devices.example.toml) and set `VISION_HUB_VISION__DEVICES_FILE` (see
-the comment in `docker-compose.yml`): two simulated cameras start, with someone walking past each
-every half minute.
+Open **http://localhost:8000** and sign in. To try it without cameras, start the **demo
+cameras** instead (four scenes of real footage, two with people):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build --wait
+```
+
+The first start fetches the clips from Pexels (about 12 MB, checked by SHA-256) and turns them
+into camera loops; [docs/demo-footage.md](docs/demo-footage.md) explains how they were chosen.
+For your own cameras, mount a `devices.toml` like [`devices.example.toml`](devices.example.toml)
+(see the comment in `docker-compose.yml`).
 
 **For development** you need [uv](https://docs.astral.sh/uv/) (it installs Python 3.14 if needed),
 Node.js 22.12+ for the dashboard, and a PostgreSQL database:
@@ -207,8 +220,9 @@ docker run -d --name vision-hub-db -p 127.0.0.1:5432:5432 \
 uv sync
 uv run vision-hub create-user admin --role admin    # migrates the database, asks for a password
 uv run vision-hub download-model                    # the person detector (36 MB, optional)
+uv run vision-hub demo-footage                      # the demo cameras' footage (12 MB)
 (cd frontend && npm ci && npm run build)
-VISION_HUB_VISION__DEVICES_FILE=devices.example.toml \
+VISION_HUB_VISION__DEVICES_FILE=devices.demo.toml \
   VISION_HUB_APP__DASHBOARD_DIR=frontend/dist uv run vision-hub serve
 ```
 
